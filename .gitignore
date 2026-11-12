@@ -1,1 +1,11 @@
 docs/*
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+chroma/
+.claude/settings.local.json
+*.egg-info/
