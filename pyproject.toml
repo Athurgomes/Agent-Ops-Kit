@@ -17,12 +17,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
+rag = ["chromadb", "ollama"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 
 [tool.ruff]
