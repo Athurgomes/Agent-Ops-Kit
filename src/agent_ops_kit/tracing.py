@@ -44,6 +44,15 @@ def _tracer() -> trace.Tracer:
 
 
 @contextmanager
+def agent_run(name: str, **attributes: str | float | bool) -> Iterator[Span]:
+    """Span raiz `agent.run`: agrupa llm.call/tool.call/retrieval.query em um único trace."""
+    with _tracer().start_as_current_span("agent.run") as span:
+        span.set_attribute("gen_ai.agent.name", name)
+        span.set_attributes(attributes)
+        yield span
+
+
+@contextmanager
 def llm_call(model: str, **attributes: str | float | bool) -> Iterator[Span]:
     """Span `llm.call`. Use `set_tokens(span, in, out)` após a resposta."""
     with _tracer().start_as_current_span("llm.call") as span:
