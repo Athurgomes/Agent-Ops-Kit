@@ -1,4 +1,4 @@
-docs/*
+docs_internas/
 .env
 .env.*
 !.env.example
