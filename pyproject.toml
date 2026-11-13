@@ -15,6 +15,9 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-grpc",
 ]
 
+[project.scripts]
+aok = "agent_ops_kit.cli:main"
+
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
 rag = ["chromadb", "ollama"]
