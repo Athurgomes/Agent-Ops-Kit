@@ -1,3 +1,4 @@
+# PR de teste do gate de regressão (mudança neutra; não será mesclado).
 """Comparação estatística pareada entre duas variantes (bootstrap + teste de permutação)."""
 
 from __future__ import annotations
