@@ -11,10 +11,12 @@ Determinismo (o que é e o que não é):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import time
 from contextlib import nullcontext
+from datetime import datetime
 from pathlib import Path
 
 from agent_ops_kit.config import AgentConfig
@@ -24,6 +26,12 @@ from agent_ops_kit.eval.prompts import load_prompt
 from examples.rag_agent.agent import LLMFn, run_agent
 
 DEFAULT_SEED = 42
+MANIFEST_NAME = "manifest.json"
+STALE_MESSAGE = "respostas gravadas desatualizadas: regrave com aok eval"
+
+
+class ManifestError(ValueError):
+    """Manifesto ausente ou divergente dos arquivos atuais (mensagem em português)."""
 
 # "Resposta:" tolerante a caixa, acento e negrito simples (**Resposta:** / **Resposta**:).
 _ANSWER_MARKER = re.compile(r"(?<!\w)\*{0,2}resp[oó]sta\*{0,2}\s*:\s*\*{0,2}", re.IGNORECASE)
@@ -136,3 +144,84 @@ def score_records(dataset: list[EvalCase], records: list[dict]) -> dict[str, flo
         r["case_id"]: run_checks(by_id[r["case_id"]], final_answer(r["answer"])).score
         for r in records
     }
+
+
+def sha256_text(text: str) -> str:
+    """sha256 do texto em UTF-8."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def dataset_hash(path: str | Path) -> str:
+    """sha256 do dataset lido como texto (CRLF e LF dão o mesmo hash)."""
+    return sha256_text(Path(path).read_text(encoding="utf-8"))
+
+
+def manifest_entry(
+    variant: str,
+    config: AgentConfig,
+    dataset_path: str | Path,
+    n_cases: int,
+    seed: int,
+    prompts_dir: str | Path = "evals/prompts",
+) -> dict:
+    """Entrada do manifesto de uma variante: o que as respostas gravadas dependem."""
+    return {
+        "prompt_sha256": sha256_text(load_prompt(variant, prompts_dir)),
+        "dataset_sha256": dataset_hash(dataset_path),
+        "model": config.model,
+        "seed": seed,
+        "n_cases": n_cases,
+        "date": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+
+
+def write_manifest_entry(answers_dir: str | Path, variant: str, entry: dict) -> Path:
+    """Grava (ou atualiza) a entrada da variante em <answers_dir>/manifest.json."""
+    path = Path(answers_dir) / MANIFEST_NAME
+    data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    data[variant] = entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def verify_manifest(
+    answers_dir: str | Path,
+    variants: list[str],
+    config: AgentConfig,
+    dataset_path: str | Path,
+    prompts_dir: str | Path = "evals/prompts",
+) -> None:
+    """Confere prompt, dataset, modelo e nº de respostas contra o manifesto.
+
+    Levanta ManifestError com a causa em português se algo divergir.
+    """
+    path = Path(answers_dir) / MANIFEST_NAME
+    if not path.is_file():
+        raise ManifestError(
+            f"manifesto não encontrado: {path}. {STALE_MESSAGE} (ou use --no-verify)"
+        )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    current_dataset = dataset_hash(dataset_path)
+    for v in variants:
+        entry = data.get(v)
+        if entry is None:
+            raise ManifestError(f"variante {v!r} ausente no manifesto {path}. {STALE_MESSAGE}")
+        try:
+            current_prompt = sha256_text(load_prompt(v, prompts_dir))
+        except (FileNotFoundError, ValueError) as exc:
+            raise ManifestError(str(exc)) from exc
+        problems = []
+        if entry.get("prompt_sha256") != current_prompt:
+            problems.append(f"o prompt {v} mudou")
+        if entry.get("dataset_sha256") != current_dataset:
+            problems.append("o dataset mudou")
+        if entry.get("model") != config.model:
+            problems.append(f"o modelo mudou ({entry.get('model')} -> {config.model})")
+        n_records = len(load_records(Path(answers_dir) / f"{v}.jsonl"))
+        if entry.get("n_cases") != n_records:
+            problems.append(
+                f"o arquivo tem {n_records} respostas, o manifesto registra {entry.get('n_cases')}"
+            )
+        if problems:
+            raise ManifestError(f"{STALE_MESSAGE} ({v}: {'; '.join(problems)})")

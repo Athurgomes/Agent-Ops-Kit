@@ -54,7 +54,7 @@ def _args(tmp_path, *extra, baseline="v1", candidate="v2", reuse=True):
         "--limit", str(len(CASES)),
     ]  # fmt: skip
     if reuse:
-        argv.append("--reuse")
+        argv += ["--reuse", "--no-verify"]  # manifesto é testado em test_manifest.py
     return argv + list(extra)
 
 

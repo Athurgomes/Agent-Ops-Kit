@@ -1,0 +1,20 @@
+{
+  "v1": {
+    "prompt_sha256": "6eff341ab95d5d6b8c233b5b95a415e9b0687831896744231ce0ac87982a8479",
+    "dataset_sha256": "26677672e98532fa9317768a021ccbb337d42441511a4bfdf4e68624d88892e5",
+    "model": "llama3.1:8b",
+    "seed": 42,
+    "n_cases": 50,
+    "date": "2026-11-12T18:49:37-03:00",
+    "nota": "Manifesto gerado a posteriori por verificação manual, NÃO escrito pelo runner no momento da gravação. Hashes calculados sobre os arquivos atuais após conferir que prompts e dataset não mudaram depois da gravação das respostas (git log: último commit desses arquivos 64f9bac, anterior ao commit das respostas a40b277; mtimes dos prompts e do dataset anteriores ao mtime do arquivo de respostas). Modelo e semente copiados de evals/results/v1_vs_v2.md (llama3.1:8b, semente 42). A data é o mtime do arquivo de respostas, não um registro do runner."
+  },
+  "v2": {
+    "prompt_sha256": "338c977d56fe23ae50c76fe5dc2b04a89e6e4e26d3a4630b13b45507655a6f91",
+    "dataset_sha256": "26677672e98532fa9317768a021ccbb337d42441511a4bfdf4e68624d88892e5",
+    "model": "llama3.1:8b",
+    "seed": 42,
+    "n_cases": 50,
+    "date": "2026-11-12T18:55:24-03:00",
+    "nota": "Manifesto gerado a posteriori por verificação manual, NÃO escrito pelo runner no momento da gravação. Hashes calculados sobre os arquivos atuais após conferir que prompts e dataset não mudaram depois da gravação das respostas (git log: último commit desses arquivos 64f9bac, anterior ao commit das respostas a40b277; mtimes dos prompts e do dataset anteriores ao mtime do arquivo de respostas). Modelo e semente copiados de evals/results/v1_vs_v2.md (llama3.1:8b, semente 42). A data é o mtime do arquivo de respostas, não um registro do runner."
+  }
+}

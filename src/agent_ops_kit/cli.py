@@ -36,6 +36,8 @@ def _reproducible_command(args: argparse.Namespace) -> str:
     tokens += ["--config", args.config, "--answers-dir", args.answers_dir]
     if args.reuse:
         tokens.append("--reuse")
+    if args.no_verify:
+        tokens.append("--no-verify")
     if args.judge:
         tokens.append("--judge")
     if args.limit is not None:
@@ -46,6 +48,14 @@ def _reproducible_command(args: argparse.Namespace) -> str:
     if args.fail_on_regression:
         tokens.append("--fail-on-regression")
     return shlex.join(tokens)
+
+
+def _answers_source(args: argparse.Namespace) -> str:
+    if not args.reuse:
+        return "geradas nesta execução"
+    if args.no_verify:
+        return "gravadas (--reuse), manifesto NÃO verificado (--no-verify)"
+    return "gravadas (--reuse), manifesto verificado"
 
 
 def _check_rates(cases, records) -> dict[str, tuple[int, int]]:
@@ -127,6 +137,12 @@ def _run_eval(args: argparse.Namespace) -> int:
     cases = dataset[: args.limit] if args.limit is not None else dataset
     case_ids = {c.id for c in cases}
 
+    if args.reuse and not args.no_verify:
+        try:
+            runner.verify_manifest(answers_dir, variants, config, args.dataset, args.prompts_dir)
+        except runner.ManifestError as exc:
+            raise CliError(str(exc)) from exc
+
     records: dict[str, list[dict]] = {}
     for v in variants:
         path = answers_dir / f"{v}.jsonl"
@@ -142,6 +158,10 @@ def _run_eval(args: argparse.Namespace) -> int:
                 seed=args.seed,
                 prompts_dir=args.prompts_dir,
             )
+            entry = runner.manifest_entry(
+                v, config, args.dataset, len(records[v]), args.seed, args.prompts_dir
+            )
+            runner.write_manifest_entry(answers_dir, v, entry)
 
     scores = {v: runner.score_records(dataset, records[v]) for v in variants}
     try:
@@ -156,7 +176,7 @@ def _run_eval(args: argparse.Namespace) -> int:
         f"- Modelo: {config.model}",
         f"- Semente: {args.seed}",
         f"- Casos: {len(cases)}",
-        f"- Respostas: {'gravadas (--reuse)' if args.reuse else 'geradas nesta execução'}",
+        f"- Respostas: {_answers_source(args)}",
         f"- Data: {datetime.now().astimezone().isoformat(timespec='seconds')}",
         "",
         "## Métrica determinística",
@@ -234,6 +254,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config", default="examples/rag_agent/agent.yaml")
     p.add_argument("--answers-dir", default="evals/answers")
     p.add_argument("--reuse", action="store_true", help="relê as respostas gravadas, sem modelo")
+    p.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="com --reuse, não confere o manifesto (prompt, dataset, modelo) das respostas",
+    )
     p.add_argument("--judge", action="store_true", help="avalia também com o juiz (usa o modelo)")
     p.add_argument("--limit", type=int, default=None, help="usa só os N primeiros casos")
     p.add_argument("--seed", type=int, default=42)
