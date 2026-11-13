@@ -1,0 +1,66 @@
+# Regression gate de prompts, sem modelo e sem segredos (ver docs/decisoes.md, ADR-001).
+#
+# O CI NAO chama o Ollama. Ele relê as respostas gravadas localmente (evals/answers/*.jsonl),
+# confere o manifesto de integridade (prompt, dataset e modelo) e roda o A/B pareado sobre a
+# métrica determinística. Falha (código 1) se candidata < baseline com p < 0.05.
+# Se um prompt ou o dataset mudar, o manifesto diverge e o job falha: regrave com `aok eval`.
+#
+# Variáveis (padrão: v1 e v2; no workflow_dispatch podem ser trocadas pelos inputs):
+#   BASELINE   variante de referência (evals/prompts/<BASELINE>.md)
+#   CANDIDATE  variante candidata     (evals/prompts/<CANDIDATE>.md)
+name: eval
+
+on:
+  pull_request:
+    paths:
+      - "evals/**"
+      - "src/**"
+      - "examples/**"
+      - "pyproject.toml"
+      - ".github/workflows/eval.yml"
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: "Variante de referência"
+        default: "v1"
+      candidate:
+        description: "Variante candidata"
+        default: "v2"
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASELINE: ${{ inputs.baseline || 'v1' }}
+      CANDIDATE: ${{ inputs.candidate || 'v2' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências (sem o extra rag)
+        run: pip install -e ".[dev]"
+
+      - name: Gate de regressão (respostas gravadas, sem modelo)
+        run: >
+          aok eval --baseline "$BASELINE" --candidate "$CANDIDATE"
+          --reuse --fail-on-regression --report eval-report.md
+
+      - name: Publicar relatório no Job Summary
+        if: always()
+        run: |
+          if [ -f eval-report.md ]; then cat eval-report.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Anexar relatório como artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval-report.md
+          if-no-files-found: ignore
