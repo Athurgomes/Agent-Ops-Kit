@@ -1,0 +1,38 @@
+# Lint e testes unitários. Sem Ollama, sem Docker e sem segredos.
+# Os testes usam embedder/cliente falsos; chromadb é opcional (test_indexer usa importorskip),
+# então instalamos só o extra dev. O gate de prompts fica em eval.yml.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Instalar dependências (sem o extra rag)
+        run: pip install -e ".[dev]"
+
+      - name: Lint (ruff check)
+        run: python -m ruff check .
+
+      - name: Testes unitários
+        run: python -m pytest -q
