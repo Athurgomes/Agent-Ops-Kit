@@ -42,6 +42,8 @@ def _reproducible_command(args: argparse.Namespace) -> str:
         tokens.append("--judge")
     if args.limit is not None:
         tokens += ["--limit", str(args.limit)]
+    if args.prices:
+        tokens += ["--prices", args.prices]
     tokens += ["--seed", str(args.seed)]
     if args.report:
         tokens += ["--report", args.report]
@@ -86,6 +88,36 @@ def _rates_table(rates: dict[str, dict[str, tuple[int, int]]], variants: list[st
     return "\n".join(lines) + "\n"
 
 
+OPS_NOTES = (
+    "Valores por caso (soma das chamadas de LLM do caso), não por chamada.",
+    (
+        "A latência depende do hardware e da carga do modelo (a 1ª execução inclui a carga a frio). "
+        "Com `--reuse`, a latência vem das respostas gravadas (não é medida no CI)."
+    ),
+)
+
+
+def _fmt(value: float | None, digits: int = 2) -> str:
+    return "n/d" if value is None else f"{value:.{digits}f}"
+
+
+def _ops_table(summaries: dict[str, dict], variants: list[str]) -> str:
+    rows = [
+        ("Casos", lambda s: str(s["llm_calls"])),
+        ("Latência por caso, p50 (s)", lambda s: _fmt(s["llm_latency_p50_s"])),
+        ("Latência por caso, p95 (s)", lambda s: _fmt(s["llm_latency_p95_s"])),
+        ("Tokens de entrada, média por caso", lambda s: _fmt(s["avg_input_tokens"])),
+        ("Tokens de saída, média por caso", lambda s: _fmt(s["avg_output_tokens"])),
+        ("Taxa de erro do agente", lambda s: _fmt(s["agent_error_rate"], 4)),
+        ("Taxa de erro de tool", lambda s: "n/d (o runner não registra tools por caso)"),
+        ("Custo estimado", lambda s: _fmt(s["estimated_cost"], 4)),
+    ]
+    lines = ["| Métrica | " + " | ".join(variants) + " |", "|---|" + "---|" * len(variants)]
+    for label, fn in rows:
+        lines.append(f"| {label} | " + " | ".join(fn(summaries[v]) for v in variants) + " |")
+    return "\n".join(lines) + "\n"
+
+
 def cmd_eval(args: argparse.Namespace) -> int:
     """Compara duas variantes de prompt (A/B pareado). Deve rodar na raiz do repositório."""
     # O runner importa `examples.rag_agent`, que fica na raiz do repo (fora de src/): o comando
@@ -101,12 +133,15 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 def _run_eval(args: argparse.Namespace) -> int:
+    import yaml
+
     from agent_ops_kit.config import load_config
     from agent_ops_kit.eval import judge as judge_mod
     from agent_ops_kit.eval import runner
     from agent_ops_kit.eval.ab import format_ab_markdown, paired_ab
     from agent_ops_kit.eval.dataset import load_dataset
     from agent_ops_kit.eval.prompts import load_prompt
+    from agent_ops_kit.metrics import PriceTable, summarize_records
 
     variants = [args.baseline, args.candidate]
     if args.baseline == args.candidate:
@@ -131,6 +166,16 @@ def _run_eval(args: argparse.Namespace) -> int:
                 load_prompt(v, args.prompts_dir)
             except (FileNotFoundError, ValueError) as exc:
                 raise CliError(str(exc)) from exc
+
+    price_table = None
+    if args.prices:
+        if not Path(args.prices).is_file():
+            raise CliError(f"tabela de preços não encontrada: {args.prices}")
+        try:
+            price_table = PriceTable.from_yaml(args.prices)
+        except (ValueError, TypeError, yaml.YAMLError) as exc:
+            raise CliError(f"tabela de preços inválida: {exc}") from exc
+    price_table = price_table or PriceTable.default()
 
     dataset = load_dataset(args.dataset)
     config = load_config(args.config)
@@ -187,6 +232,22 @@ def _run_eval(args: argparse.Namespace) -> int:
         "Aprovados/aplicáveis (a checagem não se aplica a todos os casos).",
         "",
         _rates_table({v: _check_rates(cases, records[v]) for v in variants}, variants),
+        "## Métricas operacionais",
+        "",
+        _ops_table(
+            {v: summarize_records(records[v], config.model, price_table) for v in variants},
+            variants,
+        ),
+        *[f"- {n}" for n in OPS_NOTES],
+        f"- Custo ({config.model}): {price_table.note} "
+        + (
+            "Modelo fora da tabela: n/d."
+            if config.model not in price_table.prices
+            else "Local = 0.0."
+            if price_table.prices[config.model] == (0.0, 0.0)
+            else "Preço da tabela informada."
+        ),
+        "",
     ]
 
     if args.judge:
@@ -261,6 +322,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--judge", action="store_true", help="avalia também com o juiz (usa o modelo)")
     p.add_argument("--limit", type=int, default=None, help="usa só os N primeiros casos")
+    p.add_argument("--prices", default=None, help="YAML de preços {modelo: {input, output}} por 1M tokens")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--report", default=None, help="grava o relatório markdown neste caminho")
     p.add_argument(
