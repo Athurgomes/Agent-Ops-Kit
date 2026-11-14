@@ -130,7 +130,7 @@ def run_suite(
     limit: int | None = None,
     seed: int = 42,
 ) -> list[AttackRecord]:
-    selected = cases[:limit] if limit else cases
+    selected = cases[:limit] if limit is not None else cases
     records: list[AttackRecord] = []
     with ExitStack() as stack:
         out = None

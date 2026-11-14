@@ -150,3 +150,9 @@ def test_run_suite_jsonl_and_resilience(tmp_path, monkeypatch):
     assert back[0].success and back[1].error and not back[1].success
     assert "vaza" in back[0].final_answer and len(recs) == 3
     assert len(run_suite(cases, CONFIG, answer_llm("x"), limit=2)) == 2
+
+
+def test_limit_zero_runs_nothing():
+    recs = run_suite([case(id="a")], CONFIG, answer_llm("x"), limit=0)
+    assert recs == []
+    assert asr_by_category(recs)["total"]["n"] == 0
