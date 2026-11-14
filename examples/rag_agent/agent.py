@@ -16,6 +16,8 @@ LIMIT_MESSAGE = "Não consegui concluir a resposta dentro do limite de iteraçõ
 
 # llm(model, messages, tools) -> resposta no formato do ollama.chat (dict ou objeto subscritável)
 LLMFn = Callable[[str, list[dict], list[dict]], object]
+# tool_runner(name, arguments, k) -> texto do resultado (padrão: run_tool)
+ToolRunner = Callable[[str, dict, int], str]
 
 
 def ollama_llm(model: str, messages: list[dict], tools: list[dict]) -> object:
@@ -35,16 +37,19 @@ def run_agent(
     config: AgentConfig | None = None,
     llm: LLMFn = ollama_llm,
     max_iterations: int = MAX_ITERATIONS,
+    tools: list[dict] | None = None,
+    tool_runner: ToolRunner = run_tool,
 ) -> str:
     config = config or load_config(CONFIG_PATH)
-    tools = [TOOL_SCHEMAS[t] for t in config.tools]
+    if tools is None:
+        tools = [TOOL_SCHEMAS[t] for t in config.tools]
     k = int(config.retrieval.get("k", 3))
     messages: list[dict] = [
         {"role": "system", "content": config.system_prompt},
         {"role": "user", "content": question},
     ]
     with agent_run(config.name, prompt_version=config.prompt_version):
-        return _loop(messages, tools, k, config, llm, max_iterations)
+        return _loop(messages, tools, k, config, llm, max_iterations, tool_runner)
 
 
 def _loop(
@@ -54,6 +59,7 @@ def _loop(
     config: AgentConfig,
     llm: LLMFn,
     max_iterations: int,
+    tool_runner: ToolRunner = run_tool,
 ) -> str:
     for _ in range(max_iterations):
         with llm_call(config.model, prompt_version=config.prompt_version) as span:
@@ -86,6 +92,6 @@ def _loop(
         for c in calls:
             fn = _get(c, "function")
             name = str(_get(fn, "name"))
-            result = run_tool(name, dict(_get(fn, "arguments") or {}), k=k)
+            result = tool_runner(name, dict(_get(fn, "arguments") or {}), k=k)
             messages.append({"role": "tool", "tool_name": name, "content": result})
     return LIMIT_MESSAGE
