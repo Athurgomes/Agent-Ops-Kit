@@ -2,6 +2,7 @@
 
 import json
 
+from agent_ops_kit import cli
 from agent_ops_kit.audit import AuditLog, verify
 from agent_ops_kit.config import load_config
 from agent_ops_kit.guardrails import REFUSAL_MESSAGE, Guardrails
@@ -151,3 +152,61 @@ def test_audit_none_keeps_behavior(tmp_path):
     )
     assert out == f"código {CANARY}" and ran == ["send_email"]
     assert list(tmp_path.iterdir()) == []
+
+
+# --- CLI ---
+
+
+def make_log(tmp_path, n=4):
+    p = tmp_path / "l.jsonl"
+    log = AuditLog(p)
+    for i in range(n):
+        log.append("question", {"i": i})
+    return p
+
+
+def test_cli_verify_ok(tmp_path, capsys):
+    p = make_log(tmp_path)
+    assert cli.main(["audit", "verify", str(p)]) == 0
+    assert "Cadeia íntegra (4 eventos)" in capsys.readouterr().out
+
+
+def test_cli_verify_tampered_reports_line(tmp_path, capsys):
+    p = make_log(tmp_path)
+    lines = p.read_text(encoding="utf-8").splitlines()
+    lines[2] = lines[2].replace('"i":2', '"i":99')
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    assert cli.main(["audit", "verify", str(p)]) == 1
+    assert "Cadeia QUEBRADA na linha 3: hash não confere" in capsys.readouterr().out
+
+
+def test_cli_verify_missing_file(tmp_path, capsys):
+    assert cli.main(["audit", "verify", str(tmp_path / "nada.jsonl")]) == 2
+    assert "não encontrado" in capsys.readouterr().err
+
+
+def test_cli_anchor_and_verify_with_anchor(tmp_path, capsys):
+    p = make_log(tmp_path)
+    assert cli.main(["audit", "anchor", str(p)]) == 0
+    h = capsys.readouterr().out.strip()
+    assert len(h) == 64
+    assert cli.main(["audit", "verify", str(p), "--anchor", h, "--expected-n", "4"]) == 0
+    capsys.readouterr()
+    assert cli.main(["audit", "verify", str(p), "--anchor", "0" * 64]) == 1
+    assert "âncora" in capsys.readouterr().out
+    assert cli.main(["audit", "verify", str(p), "--expected-n", "5"]) == 1
+    capsys.readouterr()
+    assert cli.main(["audit", "anchor", str(tmp_path / "nada.jsonl")]) == 2
+
+
+def test_cli_report_stdout_and_output(tmp_path, capsys):
+    p = make_log(tmp_path)
+    assert cli.main(["audit", "report", str(p), "--title", "Meu"]) == 0
+    out = capsys.readouterr().out
+    assert "# Meu" in out and "Cadeia íntegra (4 eventos)" in out
+    dest = tmp_path / "sub" / "r.md"
+    assert cli.main(["audit", "report", str(p), "--output", str(dest)]) == 0
+    printed = capsys.readouterr().out
+    assert "# Relatório de auditoria" in dest.read_text(encoding="utf-8")
+    assert "# Relatório" not in printed and "Cadeia íntegra" in printed
+    assert cli.main(["audit", "report", str(tmp_path / "nada.jsonl")]) == 2

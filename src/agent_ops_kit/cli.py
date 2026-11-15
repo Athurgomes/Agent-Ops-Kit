@@ -339,6 +339,55 @@ def cmd_redteam(args: argparse.Namespace) -> int:
     return 0
 
 
+def _chain_text(res) -> str:
+    if res.ok:
+        return f"Cadeia íntegra ({res.n_lines} eventos)"
+    where = f"na linha {res.first_bad_line}" if res.first_bad_line else "(âncora)"
+    return f"Cadeia QUEBRADA {where}: {res.reason}"
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    """`aok audit verify|report|anchor` sobre um log de auditoria."""
+    from agent_ops_kit import audit
+
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if args.audit_cmd == "verify":
+        try:
+            res = audit.verify(args.log, args.anchor, args.expected_n)
+        except FileNotFoundError as exc:
+            print(f"erro: {exc}", file=sys.stderr)
+            return 2
+        print(_chain_text(res))
+        return 0 if res.ok else 1
+
+    if args.audit_cmd == "anchor":
+        try:
+            print(audit.anchor(args.log))
+        except FileNotFoundError as exc:
+            print(f"erro: {exc}", file=sys.stderr)
+            return 2
+        except audit.AuditChainError as exc:
+            print(f"erro: {exc}", file=sys.stderr)
+            return 1
+        return 0
+
+    try:
+        text = audit.report(args.log, title=args.title)
+        res = audit.verify(args.log)
+    except FileNotFoundError as exc:
+        print(f"erro: {exc}", file=sys.stderr)
+        return 2
+    if args.output:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.output).write_text(text, encoding="utf-8")
+        print(f"Relatório gravado em {args.output}")
+    else:
+        print(text)
+    print(_chain_text(res))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aok", description="agent-ops-kit")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -384,6 +433,20 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--v1-answers", default="evals/answers/v1.jsonl")
     r.add_argument("--output", default=None, help="grava o markdown neste caminho")
     p.set_defaults(func=cmd_redteam)
+
+    p = sub.add_parser("audit", help="log de auditoria: verifica a cadeia, gera relatório, âncora")
+    asub = p.add_subparsers(dest="audit_cmd", required=True)
+    a = asub.add_parser("verify", help="recalcula a cadeia de hashes (código 1 se quebrada)")
+    a.add_argument("log")
+    a.add_argument("--anchor", default=None, help="último hash esperado (guardado fora do arquivo)")
+    a.add_argument("--expected-n", type=int, default=None, help="número de eventos esperado")
+    a = asub.add_parser("report", help="relatório markdown do log")
+    a.add_argument("log")
+    a.add_argument("--output", default=None, help="grava o markdown neste caminho")
+    a.add_argument("--title", default="Relatório de auditoria")
+    a = asub.add_parser("anchor", help="imprime o último hash (para guardar fora do arquivo)")
+    a.add_argument("log")
+    p.set_defaults(func=cmd_audit)
     return parser
 
 
