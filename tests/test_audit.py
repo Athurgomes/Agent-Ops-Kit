@@ -287,3 +287,13 @@ def test_report_truncates_huge_event_and_ts(tmp_path):
     md = report(p)
     assert max(len(line) for line in md.splitlines()) < 300
     assert "caracteres)" in md
+
+
+def test_report_truncates_huge_seq(tmp_path):
+    p = tmp_path / "s.jsonl"
+    AuditLog(p).append("e", {"k": "v"})
+    entry = json.loads(read(p)[0])
+    entry["seq"] = 10**3000  # seq adulterado enorme; a linha continua parseável
+    p.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    md = report(p)
+    assert max(len(line) for line in md.splitlines()) < 300

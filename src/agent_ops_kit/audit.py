@@ -295,7 +295,7 @@ def report(
                 out.append(f"| (linha {n}) | - | inválida | - |")
                 continue
             out.append(
-                f"| {o['seq']} | {_cell(_short(o['ts'], 40))} | {_cell(_short(o['event'], 40))} "
+                f"| {_cell(_short(o['seq'], 40))} | {_cell(_short(o['ts'], 40))} | {_cell(_short(o['event'], 40))} "
                 f"| {_cell(_summarize(o['data']))} |"
             )
         if len(lines) > max_rows:
