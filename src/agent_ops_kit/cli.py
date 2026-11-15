@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import sys
 from datetime import datetime
@@ -388,9 +389,63 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+NAME_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+_TEMPLATE_TEXT_SUFFIXES = {".py", ".md", ".yaml"}
+
+
+def _copy_template(src, dst: Path, name: str) -> None:
+    dst.mkdir(parents=True, exist_ok=True)
+    for item in sorted(src.iterdir(), key=lambda i: i.name):
+        if item.name == "__pycache__":
+            continue
+        target = dst / (".gitignore" if item.name == "gitignore" else item.name)
+        if item.is_dir():
+            _copy_template(item, target, name)
+            continue
+        if Path(item.name).suffix in _TEMPLATE_TEXT_SUFFIXES:
+            text = item.read_text(encoding="utf-8").replace("__NAME__", name)
+            target.write_text(text, encoding="utf-8", newline="\n")
+        else:
+            target.write_bytes(item.read_bytes())
+
+
+def cmd_new(args: argparse.Namespace) -> int:
+    """`aok new <nome> [--dir DESTINO]`: gera um agente RAG já instrumentado a partir do template."""
+    from importlib.resources import files
+
+    name = args.name
+    if not NAME_RE.fullmatch(name):
+        print(
+            "erro: nome inválido; use letras minúsculas, dígitos, hífen ou sublinhado "
+            "(até 64 caracteres, começando por letra ou dígito)",
+            file=sys.stderr,
+        )
+        return 2
+    dest = Path(args.dir or ".") / name
+    if dest.exists() and (not dest.is_dir() or any(dest.iterdir())):
+        print(f"erro: {dest} já existe e não está vazia; nada foi sobrescrito", file=sys.stderr)
+        return 2
+    _copy_template(files("agent_ops_kit") / "templates" / "agent", dest, name)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    print(f"Agente '{name}' criado em {dest}")
+    print("  agent.yaml (guardrails e auditoria ligados), corpus/ (3 documentos fictícios), run.py")
+    print("Próximos passos:")
+    print(f'  cd {dest}')
+    print('  python run.py "Quantos dias de férias a Aurora Papéis concede?"')
+    print(f"  aok audit verify {Path(dest) / 'audit' / (name + '.jsonl')}")
+    print("  Jaeger: docker compose up -d (ver README.md do agente)")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aok", description="agent-ops-kit")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("new", help="gera um agente RAG já instrumentado (tracing, auditoria, guardrails)")
+    p.add_argument("name", help="nome do agente (minúsculas, dígitos, - e _)")
+    p.add_argument("--dir", default=None, help="pasta onde criar o agente (padrão: pasta atual)")
+    p.set_defaults(func=cmd_new)
 
     p = sub.add_parser("eval", help="compara duas variantes de prompt (A/B pareado)")
     p.add_argument("--baseline", required=True, help="variante de referência (ex.: v1)")
