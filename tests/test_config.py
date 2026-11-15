@@ -40,6 +40,20 @@ def test_missing_required_field_fails(tmp_path):
         load_config(write(tmp_path, text))
 
 
+BASE = "name: a\nmodel: m\nprompt_version: v1\nsystem_prompt: s\n"
+
+
+def test_audit_field_optional(tmp_path):
+    assert load_config(write(tmp_path, BASE)).audit is None
+    cfg = load_config(write(tmp_path, BASE + "audit: logs/audit.jsonl\n"))
+    assert cfg.audit == "logs/audit.jsonl"
+
+
+def test_extra_field_still_forbidden(tmp_path):
+    with pytest.raises(ValidationError):
+        load_config(write(tmp_path, BASE + "audit: x.jsonl\nauditoria: y\n"))
+
+
 def test_wrong_type_fails(tmp_path):
     text = VALID.replace("tools: [search, calculator]", "tools: not-a-list")
     with pytest.raises(ValidationError):

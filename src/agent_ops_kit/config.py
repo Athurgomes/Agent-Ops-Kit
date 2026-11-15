@@ -16,6 +16,7 @@ class AgentConfig(BaseModel):
     tools: list[str] = Field(default_factory=list)
     guardrails: list[str] = Field(default_factory=list)
     retrieval: dict[str, str | int | float | bool] = Field(default_factory=dict)
+    audit: str | None = None  # caminho do log de auditoria; None = desligado
 
 
 def load_config(path: str | Path) -> AgentConfig:
