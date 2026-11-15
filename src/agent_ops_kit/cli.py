@@ -303,6 +303,42 @@ def _run_eval(args: argparse.Namespace) -> int:
     return 1 if args.fail_on_regression and regression else 0
 
 
+def cmd_redteam(args: argparse.Namespace) -> int:
+    """`aok redteam run|report`. Deve rodar na raiz do repositório (como o eval)."""
+    cwd = os.getcwd()
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+    if args.redteam_cmd == "run":
+        from agent_ops_kit.redteam import harness
+
+        argv: list[str] = []
+        if args.guardrails not in (None, "none"):
+            argv += ["--guardrails", args.guardrails]
+        if args.out:
+            argv += ["--out", args.out]
+        if args.limit is not None:
+            argv += ["--limit", str(args.limit)]
+        argv += ["--seed", str(args.seed)]
+        if args.attacks_dir:
+            argv += ["--attacks-dir", args.attacks_dir]
+        return harness.main(argv)
+
+    from agent_ops_kit.redteam.report import ReportError, build_report
+
+    try:
+        text = build_report(args.baseline, args.guardrails, args.fp_dir, args.dataset, args.v1_answers)
+    except ReportError as exc:
+        print(f"erro: {exc}", file=sys.stderr)
+        return 2
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    print(text)
+    if args.output:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.output).write_text(text, encoding="utf-8")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aok", description="agent-ops-kit")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -331,6 +367,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="código 1 se diferença média < 0 e p-valor < 0.05 (métrica determinística)",
     )
     p.set_defaults(func=cmd_eval)
+
+    p = sub.add_parser("redteam", help="suíte de red team: roda ataques ou gera o relatório")
+    rsub = p.add_subparsers(dest="redteam_cmd", required=True)
+    r = rsub.add_parser("run", help="roda a suíte (usa o modelo local)")
+    r.add_argument("--guardrails", default="none", help='"none", "all" ou lista separada por vírgulas')
+    r.add_argument("--out", default=None, help="JSONL de saída (obrigatório com --guardrails)")
+    r.add_argument("--limit", type=int, default=None)
+    r.add_argument("--seed", type=int, default=42)
+    r.add_argument("--attacks-dir", default=None)
+    r = rsub.add_parser("report", help="relatório markdown a partir dos JSONL gravados (sem modelo)")
+    r.add_argument("--baseline", required=True, help="JSONL sem guardrails")
+    r.add_argument("--guardrails", required=True, help="JSONL com guardrails")
+    r.add_argument("--fp-dir", default=None, help="pasta com fp_dataset.jsonl e fp_benign.jsonl")
+    r.add_argument("--dataset", default="evals/dataset.jsonl")
+    r.add_argument("--v1-answers", default="evals/answers/v1.jsonl")
+    r.add_argument("--output", default=None, help="grava o markdown neste caminho")
+    p.set_defaults(func=cmd_redteam)
     return parser
 
 
