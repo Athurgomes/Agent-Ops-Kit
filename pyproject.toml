@@ -25,9 +25,13 @@ rag = ["chromadb", "ollama"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+agent_ops_kit = ["templates/agent/**/*"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
 testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["src/agent_ops_kit/templates"]
