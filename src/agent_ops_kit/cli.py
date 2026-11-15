@@ -470,12 +470,13 @@ def cmd_new(args: argparse.Namespace) -> int:
     _copy_template(files("agent_ops_kit") / "templates" / "agent", dest, name)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    print(f"Agente '{name}' criado em {dest}")
+    shown = dest.as_posix()
+    print(f"Agente '{name}' criado em {shown}")
     print("  agent.yaml (guardrails e auditoria ligados), corpus/ (3 documentos fictícios), run.py")
     print("Próximos passos:")
-    print(f'  cd {dest}')
+    print(f"  cd {shown}")
     print('  python run.py "Quantos dias de férias a Aurora Papéis concede?"')
-    print(f"  aok audit verify {Path(dest) / 'audit' / (name + '.jsonl')}")
+    print(f"  aok audit verify {shown}/audit/{name}.jsonl")
     print("  Jaeger: docker compose up -d (ver README.md do agente)")
     return 0
 
