@@ -2,6 +2,7 @@
 
 import sys
 
+from agent_ops_kit.audit import AuditLog
 from agent_ops_kit.config import load_config
 from agent_ops_kit.guardrails import Guardrails
 from agent_ops_kit.tracing import setup_tracing
@@ -17,7 +18,8 @@ def main() -> int:
     provider = setup_tracing(config.name)
     try:
         guardrails = Guardrails(config) if config.guardrails else None
-        print(run_agent(" ".join(sys.argv[1:]), config, guardrails=guardrails))
+        audit = AuditLog(config.audit) if config.audit else None
+        print(run_agent(" ".join(sys.argv[1:]), config, guardrails=guardrails, audit=audit))
     finally:
         provider.force_flush()
         provider.shutdown()

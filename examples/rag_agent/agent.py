@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 
+from agent_ops_kit.audit import AuditLog
 from agent_ops_kit.config import AgentConfig, load_config
 from agent_ops_kit.guardrails import REFUSAL_MESSAGE, Guardrails, canary_line
 from agent_ops_kit.tracing import agent_run, llm_call, set_tokens
@@ -65,6 +67,31 @@ def _get(obj: object, key: str, default: object = None) -> object:
     return getattr(obj, key, default)
 
 
+class _Recorder:
+    """Grava eventos no log de auditoria (no-op se não houver log), com run_id comum.
+
+    Remove o canary de qualquer texto gravado: o segredo nunca vai para o log.
+    """
+
+    def __init__(self, audit: AuditLog | None, canary: str | None) -> None:
+        self.audit = audit
+        self.canary = canary
+        self.run_id = uuid.uuid4().hex[:8]
+
+    def _scrub(self, value: object) -> object:
+        if isinstance(value, str):
+            return value.replace(self.canary, "[REDACTED]") if self.canary else value
+        if isinstance(value, dict):
+            return {self._scrub(str(k)): self._scrub(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self._scrub(v) for v in value]
+        return value
+
+    def __call__(self, event: str, data: dict) -> None:
+        if self.audit is not None:
+            self.audit.append(event, {"run_id": self.run_id, **self._scrub(data)})
+
+
 def run_agent(
     question: str,
     config: AgentConfig | None = None,
@@ -74,10 +101,19 @@ def run_agent(
     tool_runner: ToolRunner = run_tool,
     guardrails: Guardrails | None = None,
     events: list[dict] | None = None,
+    audit: AuditLog | None = None,
 ) -> str:
     """Roda o agente. Com `guardrails`, cada bloqueio vira um dict em `events`
     ({"stage": "input"|"tool"|"output", "reasons": [...]}; no estágio "output" também
-    "raw_answer", a resposta antes do filtro). Sem guardrails o comportamento é o original."""
+    "raw_answer", a resposta antes do filtro). Sem guardrails o comportamento é o original.
+
+    Com `audit`, grava no log, em ordem cronológica e com um `run_id` comum: `question`,
+    `guardrail` (cada bloqueio), `tool_call` (nome, argumentos, executada ou bloqueada,
+    e as fontes de search_docs) e `answer` (a resposta entregue). ATENÇÃO: o log guarda o
+    TEXTO das perguntas e das respostas; o operador decide onde e por quanto tempo
+    guardá-lo. Não grava o conteúdo recuperado dos documentos (só as fontes), nem a
+    resposta bruta bloqueada pelo filtro de saída (só o fato de ter sido bloqueada), e
+    o canary é removido de tudo que é gravado."""
     config = config or load_config(CONFIG_PATH)
     if tools is None:
         tools = [TOOL_SCHEMAS[t] for t in config.tools]
@@ -86,24 +122,33 @@ def run_agent(
         {"role": "system", "content": _system_prompt(config, guardrails)},
         {"role": "user", "content": question},
     ]
+    rec = _Recorder(audit, guardrails.canary if guardrails else None)
+    rec("question", {"text": question})
     with agent_run(config.name, prompt_version=config.prompt_version):
         if guardrails is None:
-            return _loop(messages, tools, k, config, llm, max_iterations, tool_runner)
+            answer = _loop(messages, tools, k, config, llm, max_iterations, tool_runner, rec=rec)
+            rec("answer", {"text": answer, "blocked_by": None})
+            return answer
         if events is None:
             events = []
         verdict = guardrails.screen_input(question)
         if verdict.blocked:
             events.append({"stage": "input", "reasons": list(verdict.reasons)})
+            rec("guardrail", {"stage": "input", "reasons": list(verdict.reasons)})
+            rec("answer", {"text": REFUSAL_MESSAGE, "blocked_by": "input"})
             return REFUSAL_MESSAGE
         answer = _loop(
-            messages, tools, k, config, llm, max_iterations, tool_runner, guardrails, events
+            messages, tools, k, config, llm, max_iterations, tool_runner, guardrails, events, rec
         )
         verdict = guardrails.screen_output(answer)
         if verdict.blocked:
             events.append(
                 {"stage": "output", "reasons": list(verdict.reasons), "raw_answer": answer}
             )
+            rec("guardrail", {"stage": "output", "reasons": list(verdict.reasons)})
+            rec("answer", {"text": REFUSAL_MESSAGE, "blocked_by": "output"})
             return REFUSAL_MESSAGE
+        rec("answer", {"text": answer, "blocked_by": None})
         return answer
 
 
@@ -117,7 +162,9 @@ def _loop(
     tool_runner: ToolRunner = run_tool,
     guardrails: Guardrails | None = None,
     events: list[dict] | None = None,
+    rec: Callable[[str, dict], None] | None = None,
 ) -> str:
+    rec = rec or (lambda event, data: None)
     for _ in range(max_iterations):
         with llm_call(config.model, prompt_version=config.prompt_version) as span:
             resp = llm(config.model, messages, tools)
@@ -157,11 +204,17 @@ def _loop(
                         events.append(
                             {"stage": "tool", "reasons": list(verdict.reasons), "tool": name}
                         )
+                    rec("guardrail", {"stage": "tool", "reasons": list(verdict.reasons)})
+                    rec("tool_call", {"name": name, "arguments": args, "status": "blocked"})
                     messages.append(
                         {"role": "tool", "tool_name": name, "content": TOOL_BLOCKED_MESSAGE}
                     )
                     continue
             result = tool_runner(name, args, k=k)
+            call = {"name": name, "arguments": args, "status": "executed"}
+            if name == "search_docs":
+                call["sources"] = list(dict.fromkeys(_SOURCE_HEADER.findall(result)))
+            rec("tool_call", call)
             if guardrails is not None and name == "search_docs":
                 result = _wrap_search_result(result, guardrails)
             messages.append({"role": "tool", "tool_name": name, "content": result})
