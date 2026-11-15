@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 ALPHA = 0.05
+DEFAULT_EVAL_REPORT = "reports/eval_report.md"
 DEFAULT_REDTEAM_REPORT = "reports/redteam_report.md"
 
 JUDGE_WARNING = (
@@ -118,6 +119,27 @@ def _ops_table(summaries: dict[str, dict], variants: list[str]) -> str:
     for label, fn in rows:
         lines.append(f"| {label} | " + " | ".join(fn(summaries[v]) for v in variants) + " |")
     return "\n".join(lines) + "\n"
+
+
+def _eval_summary(args, ab, n_cases: int, gate: str | None, path: str, defaulted: bool) -> str:
+    """Placar curto do `aok eval --summary`: só números e o caminho do relatório completo."""
+    b, c = args.baseline, args.candidate
+    lines = [
+        (
+            f"Avaliação A/B: {b} (baseline) vs {c} (candidate), {n_cases} casos "
+            f"({ab.n} pareados), semente {args.seed}"
+        ),
+        f"  média {b}: {ab.mean_baseline:.4f}",
+        f"  média {c}: {ab.mean_candidate:.4f}",
+        f"  diferença ({c} - {b}): {ab.mean_diff:+.4f}",
+        f"  IC 95%: [{ab.ci_low:+.4f}; {ab.ci_high:+.4f}]  p-valor: {ab.p_value:.4f} ({ab.p_method})",
+    ]
+    if gate:
+        lines.append(f"  gate (--fail-on-regression): {gate}")
+    lines.append(f"Relatório completo: {path}")
+    if defaulted:
+        lines.append("(--report não informado: relatório gravado no caminho padrão)")
+    return "\n".join(lines)
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
@@ -298,6 +320,15 @@ def _run_eval(args: argparse.Namespace) -> int:
     report = "\n".join(lines)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    if args.summary:
+        out_path = args.report or DEFAULT_EVAL_REPORT
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(out_path).write_text(report, encoding="utf-8")
+        gate = None
+        if args.fail_on_regression:
+            gate = "REGRESSÃO detectada (código 1)" if regression else "sem regressão (código 0)"
+        print(_eval_summary(args, ab, len(cases), gate, out_path, defaulted=not args.report))
+        return 1 if args.fail_on_regression and regression else 0
     print(report)
     if args.report:
         Path(args.report).parent.mkdir(parents=True, exist_ok=True)
@@ -480,6 +511,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--fail-on-regression",
         action="store_true",
         help="código 1 se diferença média < 0 e p-valor < 0.05 (métrica determinística)",
+    )
+    p.add_argument(
+        "--summary",
+        action="store_true",
+        help=f"imprime só um placar curto; o relatório completo vai para --report "
+        f"(padrão: {DEFAULT_EVAL_REPORT})",
     )
     p.set_defaults(func=cmd_eval)
 

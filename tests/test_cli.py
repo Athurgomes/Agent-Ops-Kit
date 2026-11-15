@@ -262,3 +262,35 @@ def test_erro_prices_inexistente_ou_invalido(tmp_path, capsys):
     broken.write_text("a: [unclosed\n", encoding="utf-8")
     assert cli.main(_args(tmp_path, "--prices", str(broken))) == 2
     assert "tabela de preços inválida" in capsys.readouterr().err
+
+
+def test_summary_curto_e_relatorio_completo_no_arquivo(tmp_path, no_model, capsys):
+    _write(tmp_path / "answers" / "v1.jsonl", _good, "v1")
+    _write(tmp_path / "answers" / "v2.jsonl", _bad, "v2")
+    report = tmp_path / "out" / "r.md"
+    code = cli.main(
+        _args(tmp_path, "--summary", "--report", str(report), "--fail-on-regression")
+    )
+    out = capsys.readouterr().out
+    assert code == 1  # v2 regride
+    assert len(out.strip().splitlines()) <= 9
+    for piece in ("v1 (baseline)", "v2 (candidate)", "8 casos", "média v1", "média v2",
+                  "diferença", "IC 95%", "p-valor", "REGRESSÃO", str(report)):
+        assert piece in out
+    full = report.read_text(encoding="utf-8")
+    assert "Relatório de avaliação A/B" in full and "## Gate de regressão" in full
+    # nada de conteúdo de prompt, pergunta ou rubrica no resumo
+    assert CASES[0].question not in out and "Rubrica" not in out and "Fonte:" not in out
+
+
+def test_summary_sem_report_grava_no_caminho_padrao(tmp_path, no_model, capsys, monkeypatch):
+    _write(tmp_path / "answers" / "v1.jsonl", _good, "v1")
+    _write(tmp_path / "answers" / "v2.jsonl", _good, "v2")
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(_args(tmp_path, "--summary")) == 0
+    out = capsys.readouterr().out
+    assert "reports/eval_report.md" in out and "--report não informado" in out
+    assert "gate" not in out
+    assert "Relatório de avaliação A/B" in (tmp_path / "reports" / "eval_report.md").read_text(
+        encoding="utf-8"
+    )
