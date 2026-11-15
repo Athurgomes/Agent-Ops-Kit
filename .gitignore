@@ -9,3 +9,4 @@ __pycache__/
 chroma/
 .claude/settings.local.json
 *.egg-info/
+reports/
