@@ -60,3 +60,15 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O log reflete o que a aplicação registrou; o que não foi registrado não aparece, e dados sensíveis registrados ficam no arquivo em texto claro.
 - Escrita thread-safe dentro de um processo; sem coordenação entre processos no mesmo arquivo.
 - Alternativa descartada por ora: assinatura (HMAC/chave) ou carimbo de tempo externo, que fecham a reescrita completa mas exigem gestão de chave.
+
+## ADR-005: template do `aok new` dentro do pacote, com cópia do núcleo do agente
+
+**Contexto.** `aok new` precisa funcionar numa instalação normal, e `examples/` não faz parte do pacote. O plano sugere `templates/agent/` na raiz do repositório, que também ficaria de fora do pacote instalado.
+
+**Decisão.** O template fica em `src/agent_ops_kit/templates/agent/`, incluído via `package-data` no `pyproject.toml` (desvio em relação ao plano). O núcleo do agente gerado (`app/agent.py`, `tools.py`, `indexer.py`) é uma cópia do agente de referência, e não uma promoção do código para o pacote: o núcleo tem padrões ligados ao exemplo (caminhos do config, do corpus e do Chroma) e os testes, o eval e o red team dependem de atributos desses módulos (monkeypatch em `tools.query_index`, `CONFIG_PATH`, `CORPUS_DIR`). Mover o código mudaria superfícies que as respostas gravadas e os resultados de red team tomam como dadas. Só mudam as 3 linhas de caminho, e `tests/test_new.py` compara o template com o original aplicando exatamente essas edições, então falha se os dois derivarem.
+
+**Consequências.**
+- O comportamento do agente de referência e os artefatos em `evals/` e `redteam/results/` ficam intactos.
+- Correções no núcleo precisam ser repetidas no template; o teste de deriva avisa se esquecerem.
+- O agente gerado depende de `agent-ops-kit[rag]` (Chroma e Ollama) e de `docker compose up` do kit para ver o trace; o tracing se desliga com `AOK_TRACING=off`.
+- Os arquivos do template são excluídos do ruff, por serem código de um projeto à parte (`app` não é pacote do kit).
