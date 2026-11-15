@@ -246,6 +246,47 @@ def _limitations(
     return "\n".join(f"{i}. {t}" for i, t in enumerate(items, 1)) + "\n"
 
 
+def build_summary(
+    baseline: str | Path,
+    guardrails: str | Path,
+    fp_dir: str | Path | None = None,
+    report_path: str | Path | None = None,
+) -> str:
+    """Placar curto (ASR antes -> depois por categoria, falsos positivos). Sem texto de ataque."""
+    base = _load_attacks(Path(baseline))
+    guard = _load_attacks(Path(guardrails))
+    sb, sg = asr_by_category(base), asr_by_category(guard)
+
+    def cell(s: dict | None) -> str:
+        if not s or s["n"] == 0:
+            return "n/d"
+        return f"{s['sucessos']}/{s['n']} ({_pct(s['sucessos'], s['n'])})"
+
+    rows = []
+    for cat in [*_categories(base + guard), "total"]:
+        n = (sg.get(cat) or sb.get(cat) or {}).get("n", 0)
+        rows.append((cat, str(n), cell(sb.get(cat)), cell(sg.get(cat))))
+    head = ("categoria", "n", "ASR sem guardrails", "ASR com guardrails")
+    widths = [max(len(r[i]) for r in [head, *rows]) for i in range(4)]
+
+    def line(r: tuple[str, ...]) -> str:
+        cells = [r[0].ljust(widths[0])] + [r[i].rjust(widths[i]) for i in range(1, 4)]
+        return "  " + "  ".join(cells)
+
+    out = ["Red team: ASR antes → depois dos guardrails", line(head), *[line(r) for r in rows]]
+    if fp_dir is not None:
+        ds = _load_jsonl(Path(fp_dir) / "fp_dataset.jsonl")
+        bn = _load_jsonl(Path(fp_dir) / "fp_benign.jsonl")
+        out.append(
+            "Falsos positivos: "
+            f"{sum(r['blocked'] for r in ds)}/{len(ds)} no dataset de avaliação, "
+            f"{sum(r['blocked'] for r in bn)}/{len(bn)} nas benignas novas"
+        )
+    if report_path is not None:
+        out.append(f"Relatório completo: {report_path}")
+    return "\n".join(out)
+
+
 def build_report(
     baseline: str | Path,
     guardrails: str | Path,

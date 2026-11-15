@@ -95,3 +95,34 @@ def test_run_guardrails_requires_out():
     with pytest.raises(SystemExit):
         cli.main(["redteam", "run", "--guardrails", "all", "--limit", "0"])
 
+
+
+def test_summary_compacto_e_arquivo_completo(files, tmp_path, capsys):
+    fp = tmp_path / "fp"
+    fp.mkdir()
+    ok = {"blocked": False, "blocked_by": [], "reasons": [], "score": 1.0, "error": None}
+    bad = {**ok, "blocked": True, "blocked_by": ["output"], "reasons": ["canary_leak"]}
+    _write(fp / "fp_dataset.jsonl", [{"case_id": "q1", **ok}])
+    _write(fp / "fp_benign.jsonl", [{"case_id": "b1", **ok}, {"case_id": "b2", **bad}])
+    out_md = tmp_path / "r" / "full.md"
+    rc = cli.main(["redteam", "report", "--baseline", str(files[0]), "--guardrails",
+                   str(files[1]), "--fp-dir", str(fp), "--dataset", str(tmp_path / "x"),
+                   "--v1-answers", str(tmp_path / "y"), "--summary", "--output", str(out_md)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert len(out.strip().splitlines()) <= 12
+    assert "injecao_direta" in out and "1/2 (50,0%)" in out and "0/2 (0,0%)" in out
+    assert "total" in out and "4/5 (80,0%)" in out
+    assert "Falsos positivos: 0/1 no dataset de avaliação, 1/2 nas benignas novas" in out
+    assert str(out_md) in out
+    assert "Limitações e leitura honesta" not in out and "canary_leak" not in out
+    assert "Limitações e leitura honesta" in out_md.read_text(encoding="utf-8")
+
+
+def test_summary_sem_output_usa_caminho_padrao(files, tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(["redteam", "report", "--baseline", str(files[0]),
+                     "--guardrails", str(files[1]), "--summary"]) == 0
+    out = capsys.readouterr().out
+    assert "reports/redteam_report.md" in out and "Falsos positivos" not in out
+    assert (tmp_path / "reports" / "redteam_report.md").is_file()

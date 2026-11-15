@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 ALPHA = 0.05
+DEFAULT_REDTEAM_REPORT = "reports/redteam_report.md"
 
 JUDGE_WARNING = (
     "Aviso sobre o juiz: o juiz é o mesmo modelo de 8B que gera as respostas (viés de "
@@ -324,15 +325,25 @@ def cmd_redteam(args: argparse.Namespace) -> int:
             argv += ["--attacks-dir", args.attacks_dir]
         return harness.main(argv)
 
-    from agent_ops_kit.redteam.report import ReportError, build_report
+    from agent_ops_kit.redteam.report import ReportError, build_report, build_summary
 
     try:
         text = build_report(args.baseline, args.guardrails, args.fp_dir, args.dataset, args.v1_answers)
+        if args.summary:
+            out_path = args.output or DEFAULT_REDTEAM_REPORT
+            summary = build_summary(args.baseline, args.guardrails, args.fp_dir, out_path)
     except ReportError as exc:
         print(f"erro: {exc}", file=sys.stderr)
         return 2
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    if args.summary:
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(out_path).write_text(text, encoding="utf-8")
+        print(summary)
+        if not args.output:
+            print("(--output não informado: relatório gravado no caminho padrão)")
+        return 0
     print(text)
     if args.output:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
@@ -487,6 +498,12 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--dataset", default="evals/dataset.jsonl")
     r.add_argument("--v1-answers", default="evals/answers/v1.jsonl")
     r.add_argument("--output", default=None, help="grava o markdown neste caminho")
+    r.add_argument(
+        "--summary",
+        action="store_true",
+        help=f"imprime só a tabela compacta; o relatório completo vai para --output "
+        f"(padrão: {DEFAULT_REDTEAM_REPORT})",
+    )
     p.set_defaults(func=cmd_redteam)
 
     p = sub.add_parser("audit", help="log de auditoria: verifica a cadeia, gera relatório, âncora")
