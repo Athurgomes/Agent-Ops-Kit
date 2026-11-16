@@ -72,3 +72,14 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Correções no núcleo precisam ser repetidas no template; o teste de deriva avisa se esquecerem.
 - O agente gerado depende do extra `rag` do kit (Chroma e Ollama), instalado com `pip install -e ".[rag]"` a partir do repositório do kit e de `docker compose up` do kit para ver o trace; o tracing se desliga com `AOK_TRACING=off`.
 - Os arquivos do template são excluídos do ruff, por serem código de um projeto à parte (`app` não é pacote do kit).
+
+## ADR-006: relatório publicado em pasta local versionada
+
+**Contexto.** O relatório precisa chegar a quem não é técnico sem expor o que o agente processou.
+
+**Decisão.** `aok check --publish` grava cada publicação em uma pasta nova (`<pasta>/<agent-id>/<timestamp UTC>/`) e atualiza `index.json`, mais recente primeiro; nunca sobrescreve versões. Entram só agregados e hashes (inclusive o resultado da verificação da cadeia de auditoria e a âncora); o log de auditoria nunca entra, por privacidade. O semáforo usa regras provisórias.
+
+**Consequências e limitações.**
+- A imutabilidade é por convenção, não técnica: quem tem acesso ao disco pode alterar ou apagar versões.
+- Verde não significa seguro: o semáforo herda as limitações das medições (modelo pequeno, dataset pequeno, heurísticas contornáveis).
+- Alternativas descartadas: enviar o log completo (expõe dados e conteúdo das interações); banco ou serviço próprio nesta fase (custo e manutenção sem necessidade para o escopo atual).

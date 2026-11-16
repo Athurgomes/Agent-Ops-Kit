@@ -39,6 +39,7 @@ Os guardrails também atuam na allowlist de tools (antes de cada chamada) e marc
 - **Guardrails**: filtro de entrada (heurísticas PT/EN, mais classificador opcional fail-open), allowlist de tools, marcação de conteúdo não confiável, canary no prompt do sistema e filtro de saída. São heurísticas, contornáveis.
 - **Avaliação**: dataset de 50 casos, checagens determinísticas, juiz opcional (mesmo modelo de 8B), A/B pareado (permutação e bootstrap, semente fixa) e gate de CI que reavalia respostas gravadas conferindo um manifesto.
 - **Red team**: ataques em arquivos do repositório (`redteam/`), critérios de sucesso por categoria, ASR com intervalo de Wilson e medição de falsos positivos em perguntas legítimas.
+- **Relatório** (`aok report build`, `aok check --publish`): resultados gravados (eval e red team, mais o resultado da verificação da auditoria, se houver) viram um pacote (`relatorio.md/html/json`, `pacote.json`) que `--publish` copia para uma pasta local versionada, `<pasta>/<agent-id>/<timestamp UTC>/`, com `index.json` listando as versões. Não roda modelo e o log de auditoria não entra no pacote (ADR-006).
 - **Template** (`aok new`): gera um agente já instrumentado a partir de `src/agent_ops_kit/templates/agent/`.
 
 ## Módulos
@@ -63,6 +64,7 @@ Os guardrails também atuam na allowlist de tools (antes de cada chamada) e marc
 | `src/agent_ops_kit/redteam/testbed.py` | constantes do testbed (tools proibidas falsas, dados fictícios) |
 | `src/agent_ops_kit/redteam/false_positives.py` | taxa de falsos positivos |
 | `src/agent_ops_kit/redteam/report.py` | relatório (ASR, Wilson, atribuição por estágio) |
+| `src/agent_ops_kit/report/` | pacote de relatório: `build` (agrega resultados gravados), `render` (md/html/json), `publish` (pasta local versionada) |
 | `src/agent_ops_kit/templates/agent/` | template do `aok new` |
 | `examples/rag_agent/` | agente de referência (agent, tools, indexer, corpus fictício) |
 | `.github/workflows/` | `ci.yml` (ruff e pytest) e `eval.yml` (gate com respostas gravadas) |
@@ -77,6 +79,7 @@ As decisões e suas limitações estão em [decisoes.md](decisoes.md):
 - ADR-003: o juiz é o mesmo modelo de 8B.
 - ADR-004: auditoria com hash encadeado (sem assinatura).
 - ADR-005: template do `aok new` dentro do pacote, com cópia do núcleo do agente.
+- ADR-006: relatório publicado em pasta local versionada, só agregados e hashes.
 
 Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 
