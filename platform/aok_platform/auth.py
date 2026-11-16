@@ -81,6 +81,14 @@ def burn_password_check(password: str) -> None:
     verify_password(password, _DUMMY_HASH)
 
 
+_PW_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"  # sem caracteres ambíguos
+
+
+def generate_password(length: int = 20) -> str:
+    """Senha aleatória do servidor (secrets). Quem a gera mostra UMA vez e nunca a guarda em claro."""
+    return "".join(secrets.choice(_PW_ALPHABET) for _ in range(max(length, 16)))
+
+
 # ---- sessão e perfis --------------------------------------------------------------------------
 
 

@@ -162,6 +162,40 @@ class AdminEvent(Base):
     target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class PlatformOperator(Base):
+    """Operador da plataforma: tabela separada de `user`, não pertence a nenhuma organização."""
+
+    __tablename__ = "platform_operator"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True)  # sempre em minúsculas
+    password_hash: Mapped[str] = mapped_column(String(300))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class OperatorSession(Base):
+    __tablename__ = "operator_session"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operator_id: Mapped[int] = mapped_column(ForeignKey("platform_operator.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # SHA-256 hex
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
+
+class OperatorEvent(Base):
+    """Trilha das ações do operador. Imutável pelo ORM; nunca guarda segredo."""
+
+    __tablename__ = "operator_event"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    operator_id: Mapped[int] = mapped_column(ForeignKey("platform_operator.id"), index=True)
+    action: Mapped[str] = mapped_column(String(40))
+    target_org_id: Mapped[int | None] = mapped_column(ForeignKey("organization.id"), nullable=True)
+    target_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 def _immutable(*_args) -> None:
     raise RuntimeError("registro imutável (report_version, admin_event): sem update nem delete")
 
@@ -170,3 +204,5 @@ event.listen(ReportVersion, "before_update", _immutable)
 event.listen(ReportVersion, "before_delete", _immutable)
 event.listen(AdminEvent, "before_update", _immutable)
 event.listen(AdminEvent, "before_delete", _immutable)
+event.listen(OperatorEvent, "before_update", _immutable)
+event.listen(OperatorEvent, "before_delete", _immutable)
