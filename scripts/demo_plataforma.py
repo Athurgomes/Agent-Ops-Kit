@@ -16,6 +16,7 @@ import os
 import secrets
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -53,19 +54,31 @@ def base_env() -> dict[str, str]:
     return env
 
 
-def run_step(titulo: str, cmd: list[str], env: dict[str, str], *, duplicado_ok: bool = False) -> None:
+def run_step(titulo: str, cmd: list[str], env: dict[str, str]) -> None:
     """Roda um passo herdando o stdout (as senhas saem direto no terminal e não são capturadas)."""
     log(f"\n== {titulo}")
-    res = subprocess.run(cmd, cwd=ROOT, env=env, stderr=subprocess.PIPE, text=True, errors="replace", check=False)
-    err = (res.stderr or "").strip()
+    res = subprocess.run(cmd, cwd=ROOT, env=env, stderr=subprocess.PIPE, check=False)
+    err = (res.stderr or b"").decode("utf-8", errors="replace").strip()
     if res.returncode == 0:
         if err:
             print(err, file=sys.stderr, flush=True)
         return
-    if duplicado_ok and "já existe" in err:
-        log(f"aviso: {err} (seguindo)")
-        return
     die(f"{titulo} falhou (código {res.returncode}). {err[-600:]}", 1)
+
+
+def ja_existe(tabela: str, coluna: str, valor: str) -> bool:
+    """Consulta direta ao SQLite de .demo/ (independe do texto de saída dos comandos)."""
+    db = DEMO / "demo.db"
+    if not db.is_file():
+        return False
+    con = sqlite3.connect(db)
+    try:
+        # tabela/coluna são constantes deste script; só o valor vem como parâmetro
+        return con.execute(f"SELECT 1 FROM {tabela} WHERE {coluna} = ? LIMIT 1", (valor,)).fetchone() is not None
+    except sqlite3.Error:
+        return False
+    finally:
+        con.close()
 
 
 def porta_ocupada(porta: int) -> bool:
@@ -131,14 +144,16 @@ def publicar(base: str, chave: str, env: dict[str, str]) -> None:
         sys.executable, "-m", "agent_ops_kit.cli", "check",
         "--config", "examples/rag_agent/agent.yaml",
         "--publish", base, "--agent-id", AGENT_SLUG,
+        "--out", str(DEMO / "pacote"),
     ]
     res = subprocess.run(
         cmd, cwd=ROOT, env={**env, "AOK_PLATFORM_TOKEN": token},
-        capture_output=True, text=True, errors="replace", check=False,
+        capture_output=True, check=False,
     )
-    saida = [ln for ln in (res.stdout or "").splitlines() if ln.startswith(("Publicado", "Semáforo"))]
+    out = (res.stdout or b"").decode("utf-8", errors="replace")
+    saida = [ln for ln in out.splitlines() if ln.startswith(("Publicado", "Semáforo"))]
     if res.returncode != 0:
-        die(f"a publicação falhou: {(res.stderr or '').strip()[-400:]}", 1)
+        die(f"a publicação falhou: {(res.stderr or b'').decode('utf-8', errors='replace').strip()[-400:]}", 1)
     log("\n".join(saida) or "publicado")
 
 
@@ -167,10 +182,14 @@ def main(argv: list[str] | None = None) -> int:
     env = base_env()
     py = sys.executable
     run_step("Dados de demonstração", [py, "-m", "aok_platform.seed_demo"], env)
-    run_step("Operador da plataforma", [py, "-m", "aok_platform.create_operator", "--email", OPS_EMAIL],
-             env, duplicado_ok=True)
-    run_step("Organização beta", [py, "-m", "aok_platform.create_org", "--slug", "beta", "--name", "Beta"],
-             env, duplicado_ok=True)
+    if ja_existe("platform_operator", "email", OPS_EMAIL):
+        log(f"\n== Operador da plataforma: {OPS_EMAIL} já existe (mantido)")
+    else:
+        run_step("Operador da plataforma", [py, "-m", "aok_platform.create_operator", "--email", OPS_EMAIL], env)
+    if ja_existe("organization", "slug", "beta"):
+        log("\n== Organização beta: já existe (mantida)")
+    else:
+        run_step("Organização beta", [py, "-m", "aok_platform.create_org", "--slug", "beta", "--name", "Beta"], env)
 
     chave = secrets.token_urlsafe(32)  # só em memória, nunca impressa
     base = f"http://{HOST}:{args.porta}"
