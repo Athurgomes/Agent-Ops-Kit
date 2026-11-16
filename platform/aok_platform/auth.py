@@ -93,7 +93,14 @@ def session_user(request: Request, s: Session) -> User | None:
     if row is None or row.revoked_at is not None or row.expires_at <= utcnow():
         return None
     user = s.get(User, row.user_id)
-    return user if user is not None and user.active else None
+    if user is None or not user.active or not org_is_active(s, user.org_id):
+        return None  # usuário ou organização inativos: a sessão para de valer, nada é apagado
+    return user
+
+
+def org_is_active(s: Session, org_id: int | None) -> bool:
+    org = s.get(Organization, org_id) if org_id is not None else None
+    return org is not None and bool(org.active)
 
 
 def is_org_admin(s: Session, user: User) -> bool:
@@ -129,6 +136,20 @@ class Actor:
     org_id: int
 
 
+def _bootstrap_org(s: Session, slug: str | None) -> int:
+    if slug is not None and slug.strip():
+        org = s.scalar(select(Organization).where(Organization.slug == slug.strip().lower()))
+        if org is None or not org.active:
+            raise HTTPException(404, "organização não encontrada")
+        return org.id
+    ids = list(s.scalars(select(Organization.id).order_by(Organization.id).limit(2)))
+    if len(ids) == 1:
+        return ids[0]
+    if not ids:
+        raise HTTPException(404, "organização não encontrada")
+    raise HTTPException(400, "há mais de uma organização: envie o cabeçalho X-Org-Slug")
+
+
 def make_dependencies(get_session):
     """Dependências que precisam da sessão de banco (mesma instância por requisição)."""
 
@@ -148,9 +169,14 @@ def make_dependencies(get_session):
     def require_admin(
         request: Request,
         authorization: str | None = Header(default=None),
+        x_org_slug: str | None = Header(default=None),
         s: Session = Depends(get_session),
     ) -> Actor:
-        """Chave de bootstrap (Bearer) OU sessão de org_admin. Devolve quem agiu e a organização."""
+        """Chave de bootstrap (Bearer) OU sessão de org_admin. Devolve quem agiu e a organização.
+
+        Sessão: a organização é a do usuário (X-Org-Slug é ignorado). Bootstrap: com exatamente uma
+        organização ela é usada; com duas ou mais o cabeçalho X-Org-Slug é obrigatório. Nunca "a primeira".
+        """
         key = os.environ.get(BOOTSTRAP_ENV)
         scheme, _, given = (authorization or "").partition(" ")
         if (
@@ -158,8 +184,7 @@ def make_dependencies(get_session):
             and scheme.lower() == "bearer"
             and hmac.compare_digest(given.strip().encode("utf-8"), key.encode("utf-8"))
         ):
-            org_id = s.scalar(select(Organization.id).order_by(Organization.id).limit(1))
-            return Actor(None, org_id)  # uma organização só por enquanto: a primeira
+            return Actor(None, _bootstrap_org(s, x_org_slug))
         user = session_user(request, s)
         if user is not None:
             if not is_org_admin(s, user):

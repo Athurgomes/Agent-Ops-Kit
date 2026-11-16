@@ -19,6 +19,7 @@ from .auth import (
     hash_token,
     is_org_admin,
     new_token,
+    org_is_active,
     verify_password,
 )
 from .models import Membership, User, UserSession, utcnow
@@ -95,7 +96,7 @@ def build_auth_router(get_session, current_user, throttle: LoginThrottle) -> API
                 429, "muitas tentativas; tente novamente mais tarde", {"Retry-After": str(wait)}
             )
         user = s.scalar(select(User).where(User.email == email))
-        if user is None or not user.active:
+        if user is None or not user.active or not org_is_active(s, user.org_id):
             burn_password_check(body.password)
             good = False
         else:

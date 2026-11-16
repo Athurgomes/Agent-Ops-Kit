@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .auth import hash_token
+from .auth import hash_token, org_is_active
 from .models import Agent, AgentCredential, ReportVersion, utcnow
 
 MAX_BODY = 1024 * 1024  # 1 MiB no total
@@ -69,6 +69,8 @@ def _agent_from_token(authorization: str | None, s: Session) -> Agent:
     if cred is None or cred.revoked_at is not None:
         raise HTTPException(401, "token ausente ou inválido", {"WWW-Authenticate": "Bearer"})
     agent = s.get(Agent, cred.agent_id)
+    if agent is not None and not org_is_active(s, agent.org_id):
+        raise HTTPException(401, "token ausente ou inválido", {"WWW-Authenticate": "Bearer"})
     if agent is None or not agent.active:
         raise HTTPException(403, "agente inativo")
     cred.last_used_at = utcnow()
@@ -160,7 +162,7 @@ def _store(pkg: PackageIn, agent: Agent, s: Session, data_dir: Path) -> ReportVe
     if s.scalar(exists) is not None:
         raise duplicate()
 
-    rel = Path(agent.slug) / digest
+    rel = Path(str(agent.org_id)) / agent.slug / digest  # <org_id>/<slug>/<sha256>: sem colisão entre orgs
     folder = data_dir / rel
     folder.mkdir(parents=True, exist_ok=True)
     try:
