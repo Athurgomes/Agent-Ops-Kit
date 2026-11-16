@@ -117,3 +117,33 @@ Telas de administração do portal (só `org_admin`, menu "Administration"): ár
 tokens, ativar/desativar), usuários (criar, redefinir senha, acessos) e atividade. Tokens e senhas
 geradas aparecem uma única vez, só em estado da tela (nunca em storage, URL ou console).
 
+## Multiempresa (isolamento por organização)
+
+- `organization` tem `slug` único (`[a-z0-9-]{1,64}`), `active` e `created_at`. Organização inativa:
+  seus usuários não logam (erro genérico), as sessões existentes dão 401, os tokens de agente dão 401
+  e nada é apagado. Reativar devolve tudo.
+- O slug de agente é único **por organização** (`UNIQUE(org_id, slug)`); o 409 só vale dentro da
+  própria organização e não revela outras. O e-mail de usuário continua único **globalmente**: o
+  login é só por e-mail, então o mesmo e-mail em duas organizações seria ambíguo.
+- Relatórios novos ficam em `AOK_DATA_DIR/<org_id>/<slug>/<sha256>`. Os já gravados continuam
+  resolvidos pelos caminhos guardados no banco (download com checagem contra path traversal).
+  O mesmo `sha256` pode existir em duas organizações sem colisão.
+- Chave de bootstrap: com exatamente 1 organização funciona como antes; com 2 ou mais as rotas admin
+  exigem o cabeçalho `X-Org-Slug` (400 se faltar; 404 se a organização não existir ou estiver
+  inativa). `/v1/admin/events` e `/v1/admin/downloads` seguem só por sessão. Sessão de `org_admin`
+  sempre usa a organização do próprio usuário (o cabeçalho é ignorado).
+- Criar a 2ª organização por enquanto (a tela/rota do operador vem depois):
+
+```bash
+python -m aok_platform.create_org --slug acme --name "Acme"
+# primeiro admin da nova organização, com a chave de bootstrap:
+curl -X POST http://127.0.0.1:8000/v1/admin/users -H "Authorization: Bearer $AOK_ADMIN_BOOTSTRAP_KEY"   -H "X-Org-Slug: acme" -H "Content-Type: application/json" -d '{"email":"admin@acme.example","password":"<12+ caracteres>"}'
+# depois POST /v1/admin/memberships com {"user_id": <id>, "role": "org_admin"} (mesmos cabeçalhos)
+```
+
+- Colunas novas em bancos existentes: `ensure_schema` (em `db.py`, roda no startup) adiciona o que falta
+  e preenche (slug da organização, `active`, `created_at`, `agent.org_id`). **Migração formal
+  (Alembic) continua dívida.** Limite conhecido: em bancos antigos a restrição `UNIQUE(slug)` de
+  `agent` permanece no SQLite (o Postgres a remove); lá o slug segue global até recriar a tabela.
+- `seed_demo` continua usando a única organização (a primeira).
+
