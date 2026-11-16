@@ -112,3 +112,7 @@ senha; ativar/desativar) grava um `admin_event` (quando, quem, ação, alvo; sem
 `GET /v1/admin/events` (só sessão de `org_admin`; a chave de bootstrap não lê) devolve os mais
 recentes primeiro, com `limit` (1 a 500) e `offset`.
 
+Telas de administração do portal (só `org_admin`, menu "Administration"): áreas, agentes (cadastro,
+tokens, ativar/desativar), usuários (criar, redefinir senha, acessos) e atividade. Tokens e senhas
+geradas aparecem uma única vez, só em estado da tela (nunca em storage, URL ou console).
+
