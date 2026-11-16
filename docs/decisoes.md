@@ -99,7 +99,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O relatório é autodeclarado: a plataforma confere o esquema, o tamanho e o sha256 dos arquivos, mas não reexecuta eval nem red team. Quem publica pode enviar números que não vieram de uma execução real.
 - A imutabilidade das versões vale só pela API: quem opera o banco ou o disco pode alterar ou apagar.
 - A chave de bootstrap é única e compartilhada entre admins; não há login, papéis nem SSO na fase 2; login e papéis chegam na ADR-008.
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit 3f16e1e (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado; os testes automatizados usam SQLite.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit c3ca947 (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado; os testes automatizados usam SQLite.
 - Alternativa descartada: enviar o log de auditoria (expõe conteúdo das interações).
 
 ## ADR-008: portal e login de usuários (fase 3)
@@ -122,7 +122,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Dívida: sem Alembic, mudança de coluna não é aplicada em banco existente; adotar migração antes disso.
 - A trilha cobre só o download (as escritas administrativas passaram a ter trilha no ADR-009); não há registro de login nem de leitura.
 - Não há SSO, multiempresa, dark mode nem PDF (superado em parte pelos ADR-010 e ADR-011).
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit 3f16e1e (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit c3ca947 (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado.
 
 ## ADR-009: administração do portal e trilha de eventos
 
@@ -146,7 +146,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Visão multiempresa e de operador: ver ADR-010 e ADR-011.
 - Verificado no navegador, com banco temporário: criar área e sub-área, registrar agente, emitir token (aparece uma vez), publicar um relatório real com `aok check --publish`, ver o relatório no portal, revogar o token e a publicação seguinte falhar com 401, criar usuário viewer com acesso só à área, desativar o usuário e o login falhar, ver os eventos.
 - Não exercitados na interface: redefinir senha, editar ou reativar agente, conceder ou revogar acesso depois da criação.
-- Postgres real não verificado. `docker build` foi verificado antes do redesenho do portal e não foi reverificado após as telas de administração. O run de CI do commit 3f16e1e (push no main) terminou com sucesso nos jobs test e portal; os commits posteriores não foram verificados no CI.
+- Postgres real não verificado. `docker build` foi verificado antes do redesenho do portal e não foi reverificado após as telas de administração. O run de CI do commit c3ca947 (push no main) terminou com sucesso nos jobs test e portal; os commits posteriores não foram verificados no CI.
 
 ## ADR-010: operador da plataforma (visão multiempresa, só metadados)
 

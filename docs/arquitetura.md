@@ -118,7 +118,7 @@ flowchart LR
 | `platform/aok_platform/db.py` (`ensure_schema`) | no startup, adiciona colunas e tabelas novas e preenche valores, de forma idempotente (não é Alembic) |
 | `platform/portal/src/pages/ops/` | console do operador em `/ops/*` (sem link no site; 404 comum com `AOK_OPS_ENABLED` desligado) |
 | `platform/portal/` | front-end React, Vite, TypeScript e Tailwind, servido pela API |
-| `platform/docker-compose.yml` | API e Postgres (`docker build` verificado localmente, antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit 3f16e1e (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado) |
+| `platform/docker-compose.yml` | API e Postgres (`docker build` verificado localmente, antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit c3ca947 (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado) |
 
 ## Decisões
 
