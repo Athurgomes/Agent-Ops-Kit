@@ -80,10 +80,12 @@ python -m aok_platform.seed_demo        # imprime as senhas uma única vez
 uvicorn aok_platform.app:create_app --factory   # http://127.0.0.1:8000
 ```
 
-- Telas: landing pública, login, áreas > agentes > relatórios > detalhe (baixar MD, HTML e JSON), "Meus downloads" e, para `org_admin`, "Todos os downloads".
+- Telas: landing pública, login (`/login`), áreas > agentes > relatórios > detalhe (`/app/...`; baixar MD, HTML e JSON), "My downloads" e, para `org_admin`, "All downloads". Visual minimalista em azul.
+- A interface é toda em inglês; o conteúdo dos relatórios vindo do backend e os nomes do seed seguem em português (limitação conhecida).
+- Na landing, a nota do fundador é rascunho e a fala de usuário é placeholder, não depoimento real. Sign Up, Pricing, redes sociais e links de rodapé são placeholders "Soon", não clicáveis.
 - Cada pessoa vê só as áreas do seu perfil (com sub-áreas); área fora do alcance responde 404. O download grava em `download_log`.
 - O seed cria dados de demonstração com agentes fictícios; o conteúdo dos relatórios vem do exemplo do repositório.
-- Verificado localmente com navegador: login de admin, áreas, relatório, logout; telas em 1440 e 390 px.
+- Verificado com o design atual: capturas de tela (Edge headless) a 1440 e 390 px de todas as telas (landing, login, áreas, agente, detalhe do relatório, downloads, admin), inspecionadas. O fluxo funcional (login de admin, áreas, logout) foi exercitado no navegador na versão anterior da interface e não foi reexecutado após o redesenho (a lógica de autenticação não mudou; só a rota de login passou a `/login`).
 - `docker build` verificado localmente (a imagem sobe e serve o portal e a API); Postgres real e o job de CI do portal no GitHub não verificados.
 - Limitações: throttle de login em memória (reinicia no deploy, não vale com vários workers e permite travar a conta de outra pessoa por 5 min); CSRF só por SameSite; tabelas sem migração.
 - Não existe: SSO, trilha além do download, multiempresa, dark mode e PDF.

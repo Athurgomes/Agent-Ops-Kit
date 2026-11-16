@@ -61,6 +61,7 @@ Fase 3 (ADR-008), fluxos:
 
 - **Login**: `POST /v1/auth/login` (e-mail e senha, scrypt) cria uma sessão e devolve o cookie `aok_session` (HttpOnly, SameSite=Strict). O throttle por e-mail é em memória.
 - **Leitura**: o portal chama `/v1/areas`, `/v1/areas/{id}/agents`, `/v1/agents/{id}/reports` e `/v1/reports/{id}`. O alcance vem da `membership`: `area_viewer` vê a área e as sub-áreas (CTE recursiva), `org_admin` vê tudo, o resto responde 404. O token de agente não lê.
+- **Telas do portal** (interface em inglês; conteúdo dos relatórios vindo do backend em português): `/` (landing), `/login`, `/app` e `/app/areas/:areaId` (áreas), `/app/areas/:areaId/agents/:agentId` (relatórios do agente), `/app/reports/:reportId` (detalhe e download), `/app/downloads` e, só `org_admin`, `/app/admin/downloads`. Sign Up, Pricing, redes sociais e links de rodapé são placeholders "Soon", não clicáveis.
 - **Download com log**: `GET /v1/reports/{id}/download?format=md|html|json` confere o alcance, grava uma linha em `download_log` (baixado em, relatório gerado em) e devolve o arquivo. `/v1/me/downloads` mostra os do próprio usuário; `/v1/admin/downloads` (`org_admin` por sessão) mostra todos.
 
 ## Módulos
