@@ -88,8 +88,8 @@ uvicorn aok_platform.app:create_app --factory   # http://127.0.0.1:8000
 - Verificado com o design atual: capturas de tela (Edge headless) a 1440 e 390 px de todas as telas (landing, login, áreas, agente, detalhe do relatório, downloads, admin), inspecionadas. O fluxo funcional (login de admin, áreas, logout) foi exercitado no navegador na versão anterior da interface e não foi reexecutado após o redesenho (a lógica de autenticação não mudou; só a rota de login passou a `/login`).
 - `docker compose` (API e postgres:16) verificado localmente com o código até o commit 937a286 (build, subida, healthcheck, portal em `/`, login por curl, `aok check --publish`, relatório no portal, download, reinício da API com persistência em volume nomeado, `down -v`); o run de CI do commit 4f3e5a7 terminou com sucesso nos três jobs (test, portal e postgres, este com service container postgres:16 rodando a suíte de plataforma); Postgres real verificado localmente (postgres:16 efêmero em Docker: 235 testes de plataforma passaram, incluindo a migração de um banco legado pelo `ensure_schema`) e no CI. Não verificados: carga e desempenho em Postgres, `seed_demo` dentro do container do compose (a imagem não leva os resultados gravados do repositório); dívidas: em bancos SQLite antigos a restrição UNIQUE(slug) global continua e o Alembic não existe.
 - Limitações: throttle de login em memória (reinicia no deploy, não vale com vários workers e permite travar a conta de outra pessoa por 5 min); CSRF só por SameSite; tabelas sem migração.
-- Não existe: SSO, dark mode, PDF, Sign Up e recuperação de senha (multiempresa e operador: ver a seção seguinte).
-- `python -m pytest -q` (árvore atual): 577 passed, 1 skipped (o skip é o teste de banco legado, que só roda com `AOK_TEST_DATABASE_URL`; a suíte de plataforma em Postgres tem 235 testes).
+- Não existe: SSO, dark mode, PDF e Sign Up (multiempresa e operador: ver a seção seguinte; recuperação de senha: ver "Plataforma: recuperação de senha").
+- `python -m pytest -q` (árvore atual): 596 passed, 1 skipped (o skip é o teste de banco legado, que só roda com `AOK_TEST_DATABASE_URL`; a suíte de plataforma tem 254 testes; em Postgres foram exercitados os 235 anteriores (verificação local e CI até 4f3e5a7) e, depois da recuperação de senha, só os 20 de recuperação e banco legado).
 
 ### Plataforma: administração
 
@@ -116,6 +116,15 @@ python -m aok_platform.create_operator --email ops@example.com       # imprime a
 - O operador vê só metadados: organizações, contagens, agentes, versões, semáforo, datas e trilhas. Não vê conteúdo de relatório, ressalvas, arquivos, tokens nem hashes, e não baixa nada. Quem opera o banco ou o servidor continua podendo ler tudo.
 - Verificado no navegador, com banco temporário: fluxo completo com 2 organizações, publicação real com `aok check --publish`, desativar e reativar organização, reset de senha, sessões separadas. Não exercitados: slug de organização duplicado na interface, leitor de tela e contraste, outros navegadores.
 - Limitações: e-mail único globalmente; em bancos SQLite antigos o slug de agente segue global até recriar a tabela (o 409 pode revelar que o slug existe em outra organização); sem Alembic; throttle em memória.
+
+### Plataforma: recuperação de senha
+
+Opcional (ADR-012). Fica ativa só com `AOK_SMTP_HOST` e `AOK_PUBLIC_URL` definidos (também `AOK_SMTP_PORT`, `AOK_SMTP_USER`, `AOK_SMTP_PASSWORD`, `AOK_SMTP_STARTTLS`, `AOK_SMTP_FROM`; detalhes em `platform/README.md`). Sem elas, as rotas respondem 404 e o "Forgot password?" do login aparece como "Soon".
+
+- O usuário pede em `/forgot-password` e vê a mesma resposta para e-mail existente ou não; só o existente recebe o e-mail, com link `#token` válido por 30 min e de uso único.
+- Em `/reset-password` define a senha nova (12+ caracteres). Todas as sessões são revogadas, não há login automático e chega um aviso de troca.
+- Verificado no navegador (Edge) com servidor SMTP local (Mailpit), e em postgres:16 local (20 testes de recuperação e banco legado passaram). Não exercitados: provedor SMTP real (STARTTLS, entregabilidade), 429 do reset na interface, leitor de tela, contraste e outros navegadores. O CI ainda não rodou para estes commits.
+- Limitações: limites de pedidos em memória (por processo, reiniciam no deploy); atrás de proxy o IP visto é o do proxy, então o bloqueio por tentativas inválidas pode atingir quem compartilha o IP, mesmo com token válido; operadores seguem com reset só pela CLI.
 
 ### Com o modelo (usa o Ollama)
 
