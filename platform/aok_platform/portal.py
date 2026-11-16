@@ -62,6 +62,7 @@ class ReportDetail(ReportItem):
     seed: int | None
     n_cases: int | None
     summary: dict
+    limitations: list[str] = []  # texto fixo de limitações do relatorio.json (sem texto de ataque)
 
 
 class DownloadItem(BaseModel):
@@ -89,6 +90,14 @@ def _generated_at(row: ReportVersion, data_dir: Path) -> str | None:
         )
     except (OSError, ValueError, AttributeError):
         return None
+
+
+def _limitations(row: ReportVersion, data_dir: Path) -> list[str]:
+    try:
+        items = json.loads((data_dir / row.file_json).read_text(encoding="utf-8")).get("limitations")
+    except (OSError, ValueError, AttributeError):
+        return []
+    return [x for x in items if isinstance(x, str)] if isinstance(items, list) else []
 
 
 def _build_tree(areas: list[Area]) -> list[AreaNode]:
@@ -178,6 +187,7 @@ def build_portal_router(get_session, current_user, current_org_admin, data_dir: 
             seed=row.seed,
             n_cases=row.n_cases,
             summary=row.summary_json,
+            limitations=_limitations(row, data_dir),
         )
 
     @r.get("/reports/{report_id}/download")

@@ -8,11 +8,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .auth import (
     AREA_VIEWER,
@@ -303,6 +306,50 @@ def build_admin_router(get_session, require_admin) -> APIRouter:
     return r
 
 
+PORTAL_CSP = (
+    "default-src 'self'; img-src 'self' data:; object-src 'none'; "
+    "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
+
+
+def default_portal_dir() -> Path:
+    """AOK_PORTAL_DIR ou platform/portal/dist (checkout do repositório)."""
+    env = os.environ.get("AOK_PORTAL_DIR")
+    return Path(env) if env else Path(__file__).resolve().parent.parent / "portal" / "dist"
+
+
+def mount_portal(app: FastAPI, dist: Path) -> None:
+    """Serve o portal (SPA) em `/` via o 404 do roteador; só se `dist/index.html` existir.
+
+    As rotas da API (e seus 401/404/405) não mudam: só GET/HEAD fora de /v1 cai aqui.
+    """
+    index = dist / "index.html"
+    if not index.is_file():
+        return
+    base = dist.resolve()
+
+    async def portal(request: Request, exc: StarletteHTTPException):
+        path = request.url.path.lstrip("/")
+        if request.method not in ("GET", "HEAD") or path == "v1" or path.startswith("v1/"):
+            return await http_exception_handler(request, exc)
+        target = (base / path).resolve()
+        if path and target.is_relative_to(base) and target.is_file():
+            hashed = path.startswith("assets/")  # nomes com hash do Vite: cache longo
+            cache = "public, max-age=31536000, immutable" if hashed else "no-cache"
+            return FileResponse(target, headers={"Cache-Control": cache})
+        return FileResponse(
+            index,
+            headers={
+                "Cache-Control": "no-cache",
+                "Content-Security-Policy": PORTAL_CSP,
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
+
+    app.add_exception_handler(404, portal)
+
+
 def create_app(database_url: str | None = None, data_dir: str | Path | None = None) -> FastAPI:
     engine = make_engine(database_url)
     init_db(engine)
@@ -318,4 +365,5 @@ def create_app(database_url: str | None = None, data_dir: str | Path | None = No
     app.include_router(build_reports_router(get_session, data))
     app.include_router(build_auth_router(get_session, current_user, app.state.throttle))
     app.include_router(build_portal_router(get_session, current_user, current_org_admin, data))
+    mount_portal(app, default_portal_dir())
     return app
