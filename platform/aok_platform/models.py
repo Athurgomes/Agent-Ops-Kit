@@ -140,9 +140,24 @@ class DownloadLog(Base):
     format: Mapped[str] = mapped_column(String(4))  # md | html | json
 
 
+class AdminEvent(Base):
+    """Escrita administrativa (quem mudou o quê). Nunca guarda segredo: só ação e alvo."""
+
+    __tablename__ = "admin_event"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organization.id"), index=True)
+    at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    action: Mapped[str] = mapped_column(String(40))
+    target_type: Mapped[str] = mapped_column(String(20))
+    target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 def _immutable(*_args) -> None:
-    raise RuntimeError("report_version é imutável: sem update nem delete")
+    raise RuntimeError("registro imutável (report_version, admin_event): sem update nem delete")
 
 
 event.listen(ReportVersion, "before_update", _immutable)
 event.listen(ReportVersion, "before_delete", _immutable)
+event.listen(AdminEvent, "before_update", _immutable)
+event.listen(AdminEvent, "before_delete", _immutable)

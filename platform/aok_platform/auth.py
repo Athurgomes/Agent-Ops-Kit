@@ -7,12 +7,13 @@ import hashlib
 import hmac
 import os
 import secrets
+from dataclasses import dataclass
 
 from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Area, Membership, User, UserSession, utcnow
+from .models import Area, Membership, Organization, User, UserSession, utcnow
 
 BOOTSTRAP_ENV = "AOK_ADMIN_BOOTSTRAP_KEY"
 SESSION_COOKIE = "aok_session"
@@ -120,6 +121,14 @@ def visible_area_ids(s: Session, user: User) -> set[int]:
     )
 
 
+@dataclass(frozen=True)
+class Actor:
+    """Quem faz uma ação admin: usuário da sessão, ou a chave de bootstrap (user_id None)."""
+
+    user_id: int | None
+    org_id: int
+
+
 def make_dependencies(get_session):
     """Dependências que precisam da sessão de banco (mesma instância por requisição)."""
 
@@ -140,8 +149,8 @@ def make_dependencies(get_session):
         request: Request,
         authorization: str | None = Header(default=None),
         s: Session = Depends(get_session),
-    ) -> None:
-        """Chave de bootstrap (Bearer) OU sessão de org_admin."""
+    ) -> Actor:
+        """Chave de bootstrap (Bearer) OU sessão de org_admin. Devolve quem agiu e a organização."""
         key = os.environ.get(BOOTSTRAP_ENV)
         scheme, _, given = (authorization or "").partition(" ")
         if (
@@ -149,12 +158,13 @@ def make_dependencies(get_session):
             and scheme.lower() == "bearer"
             and hmac.compare_digest(given.strip().encode("utf-8"), key.encode("utf-8"))
         ):
-            return
+            org_id = s.scalar(select(Organization.id).order_by(Organization.id).limit(1))
+            return Actor(None, org_id)  # uma organização só por enquanto: a primeira
         user = session_user(request, s)
         if user is not None:
             if not is_org_admin(s, user):
                 raise HTTPException(403, "requer org_admin")
-            return
+            return Actor(user.id, user.org_id)
         if not key:  # nunca existe chave padrão
             raise HTTPException(503, f"rotas admin desativadas: defina {BOOTSTRAP_ENV}")
         raise HTTPException(

@@ -101,3 +101,14 @@ por `aok report build` a partir dos resultados gravados no repositório (a segun
 repositório. Os nomes dos agentes são fictícios; o conteúdo interno dos relatórios é o do
 exemplo do repositório.
 
+## Listagens e auditoria do admin
+
+Só leitura, para `org_admin` (sessão) ou chave de bootstrap, sempre limitadas à organização de quem
+chama: `GET /v1/admin/areas` (com `agent_count`), `/agents` (inclui inativos, `tokens_active_count`,
+`last_report_at`), `/agents/{id}/tokens` (só metadados: nunca o token nem o hash), `/users`
+(vínculos resumidos; nunca a senha nem o hash) e `/memberships`. Não há exclusão de áreas.
+Toda escrita admin (criar/alterar área, agente, usuário, vínculo; emitir/revogar token; trocar
+senha; ativar/desativar) grava um `admin_event` (quando, quem, ação, alvo; sem segredos; imutável).
+`GET /v1/admin/events` (só sessão de `org_admin`; a chave de bootstrap não lê) devolve os mais
+recentes primeiro, com `limit` (1 a 500) e `offset`.
+
