@@ -1,0 +1,39 @@
+# Uso (a partir da raiz do repositório):
+#   cp platform/env.example platform/.env   # e preencha os valores (o .env não vai para o git)
+#   docker compose -f platform/docker-compose.yml --env-file platform/.env up --build
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: platform/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      AOK_DATABASE_URL: postgresql+psycopg://aok:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}@db:5432/aok
+      AOK_ADMIN_BOOTSTRAP_KEY: ${AOK_ADMIN_BOOTSTRAP_KEY:?defina AOK_ADMIN_BOOTSTRAP_KEY}
+      AOK_DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - aok_data:/data
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: aok
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      POSTGRES_DB: aok
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aok -d aok"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  aok_data:
+  pg_data:

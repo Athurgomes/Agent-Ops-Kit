@@ -1,0 +1,11 @@
+.git
+**/.env
+**/.env.*
+docs_internas
+reports
+chroma
+**/aok_data
+**/*.db
+**/__pycache__
+**/.pytest_cache
+.venv
