@@ -123,7 +123,7 @@ geradas aparecem uma única vez, só em estado da tela (nunca em storage, URL ou
   seus usuários não logam (erro genérico), as sessões existentes dão 401, os tokens de agente dão 401
   e nada é apagado. Reativar devolve tudo.
 - O slug de agente é único **por organização** (`UNIQUE(org_id, slug)`); o 409 só vale dentro da
-  própria organização e não revela outras. O e-mail de usuário continua único **globalmente**: o
+  própria organização e não revela outras organizações, exceto em bancos SQLite antigos (UNIQUE(slug) global até recriar a tabela). O e-mail de usuário continua único **globalmente**: o
   login é só por e-mail, então o mesmo e-mail em duas organizações seria ambíguo.
 - Relatórios novos ficam em `AOK_DATA_DIR/<org_id>/<slug>/<sha256>`. Os já gravados continuam
   resolvidos pelos caminhos guardados no banco (download com checagem contra path traversal).
@@ -132,7 +132,7 @@ geradas aparecem uma única vez, só em estado da tela (nunca em storage, URL ou
   exigem o cabeçalho `X-Org-Slug` (400 se faltar; 404 se a organização não existir ou estiver
   inativa). `/v1/admin/events` e `/v1/admin/downloads` seguem só por sessão. Sessão de `org_admin`
   sempre usa a organização do próprio usuário (o cabeçalho é ignorado).
-- Criar a 2ª organização por enquanto (a tela/rota do operador vem depois):
+- Criar a 2ª organização por enquanto (ou, com o console ligado, pela tela do operador):
 
 ```bash
 python -m aok_platform.create_org --slug acme --name "Acme"

@@ -66,7 +66,7 @@ aok check --publish https://sua-plataforma --agent-id meu-agente   # ou platform
 ```
 
 - Só agregados e hashes sobem; o log de auditoria não. O relatório é autodeclarado: a plataforma não reexecuta o teste (ADR-007).
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; job de CI do portal (npm ci + build) verificado no GitHub até o commit 9d8a418; Postgres real não verificado; os testes automatizados usam SQLite.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit 3f16e1e (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado; os testes automatizados usam SQLite.
 
 ### Plataforma (fase 3: portal)
 
@@ -86,10 +86,10 @@ uvicorn aok_platform.app:create_app --factory   # http://127.0.0.1:8000
 - Cada pessoa vê só as áreas do seu perfil (com sub-áreas); área fora do alcance responde 404. O download grava em `download_log`.
 - O seed cria dados de demonstração com agentes fictícios; o conteúdo dos relatórios vem do exemplo do repositório.
 - Verificado com o design atual: capturas de tela (Edge headless) a 1440 e 390 px de todas as telas (landing, login, áreas, agente, detalhe do relatório, downloads, admin), inspecionadas. O fluxo funcional (login de admin, áreas, logout) foi exercitado no navegador na versão anterior da interface e não foi reexecutado após o redesenho (a lógica de autenticação não mudou; só a rota de login passou a `/login`).
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; job de CI do portal (npm ci + build) verificado no GitHub até o commit 9d8a418; Postgres real não verificado.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit 3f16e1e (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado.
 - Limitações: throttle de login em memória (reinicia no deploy, não vale com vários workers e permite travar a conta de outra pessoa por 5 min); CSRF só por SameSite; tabelas sem migração.
-- Não existe: SSO, multiempresa, dark mode, PDF, Sign Up e recuperação de senha.
-- `python -m pytest -q` neste commit: 435 passed.
+- Não existe: SSO, dark mode, PDF, Sign Up e recuperação de senha (multiempresa e operador: ver a seção seguinte).
+- `python -m pytest -q` (árvore atual): 577 passed.
 
 ### Plataforma: administração
 
@@ -100,7 +100,22 @@ Para `org_admin`, o menu "Administration" do portal (ADR-009) permite ao time de
 - **Usuários e acessos**: criar usuários, redefinir senha (gerada, exibida uma vez), vincular a áreas e desativar.
 - **Activity** (eventos administrativos: quem mudou o quê, sem segredos) e **All downloads** (tela separada).
 
-Regras: leituras e escritas ficam na organização de quem chama; o admin não desativa a própria conta e ninguém remove o último `org_admin` ativo. Verificado no navegador, com banco temporário: criar área e sub-área, registrar agente, emitir token, publicar com `aok check --publish`, ver o relatório, revogar o token (a publicação seguinte falhou com 401), criar usuário viewer só da área, desativar e ver o login falhar, ver os eventos. Não exercitados na interface: redefinir senha, editar ou reativar agente, conceder ou revogar acesso depois da criação. Limitações: uma organização só (a chave de bootstrap usa a primeira); listagens sem paginação (só os eventos); `admin_event` pode ser alterado por quem opera o banco; `docker build` não foi reverificado após as telas de administração.
+Regras: leituras e escritas ficam na organização de quem chama; o admin não desativa a própria conta e ninguém remove o último `org_admin` ativo. Verificado no navegador, com banco temporário: criar área e sub-área, registrar agente, emitir token, publicar com `aok check --publish`, ver o relatório, revogar o token (a publicação seguinte falhou com 401), criar usuário viewer só da área, desativar e ver o login falhar, ver os eventos. Não exercitados na interface: redefinir senha, editar ou reativar agente, conceder ou revogar acesso depois da criação. Limitações: listagens sem paginação (só os eventos); `admin_event` pode ser alterado por quem opera o banco; `docker build` não foi reverificado após as telas de administração.
+
+### Plataforma: várias organizações e operador
+
+Isolamento por organização no backend (ADR-011) e visão do operador (ADR-010), desligada por padrão. Detalhes em [platform/README.md](platform/README.md).
+
+```bash
+python -m aok_platform.create_org --slug acme --name "Acme"          # 2ª organização
+export AOK_OPS_ENABLED=true                                          # liga /v1/ops e o console /ops
+python -m aok_platform.create_operator --email ops@example.com       # imprime a senha uma vez
+```
+
+- Com 2 ou mais organizações, a chave de bootstrap exige o cabeçalho `X-Org-Slug`. Pelo console, o operador cria o primeiro admin (senha exibida uma vez).
+- O operador vê só metadados: organizações, contagens, agentes, versões, semáforo, datas e trilhas. Não vê conteúdo de relatório, ressalvas, arquivos, tokens nem hashes, e não baixa nada. Quem opera o banco ou o servidor continua podendo ler tudo.
+- Verificado no navegador, com banco temporário: fluxo completo com 2 organizações, publicação real com `aok check --publish`, desativar e reativar organização, reset de senha, sessões separadas. Não exercitados: slug de organização duplicado na interface, Postgres real, leitor de tela e contraste, outros navegadores.
+- Limitações: e-mail único globalmente; em bancos SQLite antigos o slug de agente segue global até recriar a tabela (o 409 pode revelar que o slug existe em outra organização); sem Alembic; throttle em memória.
 
 ### Com o modelo (usa o Ollama)
 
