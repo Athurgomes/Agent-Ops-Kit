@@ -185,6 +185,12 @@ class OperatorEventOut(BaseModel):
     target_id: int | None
 
 
+def _no_store(response: Response) -> None:
+    """Respostas com senha gerada nunca podem ficar em cache (navegador, proxy ou histórico)."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+
+
 def _org_or_404(s: Session, org_id: int) -> Organization:
     org = s.get(Organization, org_id)
     if org is None:
@@ -365,6 +371,7 @@ def build_ops_router(get_session, throttle: LoginThrottle) -> APIRouter:
     def create_admin(
         org_id: int,
         body: AdminIn,
+        response: Response,
         op: PlatformOperator = Depends(current_operator),
         s: Session = Depends(get_session),
     ):
@@ -384,12 +391,14 @@ def build_ops_router(get_session, throttle: LoginThrottle) -> APIRouter:
         s.add(Membership(user_id=user.id, area_id=None, role=ORG_ADMIN))
         _log(s, op, "org.admin_create", org.id, "user", user.id)
         s.commit()
+        _no_store(response)
         return CreatedAdmin(user_id=user.id, email=email, password=password)
 
     @r.post("/organizations/{org_id}/admins/{user_id}/reset-password", response_model=CreatedAdmin)
     def reset_admin_password(
         org_id: int,
         user_id: int,
+        response: Response,
         op: PlatformOperator = Depends(current_operator),
         s: Session = Depends(get_session),
     ):
@@ -409,6 +418,7 @@ def build_ops_router(get_session, throttle: LoginThrottle) -> APIRouter:
             row.revoked_at = now  # recuperação sem e-mail: a senha antiga e as sessões param de valer
         _log(s, op, "org.admin_password_reset", org.id, "user", user.id)
         s.commit()
+        _no_store(response)
         return CreatedAdmin(user_id=user.id, email=user.email, password=password)
 
     @r.get("/organizations/{org_id}", response_model=OrgDetail)
@@ -436,17 +446,21 @@ def build_ops_router(get_session, throttle: LoginThrottle) -> APIRouter:
                 .group_by(AgentCredential.agent_id)
             ).all()
         )
-        versions = list(
-            s.scalars(
-                select(ReportVersion)
-                .where(ReportVersion.agent_id.in_(agent_ids))
-                .order_by(ReportVersion.published_at.desc(), ReportVersion.id.desc())
-            )
+        # Último relatório de cada agente: consulta própria, só as colunas necessárias (sem summary_json).
+        newest = (
+            select(ReportVersion.agent_id, func.max(ReportVersion.seq).label("seq"))
+            .where(ReportVersion.agent_id.in_(agent_ids))
+            .group_by(ReportVersion.agent_id)
+            .subquery()
         )
-        latest: dict[int, ReportVersion] = {}
-        for v in versions:
-            if v.agent_id not in latest or v.seq > latest[v.agent_id].seq:
-                latest[v.agent_id] = v
+        latest = {
+            agent_id: (semaforo, published)
+            for agent_id, semaforo, published in s.execute(
+                select(ReportVersion.agent_id, ReportVersion.status_semaforo, ReportVersion.published_at).join(
+                    newest, (newest.c.agent_id == ReportVersion.agent_id) & (newest.c.seq == ReportVersion.seq)
+                )
+            ).all()
+        }
         slug_of = {a.id: a.slug for a in agents}
         agent_meta = [
             AgentMeta(
@@ -456,8 +470,8 @@ def build_ops_router(get_session, throttle: LoginThrottle) -> APIRouter:
                 area_name=area_name.get(a.area_id, ""),
                 active=a.active,
                 tokens_active_count=tokens.get(a.id, 0),
-                last_report_at=latest[a.id].published_at if a.id in latest else None,
-                latest_semaforo=latest[a.id].status_semaforo if a.id in latest else None,
+                last_report_at=latest[a.id][1] if a.id in latest else None,
+                latest_semaforo=latest[a.id][0] if a.id in latest else None,
             )
             for a in agents
         ]
@@ -472,18 +486,35 @@ def build_ops_router(get_session, throttle: LoginThrottle) -> APIRouter:
             UserMeta(id=u.id, email=u.email, active=u.active, access=access.get(u.id, [])) for u in users
         ]
 
+        # Versões: LIMIT no SQL; a data de geração é extraída do JSON no banco (não carrega o resumo inteiro).
+        generated = ReportVersion.summary_json["generated_at"].as_string()
+        report_rows = s.execute(
+            select(
+                ReportVersion.id,
+                ReportVersion.agent_id,
+                ReportVersion.seq,
+                ReportVersion.status_semaforo,
+                generated,
+                ReportVersion.published_at,
+                ReportVersion.n_cases,
+                ReportVersion.model,
+            )
+            .where(ReportVersion.agent_id.in_(agent_ids))
+            .order_by(ReportVersion.published_at.desc(), ReportVersion.id.desc())
+            .limit(limit)
+        ).all()
         reports = [
             ReportMeta(
-                id=v.id,
-                agent_slug=slug_of[v.agent_id],
-                seq=v.seq,
-                status_semaforo=v.status_semaforo,
-                generated_at=(v.summary_json or {}).get("generated_at"),  # só a data, nada do conteúdo
-                published_at=v.published_at,
-                n_cases=v.n_cases,
-                model=v.model,
+                id=rid,
+                agent_slug=slug_of[agent_id],
+                seq=seq,
+                status_semaforo=semaforo,
+                generated_at=gen,
+                published_at=published,
+                n_cases=n_cases,
+                model=model,
             )
-            for v in versions[:limit]
+            for rid, agent_id, seq, semaforo, gen, published, n_cases, model in report_rows
         ]
         return OrgDetail(
             id=org.id,
