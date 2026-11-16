@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+/* Tokens do tema. Para mudar a identidade visual, edite só este bloco. */
+:root {
+  --ink: #000000;
+  --paper: #ffffff;
+  --muted: #efefef;
+  --pink: #f9d4f4;
+  --yellow: #ffe730;
+  --mint: #49ffcb;
+  --orange: #ff8a2a;
+  --danger: #ff5c4d;
+  --focus: #1d4ed8;
+  --border-width: 4px;
+  --radius: 0px;
+  --shadow-offset: 6px;
+  --font-display: "Arial Black", "Segoe UI Black", Impact, system-ui, sans-serif;
+  --font-body: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-paper: var(--paper);
+  --color-muted: var(--muted);
+  --color-pink: var(--pink);
+  --color-yellow: var(--yellow);
+  --color-mint: var(--mint);
+  --color-orange: var(--orange);
+  --color-danger: var(--danger);
+  --font-display: var(--font-display);
+  --font-sans: var(--font-body);
+  --radius-*: initial;
+}
+
+@layer base {
+  html {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+  *,
+  *::before,
+  *::after {
+    border-radius: var(--radius);
+  }
+  :focus-visible {
+    outline: var(--border-width) solid var(--focus);
+    outline-offset: 3px;
+  }
+  a {
+    text-underline-offset: 3px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+}
+
+@layer components {
+  .brutal {
+    border: var(--border-width) solid var(--ink);
+  }
+  .brutal-shadow {
+    box-shadow: var(--shadow-offset) var(--shadow-offset) 0 0 var(--ink);
+  }
+  .title {
+    font-family: var(--font-display);
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    line-height: 1.02;
+    overflow-wrap: anywhere;
+  }
+  .press {
+    transition: transform 80ms, box-shadow 80ms;
+  }
+  .press:hover:not(:disabled) {
+    transform: translate(-2px, -2px);
+    box-shadow: calc(var(--shadow-offset) + 2px) calc(var(--shadow-offset) + 2px) 0 0 var(--ink);
+  }
+  .press:active:not(:disabled) {
+    transform: translate(var(--shadow-offset), var(--shadow-offset));
+    box-shadow: none;
+  }
+}
