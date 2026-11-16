@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 KEY = "chave-de-teste-nao-secreta"
-H = {"Authorization": f"Bearer {KEY}"}
+H = {"Authorization": f"Bearer {KEY}", "X-Org-Slug": "default"}  # a fixture cria uma 2ª org
 PWD = "senha-de-teste-123"
 GET_PATHS = [
     "/v1/admin/areas",
@@ -92,13 +92,13 @@ def env(monkeypatch, tmp_path):
             body["area_id"] = ids[area]
         assert c.post("/v1/admin/memberships", json=body, headers=H).status_code == 201
     with Session(app.state.engine) as s:  # organização 2, criada direto no banco
-        org2 = Organization(name="outra")
+        org2 = Organization(name="outra", slug="outra", active=True)
         s.add(org2)
         s.flush()
         a2 = Area(org_id=org2.id, name="Area Alheia")
         s.add(a2)
         s.flush()
-        g2 = Agent(area_id=a2.id, slug="ag-alheio", name="Agente Alheio", active=True)
+        g2 = Agent(org_id=org2.id, area_id=a2.id, slug="ag-alheio", name="Agente Alheio", active=True)
         u2 = User(org_id=org2.id, email="alheio@y.com", password_hash="scrypt$x", active=True)
         s.add_all([g2, u2])
         s.flush()

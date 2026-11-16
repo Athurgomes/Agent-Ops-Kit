@@ -351,9 +351,8 @@ def test_download_de_arquivo_ausente_nao_grava_log(env, tmp_path):
     app, c, ids, rep = env
     _user(c, "ana@exemplo.com", ids["A"])
     ana = _login(app, "ana@exemplo.com")
-    (tmp_path / "data" / "ag-a").joinpath(
-        next((tmp_path / "data" / "ag-a").iterdir()).name, "relatorio.md"
-    ).unlink()
+    folder = tmp_path / "data" / "1" / "ag-a"  # layout novo: <org_id>/<slug>/<sha256>
+    folder.joinpath(next(folder.iterdir()).name, "relatorio.md").unlink()
     assert ana.get(f"/v1/reports/{rep['A']}/download?format=md").status_code == 404
     with Session(app.state.engine) as s:
         assert s.scalars(select(DownloadLog)).first() is None
