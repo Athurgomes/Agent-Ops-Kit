@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Sobe a plataforma de demonstração com um comando (somente stdlib; Windows e Linux).
 
     python scripts/demo_plataforma.py [--porta 8000] [--publicar] [--reset]
