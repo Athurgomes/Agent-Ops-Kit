@@ -1,7 +1,7 @@
-# Plataforma agent-ops-kit (fase 2: API)
+# Plataforma agent-ops-kit (fases 2 e 3: API e login)
 
 API FastAPI que recebe o pacote de relatório publicado por `aok check --publish URL`.
-Só publica: não há rota de leitura nesta fase (o portal vem na fase 3).
+A leitura (áreas, agentes, relatórios, download) é só para usuários com sessão; o token de agente só publica.
 
 ## Subir
 
@@ -40,3 +40,20 @@ o slug do agente dono do token.
 - As versões são imutáveis: a API não tem update nem delete.
 
 Use HTTPS na frente da API fora de testes locais: o token trafega no cabeçalho.
+
+## Usuários e leitura (fase 3, backend)
+
+1. Com a chave de bootstrap, crie o primeiro usuário e dê o perfil `org_admin`:
+   `POST /v1/admin/users` (`email`, `password` com 12+ caracteres) e
+   `POST /v1/admin/memberships` (`{"user_id": 1, "role": "org_admin"}`, sem `area_id`).
+   Depois disso o admin entra por sessão e pode criar os demais; a chave segue valendo
+   (retire `AOK_ADMIN_BOOTSTRAP_KEY` do ambiente para desativá-la).
+2. `area_viewer` exige `area_id` e vale para a área e todas as sub-áreas (nunca para cima).
+3. Login: `POST /v1/auth/login` -> cookie `aok_session` (HttpOnly, SameSite=Strict, 8 h,
+   `Secure` por padrão; `AOK_COOKIE_SECURE=false` só para teste local sem HTTPS).
+   `POST /v1/auth/logout`, `GET /v1/auth/me`. Erro de login é sempre o mesmo (401);
+   5 falhas por e-mail travam o e-mail por 5 minutos (429, contagem em memória do processo).
+4. Leitura (só sessão): `GET /v1/areas`, `/v1/areas/{id}/agents`, `/v1/agents/{id}/reports`,
+   `/v1/reports/{id}`, `/v1/reports/{id}/download?format=md|html|json`. Área fora do alcance: 404.
+5. Todo download grava em `download_log`. `GET /v1/me/downloads` mostra só os do próprio usuário
+   (`downloaded_at` e `generated_at`); `GET /v1/admin/downloads` (org_admin por sessão) mostra todos.
