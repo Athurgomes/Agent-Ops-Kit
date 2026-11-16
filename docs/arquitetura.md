@@ -40,7 +40,20 @@ Os guardrails também atuam na allowlist de tools (antes de cada chamada) e marc
 - **Avaliação**: dataset de 50 casos, checagens determinísticas, juiz opcional (mesmo modelo de 8B), A/B pareado (permutação e bootstrap, semente fixa) e gate de CI que reavalia respostas gravadas conferindo um manifesto.
 - **Red team**: ataques em arquivos do repositório (`redteam/`), critérios de sucesso por categoria, ASR com intervalo de Wilson e medição de falsos positivos em perguntas legítimas.
 - **Relatório** (`aok report build`, `aok check --publish`): resultados gravados (eval e red team, mais o resultado da verificação da auditoria, se houver) viram um pacote (`relatorio.md/html/json`, `pacote.json`) que `--publish` copia para uma pasta local versionada, `<pasta>/<agent-id>/<timestamp UTC>/`, com `index.json` listando as versões. Não roda modelo e o log de auditoria não entra no pacote (ADR-006).
+- **Plataforma** (`platform/`, fase 2: API): serviço FastAPI que recebe o pacote por `POST /v1/reports`; ver abaixo e ADR-007.
 - **Template** (`aok new`): gera um agente já instrumentado a partir de `src/agent_ops_kit/templates/agent/`.
+
+## Plataforma (`platform/`)
+
+```mermaid
+flowchart LR
+    CK[aok check --publish URL<br/>token em AOK_PLATFORM_TOKEN] -->|POST /v1/reports<br/>pacote: agregados e hashes| API[API FastAPI]
+    AD[Admin<br/>chave AOK_ADMIN_BOOTSTRAP_KEY] -->|/v1/admin: áreas, agentes, tokens| API
+    API --> DB[(SQLite nos testes<br/>Postgres no Docker)]
+    API --> FS[(Arquivos dos relatórios<br/>AOK_DATA_DIR)]
+```
+
+O admin cria área e agente e emite o token do agente (guardado como hash). O agente publica com `platform.agent_id` do `agent.yaml` (ou `--agent-id`), que deve ser o slug dono do token. A API valida o esquema fechado, o limite de 1 MiB e o sha256 de cada arquivo, e grava uma versão com `seq` por agente. O log de auditoria não sobe. Não há rota de leitura nem portal nesta fase.
 
 ## Módulos
 
@@ -69,6 +82,8 @@ Os guardrails também atuam na allowlist de tools (antes de cada chamada) e marc
 | `examples/rag_agent/` | agente de referência (agent, tools, indexer, corpus fictício) |
 | `.github/workflows/` | `ci.yml` (ruff e pytest) e `eval.yml` (gate com respostas gravadas) |
 | `docker-compose.yml` | Jaeger (all-in-one) |
+| `platform/aok_platform/` | API da plataforma: `app`, `auth`, `models`, `reports`, `db` |
+| `platform/docker-compose.yml` | API e Postgres (build não testado) |
 
 ## Decisões
 
@@ -80,6 +95,7 @@ As decisões e suas limitações estão em [decisoes.md](decisoes.md):
 - ADR-004: auditoria com hash encadeado (sem assinatura).
 - ADR-005: template do `aok new` dentro do pacote, com cópia do núcleo do agente.
 - ADR-006: relatório publicado em pasta local versionada, só agregados e hashes.
+- ADR-007: plataforma em `platform/`, relatório autodeclarado, só agregados e hashes.
 
 Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 
@@ -88,6 +104,7 @@ Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 - Kafka (eventos do agente em tópico, consumidores de auditoria e métricas).
 - Adaptador para outro framework de agentes: só existe o loop do agente de referência.
 - Prometheus e Grafana: as métricas são calculadas em Python, não exportadas.
+- Portal, login, SSO, leitura de relatórios e multiempresa na plataforma.
 - Deploy em nuvem.
 - Publicação em PyPI: o pacote se instala a partir do repositório.
 - Validação do gate do eval em um PR real que piore um prompt: até agora só foi simulado localmente (ver README).

@@ -83,3 +83,21 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - A imutabilidade é por convenção, não técnica: quem tem acesso ao disco pode alterar ou apagar versões.
 - Verde não significa seguro: o semáforo herda as limitações das medições (modelo pequeno, dataset pequeno, heurísticas contornáveis).
 - Alternativas descartadas: enviar o log completo (expõe dados e conteúdo das interações); banco ou serviço próprio nesta fase (custo e manutenção sem necessidade para o escopo atual).
+
+## ADR-007: plataforma de recebimento de relatórios em `platform/`
+
+**Contexto.** O `aok check --publish` grava em pasta local (ADR-006). Para times diferentes publicarem num ponto comum, é preciso um serviço que receba o pacote. Isto é uma extensão fora do plano original.
+
+**Decisão.** A plataforma fica em `platform/` no mesmo repositório (pacote `aok_platform`, extra `platform`), com FastAPI e SQLAlchemy: SQLite nos testes e Postgres no Docker.
+- Só o relatório, os agregados e os hashes vão à plataforma (`aok check --publish URL`); o log de auditoria completo nunca sobe.
+- O token de agente só publica e é guardado como hash (sha256); aparece uma única vez na emissão e pode ser revogado.
+- As rotas admin usam uma chave de bootstrap lida de `AOK_ADMIN_BOOTSTRAP_KEY`; sem a variável, respondem 503. Não há chave padrão.
+- O slug do agente é único globalmente.
+- Cada versão publicada recebe `seq` por agente; a API não tem update nem delete.
+
+**Consequências e limitações.**
+- O relatório é autodeclarado: a plataforma confere o esquema, o tamanho e o sha256 dos arquivos, mas não reexecuta eval nem red team. Quem publica pode enviar números que não vieram de uma execução real.
+- A imutabilidade das versões vale só pela API: quem opera o banco ou o disco pode alterar ou apagar.
+- A chave de bootstrap é única e compartilhada entre admins; não há login, papéis nem SSO.
+- `docker build` e Postgres real não foram testados; os testes automatizados usam SQLite.
+- Alternativa descartada: enviar o log de auditoria (expõe conteúdo das interações).
