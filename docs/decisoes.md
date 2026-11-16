@@ -99,7 +99,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O relatório é autodeclarado: a plataforma confere o esquema, o tamanho e o sha256 dos arquivos, mas não reexecuta eval nem red team. Quem publica pode enviar números que não vieram de uma execução real.
 - A imutabilidade das versões vale só pela API: quem opera o banco ou o disco pode alterar ou apagar.
 - A chave de bootstrap é única e compartilhada entre admins; não há login, papéis nem SSO na fase 2; login e papéis chegam na ADR-008.
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; job de CI do portal (npm ci + build) verificado no GitHub até o commit 9d8a418; Postgres real não verificado; os testes automatizados usam SQLite.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit 3f16e1e (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado; os testes automatizados usam SQLite.
 - Alternativa descartada: enviar o log de auditoria (expõe conteúdo das interações).
 
 ## ADR-008: portal e login de usuários (fase 3)
@@ -121,8 +121,8 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O throttle reinicia a cada deploy, não funciona com vários workers (cada processo conta separado) e permite que terceiros travem a conta de outra pessoa por 5 minutos.
 - Dívida: sem Alembic, mudança de coluna não é aplicada em banco existente; adotar migração antes disso.
 - A trilha cobre só o download (as escritas administrativas passaram a ter trilha no ADR-009); não há registro de login nem de leitura.
-- Não há SSO, multiempresa, dark mode nem PDF.
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; job de CI do portal (npm ci + build) verificado no GitHub até o commit 9d8a418; Postgres real não verificado.
+- Não há SSO, multiempresa, dark mode nem PDF (superado em parte pelos ADR-010 e ADR-011).
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit 3f16e1e (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado.
 
 ## ADR-009: administração do portal e trilha de eventos
 
@@ -139,14 +139,14 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Visual: texto preto em fundo branco, azul só em botões de impacto, links e foco; contêineres retos com borda de 1 px; inputs e botões em pílula; login em tela própria. Substitui a descrição do visual no ADR-008.
 
 **Consequências e limitações.**
-- A chave de bootstrap usa sempre a primeira organização: só há uma organização por enquanto.
+- Na época deste ADR a chave de bootstrap usava sempre a primeira organização (só havia uma). Superado pelo ADR-011.
 - `admin_event` é imutável pela API, mas quem opera o banco pode alterá-lo.
 - As listagens do admin não têm paginação; só os eventos têm.
 - Mudança de coluna exigirá migração (Alembic); `create_all` continua.
-- Não existe visão multiempresa nem de operador da plataforma. Ela é uma fase futura e exigirá escopo por organização em toda consulta, papel de operador e login separado.
+- Visão multiempresa e de operador: ver ADR-010 e ADR-011.
 - Verificado no navegador, com banco temporário: criar área e sub-área, registrar agente, emitir token (aparece uma vez), publicar um relatório real com `aok check --publish`, ver o relatório no portal, revogar o token e a publicação seguinte falhar com 401, criar usuário viewer com acesso só à área, desativar o usuário e o login falhar, ver os eventos.
 - Não exercitados na interface: redefinir senha, editar ou reativar agente, conceder ou revogar acesso depois da criação.
-- Postgres real não verificado. `docker build` foi verificado antes do redesenho do portal e não foi reverificado após as telas de administração. O job de CI no GitHub foi verificado até o commit 9d8a418.
+- Postgres real não verificado. `docker build` foi verificado antes do redesenho do portal e não foi reverificado após as telas de administração. O run de CI do commit 3f16e1e (push no main) terminou com sucesso nos jobs test e portal; os commits posteriores não foram verificados no CI.
 
 ## ADR-010: operador da plataforma (visão multiempresa, só metadados)
 
@@ -169,3 +169,25 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Desativar uma organização corta login, sessões e tokens dela, mas não apaga nada; reativar devolve tudo.
 - O throttle de login do operador é em memória, como o dos usuários.
 
+## ADR-011: isolamento multi-organização
+
+**Contexto.** O ADR-009 assumia uma única organização. Para o operador (ADR-010) criar outras, o backend precisa isolar os dados por organização. Extensão fora do plano original.
+
+**Decisão.**
+- `organization` ganha `slug` único (`[a-z0-9-]`, 1 a 64), `active` e `created_at`. `agent` ganha `org_id`, e o slug do agente é único por organização (`UNIQUE(org_id, slug)`).
+- O e-mail de usuário continua único globalmente, porque o login é só por e-mail; o mesmo e-mail em duas organizações seria ambíguo.
+- Relatórios novos ficam em `AOK_DATA_DIR/<org_id>/<slug>/<sha256>`. Os antigos continuam resolvidos pelos caminhos guardados no banco, com checagem contra path traversal. O mesmo `sha256` pode existir em duas organizações.
+- Chave de bootstrap: com exatamente 1 organização funciona como antes; com 2 ou mais exige o cabeçalho `X-Org-Slug` (400 se faltar, 404 se a organização não existir ou estiver inativa). Nunca assume "a primeira". `/v1/admin/events` e `/v1/admin/downloads` seguem só por sessão. Sessão de `org_admin` usa sempre a organização do usuário.
+- Organização inativa: login falha (erro genérico), sessões e tokens de agente dão 401, nada é apagado; reativar devolve tudo.
+- `ensure_schema` (em `db.py`, roda no startup, idempotente) adiciona colunas e tabelas novas e preenche os valores. Alembic continua pendente.
+- `python -m aok_platform.create_org --slug ... --name ...` cria uma organização sem o console do operador.
+
+**Consequências e riscos conhecidos.**
+- Em bancos SQLite antigos, o `UNIQUE(slug)` de `agent` continua global até recriar a tabela. O 409 de slug pode então revelar que o slug existe em outra organização.
+- O 409 de e-mail revela que o e-mail existe em alguma organização.
+- Com 1 organização inativa, a chave de bootstrap ainda opera nela sem o cabeçalho; com `X-Org-Slug` apontando para ela a resposta é 404.
+- Em bancos antigos, `ensure_schema` cria os índices únicos `uq_organization_slug` e `uq_agent_org_slug`, mas não cria as chaves estrangeiras nem o índice simples de `agent.org_id`.
+- Postgres real não verificado; os testes usam SQLite.
+- O throttle de login é em memória.
+- Verificado no navegador, com banco temporário e `AOK_OPS_ENABLED=true`: operador criado pela CLI, login em `/ops`, 2 organizações, admin criado (senha exibida uma vez), admin entra no portal e vê só a própria organização, cadastra área, agente e token, publica um relatório real com `aok check --publish` e o vê no portal; o operador vê só metadados; desativar uma organização barra o admin dela e a outra segue intacta; reativar; reset de senha; sessões de operador e de usuário não se misturam; `/ops` é um 404 comum com o console desligado.
+- Não exercitados: erro de slug de organização duplicado na interface, Postgres real, leitor de tela e contraste, outros navegadores.

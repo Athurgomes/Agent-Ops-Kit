@@ -67,6 +67,23 @@ Fase 3 (ADR-008), fluxos:
 - **Trilha `admin_event`**: toda escrita administrativa grava quando, quem, ação e alvo, sem segredos, na mesma transação. Imutável pela API (e pelo ORM); quem opera o banco pode alterar. `GET /v1/admin/events` só aceita sessão de `org_admin`, com `limit` e `offset`. As demais listagens do admin não têm paginação.
 - **Download com log**: `GET /v1/reports/{id}/download?format=md|html|json` confere o alcance, grava uma linha em `download_log` (baixado em, relatório gerado em) e devolve o arquivo. `/v1/me/downloads` mostra os do próprio usuário; `/v1/admin/downloads` (`org_admin` por sessão) mostra todos.
 
+### Multi-organização e operador (ADR-010 e ADR-011)
+
+- Tabelas novas: `platform_operator`, `operator_session`, `operator_event` (imutável pela API e pelo ORM). O operador não pertence a nenhuma organização.
+- Rotas `/v1/ops/*`: só existem com `AOK_OPS_ENABLED=true`; sessão e cookie próprios. Nenhuma devolve conteúdo de relatório, ressalvas, arquivos, hashes de relatório, tokens ou download.
+- Armazenamento de relatórios novos: `AOK_DATA_DIR/<org_id>/<slug>/<sha256>`.
+- Chave de bootstrap: 1 organização, como antes; 2 ou mais exigem `X-Org-Slug`.
+
+```mermaid
+flowchart LR
+  Op[Operador] -->|/ops, /v1/ops| OPS[ops.py]
+  Adm[org_admin / viewer] -->|/app, /v1| API[API por organização]
+  Ag[Token de agente] -->|POST /v1/reports| API
+  OPS --> DB[(platform_operator, operator_session, operator_event, organization, ...)]
+  API --> DB
+  API --> FS[(AOK_DATA_DIR/org_id/slug/sha256)]
+```
+
 ## Módulos
 
 | Arquivo | Responsabilidade |
@@ -95,8 +112,13 @@ Fase 3 (ADR-008), fluxos:
 | `.github/workflows/` | `ci.yml` (ruff e pytest) e `eval.yml` (gate com respostas gravadas) |
 | `docker-compose.yml` | Jaeger (all-in-one) |
 | `platform/aok_platform/` | API da plataforma: `app`, `auth` (senha, token, papéis), `sessions` (login, sessão, throttle), `portal` (leitura, download, histórico), `models` (inclui `admin_event`), `reports`, `db`, `seed_demo` |
+| `platform/aok_platform/ops.py` | rotas `/v1/ops/*` do operador (ADR-010): organizações com contagens, criar e desativar, criar admin e reset de senha, visão geral só de metadados, trilhas |
+| `platform/aok_platform/create_org.py` | `python -m aok_platform.create_org`: cria organização (slug, nome) |
+| `platform/aok_platform/create_operator.py` | `python -m aok_platform.create_operator`: cria operador com senha aleatória impressa uma vez; `--reset-password`, `--activate` |
+| `platform/aok_platform/db.py` (`ensure_schema`) | no startup, adiciona colunas e tabelas novas e preenche valores, de forma idempotente (não é Alembic) |
+| `platform/portal/src/pages/ops/` | console do operador em `/ops/*` (sem link no site; 404 comum com `AOK_OPS_ENABLED` desligado) |
 | `platform/portal/` | front-end React, Vite, TypeScript e Tailwind, servido pela API |
-| `platform/docker-compose.yml` | API e Postgres (`docker build` verificado localmente, antes do redesenho do visual e das telas de administração e não reverificado depois; job de CI do portal (npm ci + build) verificado no GitHub até o commit 9d8a418; Postgres real não verificado) |
+| `platform/docker-compose.yml` | API e Postgres (`docker build` verificado localmente, antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit 3f16e1e (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado) |
 
 ## Decisões
 
@@ -111,6 +133,8 @@ As decisões e suas limitações estão em [decisoes.md](decisoes.md):
 - ADR-007: plataforma em `platform/`, relatório autodeclarado, só agregados e hashes.
 - ADR-008: portal e login (scrypt, cookie de sessão, CSRF só por SameSite, acesso por área, `download_log`).
 - ADR-009: administração do portal e trilha `admin_event`.
+- ADR-010: operador da plataforma (só metadados, desligado por padrão).
+- ADR-011: isolamento multi-organização.
 
 Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 
@@ -119,7 +143,7 @@ Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 - Kafka (eventos do agente em tópico, consumidores de auditoria e métricas).
 - Adaptador para outro framework de agentes: só existe o loop do agente de referência.
 - Prometheus e Grafana: as métricas são calculadas em Python, não exportadas.
-- Na plataforma: SSO, multiempresa e visão de operador, dark mode, PDF, Sign Up e recuperação de senha. Trilha de login e de leitura também não existe (só download e escritas administrativas).
+- Na plataforma: SSO, Sign Up, recuperação de senha por e-mail, Alembic (migração formal), dark mode, PDF e paginação das listagens do admin. Trilha de login e de leitura também não existe (só download e escritas administrativas).
 - Deploy em nuvem.
 - Publicação em PyPI: o pacote se instala a partir do repositório.
 - Validação do gate do eval em um PR real que piore um prompt: até agora só foi simulado localmente (ver README).
