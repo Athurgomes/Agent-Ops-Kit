@@ -99,7 +99,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O relatório é autodeclarado: a plataforma confere o esquema, o tamanho e o sha256 dos arquivos, mas não reexecuta eval nem red team. Quem publica pode enviar números que não vieram de uma execução real.
 - A imutabilidade das versões vale só pela API: quem opera o banco ou o disco pode alterar ou apagar.
 - A chave de bootstrap é única e compartilhada entre admins; não há login, papéis nem SSO na fase 2; login e papéis chegam na ADR-008.
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API); Postgres real e o job de CI do portal no GitHub não verificados; os testes automatizados usam SQLite.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API); job de CI do portal (npm ci + build) verificado no GitHub; Postgres real não verificado; os testes automatizados usam SQLite.
 - Alternativa descartada: enviar o log de auditoria (expõe conteúdo das interações).
 
 ## ADR-008: portal e login de usuários (fase 3)
@@ -122,4 +122,4 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Dívida: sem Alembic, mudança de coluna não é aplicada em banco existente; adotar migração antes disso.
 - A trilha cobre só o download; não há registro de login nem de leitura.
 - Não há SSO, multiempresa, dark mode nem PDF.
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API); Postgres real e o job de CI do portal no GitHub não verificados.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API); job de CI do portal (npm ci + build) verificado no GitHub; Postgres real não verificado.

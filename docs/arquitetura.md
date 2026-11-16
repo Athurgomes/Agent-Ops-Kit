@@ -93,7 +93,7 @@ Fase 3 (ADR-008), fluxos:
 | `docker-compose.yml` | Jaeger (all-in-one) |
 | `platform/aok_platform/` | API da plataforma: `app`, `auth` (senha, token, papéis), `sessions` (login, sessão, throttle), `portal` (leitura, download, histórico), `models`, `reports`, `db`, `seed_demo` |
 | `platform/portal/` | front-end React, Vite, TypeScript e Tailwind, servido pela API |
-| `platform/docker-compose.yml` | API e Postgres (`docker build` verificado localmente; Postgres real e o job de CI do portal no GitHub não verificados) |
+| `platform/docker-compose.yml` | API e Postgres (`docker build` verificado localmente; job de CI do portal (npm ci + build) verificado no GitHub; Postgres real não verificado) |
 
 ## Decisões
 
