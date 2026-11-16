@@ -42,6 +42,20 @@ bash scripts/demo.sh                      # roteiro completo, com log de auditor
 
 `--reuse` confere o manifesto das respostas gravadas (prompt, dataset e modelo); se divergirem, o comando falha com código 2.
 
+### Relatório para quem não é técnico
+
+```bash
+aok report build --out reports/pacote
+aok check --publish reports/publicados --agent-id meu-agente   # opcional: --audit LOG, --previous relatorio.json
+```
+
+Saída real de ambos neste repositório: `Pacote gravado em reports/pacote/ (relatorio.md, relatorio.html, relatorio.json)` e `Semáforo (regras provisórias): AMARELO`; o `--publish` acrescentou `Publicado em reports/publicados/meu-agente/<timestamp UTC> (semáforo: yellow)`.
+
+- Não roda modelo: lê os resultados gravados (eval e red team).
+- O `--publish` grava `relatorio.md`, `relatorio.html`, `relatorio.json` e `pacote.json` em `<pasta>/<agent-id>/<timestamp UTC>/` e atualiza `index.json` com as versões, mais recente primeiro. Cada publicação cria uma versão nova; nada é sobrescrito (por convenção, não é imutabilidade técnica).
+- O log de auditoria nunca entra no pacote: com `--audit`, só entram o resultado da verificação da cadeia e a âncora.
+- O semáforo usa regras provisórias, e verde não significa seguro.
+
 ### Com o modelo (usa o Ollama)
 
 ```bash
@@ -127,7 +141,7 @@ Ressalvas: pelas checagens, a diferença não é distinguível de zero a 5%. O j
 - A suíte de ataques não é reservada nem cega.
 - A auditoria usa hash encadeado sem assinatura: detecta edição parcial, mas não é imutabilidade; apagar o fim do arquivo ou reescrever toda a cadeia não é detectado sem uma âncora guardada fora do arquivo (ADR-004).
 - O CI valida respostas gravadas e o manifesto; não reexecuta o modelo (ADR-001).
-- O gate do eval ainda não foi validado em um PR real que piore um prompt: só foi simulado localmente (o mesmo comando rodado na máquina, workflow checado com `actionlint`). O status dos workflows é o que aparece na aba Actions do repositório.
+- O gate do eval foi exercitado em 2 PRs de teste, fechados sem mesclar ([#1](https://github.com/Athurgomes/Agent-Ops-Kit/pull/1) e [#2](https://github.com/Athurgomes/Agent-Ops-Kit/pull/2)); resultados em [docs/resultados.md](docs/resultados.md). Ele usa respostas gravadas, o prompt piorado foi degradado de propósito e foi uma execução por PR: é um teste de mecanismo, não uma medida de qualidade.
 - O agente de referência usa documentos fictícios; nada aqui foi validado com dados reais.
 
 ## Próximos passos
@@ -139,7 +153,6 @@ Nada disto existe ainda:
 - Exportar métricas para Prometheus e Grafana.
 - Execução em AWS/Bedrock.
 - Publicar o pacote (hoje só instala a partir do repositório).
-- Validar o gate de CI em um pull request real que piore um prompt.
 - Gravar o print do trace no Jaeger e um GIF da CLI.
 
 ## Estrutura do repositório
