@@ -53,6 +53,7 @@ flowchart LR
     API --> FS[(Arquivos dos relatórios<br/>AOK_DATA_DIR)]
     PO[Portal React<br/>servido pela API] -->|cookie de sessão| API
     API --> DL[(download_log)]
+    API --> AE[(admin_event)]
 ```
 
 O admin cria área e agente e emite o token do agente (guardado como hash). O agente publica com `platform.agent_id` do `agent.yaml` (ou `--agent-id`), que deve ser o slug dono do token. A API valida o esquema fechado, o limite de 1 MiB e o sha256 de cada arquivo, e grava uma versão com `seq` por agente. O log de auditoria não sobe.
@@ -62,6 +63,8 @@ Fase 3 (ADR-008), fluxos:
 - **Login**: `POST /v1/auth/login` (e-mail e senha, scrypt) cria uma sessão e devolve o cookie `aok_session` (HttpOnly, SameSite=Strict). O throttle por e-mail é em memória.
 - **Leitura**: o portal chama `/v1/areas`, `/v1/areas/{id}/agents`, `/v1/agents/{id}/reports` e `/v1/reports/{id}`. O alcance vem da `membership`: `area_viewer` vê a área e as sub-áreas (CTE recursiva), `org_admin` vê tudo, o resto responde 404. O token de agente não lê.
 - **Telas do portal** (interface em inglês; conteúdo dos relatórios vindo do backend em português): `/` (landing), `/login`, `/app` e `/app/areas/:areaId` (áreas), `/app/areas/:areaId/agents/:agentId` (relatórios do agente), `/app/reports/:reportId` (detalhe e download), `/app/downloads` e, só `org_admin`, `/app/admin/downloads`. Sign Up, Pricing, redes sociais e links de rodapé são placeholders "Soon", não clicáveis.
+- **Administração** (ADR-009, só `org_admin`): telas `/app/admin/areas`, `agents`, `agents/:id` (tokens), `users` e `activity`. Rotas novas: `GET /v1/admin/areas`, `/agents`, `/agents/{id}/tokens`, `/users`, `/memberships` e `/events`. Leituras e escritas ficam na organização de quem chama (alvo de outra organização: 404). Bloqueios 409: não desativar a própria conta nem revogar o próprio `org_admin`; nunca o último `org_admin` ativo (vale também para a chave de bootstrap, que usa a primeira organização).
+- **Trilha `admin_event`**: toda escrita administrativa grava quando, quem, ação e alvo, sem segredos, na mesma transação. Imutável pela API (e pelo ORM); quem opera o banco pode alterar. `GET /v1/admin/events` só aceita sessão de `org_admin`, com `limit` e `offset`. As demais listagens do admin não têm paginação.
 - **Download com log**: `GET /v1/reports/{id}/download?format=md|html|json` confere o alcance, grava uma linha em `download_log` (baixado em, relatório gerado em) e devolve o arquivo. `/v1/me/downloads` mostra os do próprio usuário; `/v1/admin/downloads` (`org_admin` por sessão) mostra todos.
 
 ## Módulos
@@ -91,9 +94,9 @@ Fase 3 (ADR-008), fluxos:
 | `examples/rag_agent/` | agente de referência (agent, tools, indexer, corpus fictício) |
 | `.github/workflows/` | `ci.yml` (ruff e pytest) e `eval.yml` (gate com respostas gravadas) |
 | `docker-compose.yml` | Jaeger (all-in-one) |
-| `platform/aok_platform/` | API da plataforma: `app`, `auth` (senha, token, papéis), `sessions` (login, sessão, throttle), `portal` (leitura, download, histórico), `models`, `reports`, `db`, `seed_demo` |
+| `platform/aok_platform/` | API da plataforma: `app`, `auth` (senha, token, papéis), `sessions` (login, sessão, throttle), `portal` (leitura, download, histórico), `models` (inclui `admin_event`), `reports`, `db`, `seed_demo` |
 | `platform/portal/` | front-end React, Vite, TypeScript e Tailwind, servido pela API |
-| `platform/docker-compose.yml` | API e Postgres (`docker build` verificado localmente; job de CI do portal (npm ci + build) verificado no GitHub; Postgres real não verificado) |
+| `platform/docker-compose.yml` | API e Postgres (`docker build` verificado localmente, antes do redesenho do visual e das telas de administração e não reverificado depois; job de CI do portal (npm ci + build) verificado no GitHub até o commit 9d8a418; Postgres real não verificado) |
 
 ## Decisões
 
@@ -107,6 +110,7 @@ As decisões e suas limitações estão em [decisoes.md](decisoes.md):
 - ADR-006: relatório publicado em pasta local versionada, só agregados e hashes.
 - ADR-007: plataforma em `platform/`, relatório autodeclarado, só agregados e hashes.
 - ADR-008: portal e login (scrypt, cookie de sessão, CSRF só por SameSite, acesso por área, `download_log`).
+- ADR-009: administração do portal e trilha `admin_event`.
 
 Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 
@@ -115,7 +119,7 @@ Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 - Kafka (eventos do agente em tópico, consumidores de auditoria e métricas).
 - Adaptador para outro framework de agentes: só existe o loop do agente de referência.
 - Prometheus e Grafana: as métricas são calculadas em Python, não exportadas.
-- SSO, trilha além do download, multiempresa, dark mode e PDF na plataforma.
+- Na plataforma: SSO, multiempresa e visão de operador, dark mode, PDF, Sign Up e recuperação de senha. Trilha de login e de leitura também não existe (só download e escritas administrativas).
 - Deploy em nuvem.
 - Publicação em PyPI: o pacote se instala a partir do repositório.
 - Validação do gate do eval em um PR real que piore um prompt: até agora só foi simulado localmente (ver README).

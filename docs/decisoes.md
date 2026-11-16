@@ -99,7 +99,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O relatório é autodeclarado: a plataforma confere o esquema, o tamanho e o sha256 dos arquivos, mas não reexecuta eval nem red team. Quem publica pode enviar números que não vieram de uma execução real.
 - A imutabilidade das versões vale só pela API: quem opera o banco ou o disco pode alterar ou apagar.
 - A chave de bootstrap é única e compartilhada entre admins; não há login, papéis nem SSO na fase 2; login e papéis chegam na ADR-008.
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API); job de CI do portal (npm ci + build) verificado no GitHub; Postgres real não verificado; os testes automatizados usam SQLite.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; job de CI do portal (npm ci + build) verificado no GitHub até o commit 9d8a418; Postgres real não verificado; os testes automatizados usam SQLite.
 - Alternativa descartada: enviar o log de auditoria (expõe conteúdo das interações).
 
 ## ADR-008: portal e login de usuários (fase 3)
@@ -113,13 +113,37 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Acesso por área com herança para sub-áreas (CTE recursiva, nunca para cima). `org_admin` vê a organização toda. Área fora do alcance responde 404.
 - `download_log` foi antecipado da fase 4 para a 3. Cada download grava o instante (baixado em) e o instante de geração do relatório (gerado em). Cada pessoa vê só os seus; só `org_admin` vê todos, por sessão e não pela chave de bootstrap, por LGPD. O filtro de área do histórico é por área exata, sem sub-áreas.
 - Tabelas criadas com `create_all`, sem migração.
-- Portal em React, Vite, TypeScript e Tailwind, servido pela própria API. O nome "Farol" é provisório e fictício (só em `platform/portal/src/brand.ts`). O visual é minimalista, em azul, com cantos arredondados (redesenho posterior ao primeiro visual, que se inspirava em um template neo-brutalista; o template foi abandonado).
+- Portal em React, Vite, TypeScript e Tailwind, servido pela própria API. O nome "Farol" é provisório e fictício (só em `platform/portal/src/brand.ts`). O visual é minimalista, em azul, com cantos arredondados (redesenho posterior ao primeiro visual, que se inspirava em um template neo-brutalista; o template foi abandonado). Substituído pelo ADR-009.
 - Idioma: toda a interface (landing, login, área logada) está em inglês. O conteúdo dos relatórios vindo do backend e os nomes do seed continuam em português (limitação conhecida).
 - Placeholders: Sign Up, Pricing, redes sociais e links de rodapé (Docs, Blog, Contact, Terms, Privacy) aparecem como "Soon" e não são clicáveis. Na landing, a nota do fundador é um rascunho e a fala de usuário está marcada como placeholder, não é depoimento real.
 
 **Consequências e limitações.**
 - O throttle reinicia a cada deploy, não funciona com vários workers (cada processo conta separado) e permite que terceiros travem a conta de outra pessoa por 5 minutos.
 - Dívida: sem Alembic, mudança de coluna não é aplicada em banco existente; adotar migração antes disso.
-- A trilha cobre só o download; não há registro de login nem de leitura.
+- A trilha cobre só o download (as escritas administrativas passaram a ter trilha no ADR-009); não há registro de login nem de leitura.
 - Não há SSO, multiempresa, dark mode nem PDF.
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API); job de CI do portal (npm ci + build) verificado no GitHub; Postgres real não verificado.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; job de CI do portal (npm ci + build) verificado no GitHub até o commit 9d8a418; Postgres real não verificado.
+
+## ADR-009: administração do portal e trilha de eventos
+
+**Contexto.** Depois do ADR-008, criar áreas, agentes, tokens e usuários dependia de chamadas diretas à API com a chave de bootstrap. O time de segurança precisa fazer isso pelo portal, com registro de quem mudou o quê. Extensão fora do plano original.
+
+**Decisão.**
+- Telas de administração, só para `org_admin`: `/app/admin/areas`, `agents`, `agents/:id` (com tokens), `users`, `activity` e `downloads`.
+- Novas listagens `GET /v1/admin/areas`, `/agents`, `/agents/{id}/tokens`, `/users` e `/memberships`. Tokens: só metadados, nunca o token nem o hash. Usuários: nunca senha nem hash.
+- Tabela `admin_event` (quando, quem, ação, tipo e id do alvo; sem segredos). Toda escrita administrativa grava o evento na mesma transação. `GET /v1/admin/events` só aceita sessão de `org_admin` (a chave de bootstrap não lê), mais recentes primeiro, com `limit` e `offset`. A API não tem update nem delete; o modelo também bloqueia alteração pelo ORM.
+- Escopo por organização nas leituras e escritas administrativas: alvo de outra organização responde 404.
+- Bloqueios 409: o admin não desativa a própria conta nem revoga o próprio `org_admin`; ninguém desativa ou revoga o último `org_admin` ativo, inclusive pela chave de bootstrap.
+- Logout no portal só limpa a sessão local depois que o servidor confirma.
+- Token emitido e senha gerada aparecem uma única vez e só em estado React (nunca em storage, URL ou console).
+- Visual: texto preto em fundo branco, azul só em botões de impacto, links e foco; contêineres retos com borda de 1 px; inputs e botões em pílula; login em tela própria. Substitui a descrição do visual no ADR-008.
+
+**Consequências e limitações.**
+- A chave de bootstrap usa sempre a primeira organização: só há uma organização por enquanto.
+- `admin_event` é imutável pela API, mas quem opera o banco pode alterá-lo.
+- As listagens do admin não têm paginação; só os eventos têm.
+- Mudança de coluna exigirá migração (Alembic); `create_all` continua.
+- Não existe visão multiempresa nem de operador da plataforma. Ela é uma fase futura e exigirá escopo por organização em toda consulta, papel de operador e login separado.
+- Verificado no navegador, com banco temporário: criar área e sub-área, registrar agente, emitir token (aparece uma vez), publicar um relatório real com `aok check --publish`, ver o relatório no portal, revogar o token e a publicação seguinte falhar com 401, criar usuário viewer com acesso só à área, desativar o usuário e o login falhar, ver os eventos.
+- Não exercitados na interface: redefinir senha, editar ou reativar agente, conceder ou revogar acesso depois da criação.
+- Postgres real não verificado. `docker build` foi verificado antes do redesenho do portal e não foi reverificado após as telas de administração. O job de CI no GitHub foi verificado até o commit 9d8a418.
