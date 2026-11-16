@@ -23,7 +23,7 @@ REQUIRED_LIMITATIONS = (
         "com guardrails não pode ser atribuída apenas aos guardrails."
     ),
 )
-BANNED =re.compile(r"\b(seguro|segura|robust[oa]s?|eficaz(es)?)\b", re.IGNORECASE)
+BANNED = re.compile(r"\b(seguro|segura|robust[oa]s?|eficaz(es)?)\b", re.IGNORECASE)
 
 
 def _write(path, rows):
