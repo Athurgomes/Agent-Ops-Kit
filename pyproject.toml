@@ -22,17 +22,21 @@ aok = "agent_ops_kit.cli:main"
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
 rag = ["chromadb", "ollama"]
+platform = ["fastapi", "uvicorn", "sqlalchemy>=2", "psycopg[binary]", "httpx"]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "platform"]
 
 [tool.setuptools.package-data]
 agent_ops_kit = ["templates/agent/**/*"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "."]
+pythonpath = ["src", "platform", "."]
 testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
 extend-exclude = ["src/agent_ops_kit/templates"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Header"]
