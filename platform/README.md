@@ -170,3 +170,20 @@ metadados: nenhuma rota devolve conteúdo de relatório, download, token, hash o
 As respostas que trazem a senha gerada (criar admin e reset) saem com `Cache-Control: no-store` e `Pragma: no-cache`.
 No portal, o console fica em `/ops/*` (sem link em lugar nenhum); com o servidor sem `AOK_OPS_ENABLED`, `/ops/*` aparece como página inexistente (inclusive o título da aba, que só muda quando o console existe).
 
+## Rodar os testes em Postgres
+
+Por padrão os testes de plataforma usam SQLite em memória. Com `AOK_TEST_DATABASE_URL` definida, cada teste
+roda num **schema novo** do Postgres (criado e apagado por `tests/conftest.py`, sem lixo). Exemplo com um
+container efêmero (porta só em 127.0.0.1; a senha vai só na variável de ambiente, nunca em arquivo):
+
+```bash
+PGPW=$(python -c "import secrets;print(secrets.token_hex(16))")
+docker run -d --rm --name aok-pg-test -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD="$PGPW" postgres:16
+export AOK_TEST_DATABASE_URL="postgresql+psycopg://postgres:$PGPW@127.0.0.1:55432/postgres"
+python -m pytest tests/test_platform_*.py -q      # inclui test_platform_pg_legacy.py (migração de banco legado)
+docker rm -f aok-pg-test
+```
+
+A suíte em Postgres é bem mais lenta (um schema por teste). O CI tem o job `postgres` com o mesmo teste, mas
+este README não afirma que ele já foi verificado no GitHub.
+
