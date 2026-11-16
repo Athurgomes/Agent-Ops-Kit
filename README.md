@@ -142,6 +142,8 @@ Na primeira execução o corpus fictício é indexado em `chroma/`. Só uma perg
 2. Escolha o serviço `rag-agent` (para um agente criado com `aok new`, o nome do agente) e clique em Find Traces.
 3. Spans esperados em cada trace: `agent.run`, `llm.call`, `tool.call` e `retrieval.query`.
 
+Capturas reais de um trace (lista e detalhe dos spans) estão em [evidencias/02-trace-jaeger/](evidencias/02-trace-jaeger/).
+
 Para desligar o tracing: `AOK_TRACING=off`.
 
 ## Resultados medidos
@@ -223,7 +225,7 @@ Nada disto existe ainda:
 - Exportar métricas para Prometheus e Grafana.
 - Execução em AWS/Bedrock.
 - Publicar o pacote (hoje só instala a partir do repositório).
-- Gravar o print do trace no Jaeger e um GIF da CLI.
+- Gravar um GIF da CLI.
 
 ## Estrutura do repositório
 
@@ -235,6 +237,7 @@ redteam/             ataques, perguntas benignas, resultados gravados
 platform/            plataforma (API de recebimento de relatórios)
 docs/                arquitetura, decisões (ADRs), resultados
 scripts/demo.sh      demo reproduzível (respostas gravadas)
+evidencias/          capturas de tela reais (terminal, Jaeger, GitHub, portal), com índice
 tests/               testes (sem Ollama e sem Docker)
 .github/workflows/   ci.yml e eval.yml
 docker-compose.yml   Jaeger
