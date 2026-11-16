@@ -24,6 +24,7 @@ from .auth import (
     Actor,
     hash_password,
     hash_token,
+    is_org_admin,
     make_dependencies,
     new_token,
 )
@@ -225,6 +226,30 @@ def _user_or_404(s: Session, user_id: int, org_id: int) -> User:
     if user is None or user.org_id != org_id:
         raise HTTPException(404, "usuário não encontrado")
     return user
+
+
+def _other_active_admins(s: Session, org_id: int, exclude_user_id: int) -> int:
+    return (
+        s.scalar(
+            select(func.count(func.distinct(User.id)))
+            .join(Membership, Membership.user_id == User.id)
+            .where(
+                User.org_id == org_id,
+                User.active.is_(True),
+                Membership.role == ORG_ADMIN,
+                User.id != exclude_user_id,
+            )
+        )
+        or 0
+    )
+
+
+def _guard_last_admin(s: Session, org_id: int, user: User) -> None:
+    """A organização nunca fica sem um org_admin ativo (vale para qualquer ator, inclusive bootstrap)."""
+    if user.active and is_org_admin(s, user) and _other_active_admins(s, org_id, user.id) == 0:
+        raise HTTPException(
+            409, "esta é a última conta org_admin ativa; a organização ficaria sem administrador"
+        )
 
 
 def _log(s: Session, actor: Actor, action: str, target_type: str, target_id: int | None) -> None:
@@ -540,6 +565,10 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
     ):
         user = _user_or_404(s, user_id, actor.org_id)
         was_active = user.active
+        if body.active is False and was_active:  # protege contra auto-bloqueio, antes de mudar algo
+            if actor.user_id == user.id:
+                raise HTTPException(409, "não é possível desativar a própria conta")
+            _guard_last_admin(s, actor.org_id, user)
         if body.email is not None:
             user.email = body.email
             _log(s, actor, "user.update", "user", user.id)
@@ -593,7 +622,11 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
         m = s.get(Membership, membership_id)
         if m is None:
             raise HTTPException(404, "vínculo não encontrado")
-        _user_or_404(s, m.user_id, actor.org_id)  # vínculo de outra organização: 404
+        owner = _user_or_404(s, m.user_id, actor.org_id)  # vínculo de outra organização: 404
+        if m.role == ORG_ADMIN:
+            if actor.user_id == owner.id:
+                raise HTTPException(409, "não é possível revogar o próprio acesso de org_admin")
+            _guard_last_admin(s, actor.org_id, owner)
         _log(s, actor, "membership.delete", "membership", m.id)
         s.delete(m)
         s.commit()
