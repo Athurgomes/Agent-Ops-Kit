@@ -66,7 +66,7 @@ aok check --publish https://sua-plataforma --agent-id meu-agente   # ou platform
 ```
 
 - Só agregados e hashes sobem; o log de auditoria não. O relatório é autodeclarado: a plataforma não reexecuta o teste (ADR-007).
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API); job de CI do portal (npm ci + build) verificado no GitHub; Postgres real não verificado; os testes automatizados usam SQLite.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; job de CI do portal (npm ci + build) verificado no GitHub até o commit 9d8a418; Postgres real não verificado; os testes automatizados usam SQLite.
 
 ### Plataforma (fase 3: portal)
 
@@ -80,16 +80,27 @@ python -m aok_platform.seed_demo        # imprime as senhas uma única vez
 uvicorn aok_platform.app:create_app --factory   # http://127.0.0.1:8000
 ```
 
-- Telas: landing pública, login (`/login`), áreas > agentes > relatórios > detalhe (`/app/...`; baixar MD, HTML e JSON), "My downloads" e, para `org_admin`, "All downloads". Visual minimalista em azul.
+- Telas: landing pública, login (`/login`), áreas > agentes > relatórios > detalhe (`/app/...`; baixar MD, HTML e JSON), "My downloads" e, para `org_admin`, "All downloads". Visual em preto e branco, com azul só em botões de impacto, links e foco.
 - A interface é toda em inglês; o conteúdo dos relatórios vindo do backend e os nomes do seed seguem em português (limitação conhecida).
 - Na landing, a nota do fundador é rascunho e a fala de usuário é placeholder, não depoimento real. Sign Up, Pricing, redes sociais e links de rodapé são placeholders "Soon", não clicáveis.
 - Cada pessoa vê só as áreas do seu perfil (com sub-áreas); área fora do alcance responde 404. O download grava em `download_log`.
 - O seed cria dados de demonstração com agentes fictícios; o conteúdo dos relatórios vem do exemplo do repositório.
 - Verificado com o design atual: capturas de tela (Edge headless) a 1440 e 390 px de todas as telas (landing, login, áreas, agente, detalhe do relatório, downloads, admin), inspecionadas. O fluxo funcional (login de admin, áreas, logout) foi exercitado no navegador na versão anterior da interface e não foi reexecutado após o redesenho (a lógica de autenticação não mudou; só a rota de login passou a `/login`).
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API); job de CI do portal (npm ci + build) verificado no GitHub; Postgres real não verificado.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; job de CI do portal (npm ci + build) verificado no GitHub até o commit 9d8a418; Postgres real não verificado.
 - Limitações: throttle de login em memória (reinicia no deploy, não vale com vários workers e permite travar a conta de outra pessoa por 5 min); CSRF só por SameSite; tabelas sem migração.
-- Não existe: SSO, trilha além do download, multiempresa, dark mode e PDF.
-- `python -m pytest -q` neste commit: 413 passed.
+- Não existe: SSO, multiempresa, dark mode, PDF, Sign Up e recuperação de senha.
+- `python -m pytest -q` neste commit: 435 passed.
+
+### Plataforma: administração
+
+Para `org_admin`, o menu "Administration" do portal (ADR-009) permite ao time de segurança:
+
+- **Áreas**: criar áreas e sub-áreas.
+- **Agentes**: registrar, ativar e desativar; emitir e revogar tokens (o token aparece uma única vez).
+- **Usuários e acessos**: criar usuários, redefinir senha (gerada, exibida uma vez), vincular a áreas e desativar.
+- **Activity** (eventos administrativos: quem mudou o quê, sem segredos) e **All downloads** (tela separada).
+
+Regras: leituras e escritas ficam na organização de quem chama; o admin não desativa a própria conta e ninguém remove o último `org_admin` ativo. Verificado no navegador, com banco temporário: criar área e sub-área, registrar agente, emitir token, publicar com `aok check --publish`, ver o relatório, revogar o token (a publicação seguinte falhou com 401), criar usuário viewer só da área, desativar e ver o login falhar, ver os eventos. Não exercitados na interface: redefinir senha, editar ou reativar agente, conceder ou revogar acesso depois da criação. Limitações: uma organização só (a chave de bootstrap usa a primeira); listagens sem paginação (só os eventos); `admin_event` pode ser alterado por quem opera o banco; `docker build` não foi reverificado após as telas de administração.
 
 ### Com o modelo (usa o Ollama)
 

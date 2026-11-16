@@ -65,6 +65,7 @@ em inglês; o nome "Farol" é provisório e fictício e vive só em `platform/po
 A interface está toda em inglês (landing, login, área logada). Páginas: landing pública, login,
 areas > agents > reports > report detail (baixar MD/HTML/JSON), "My downloads" e, para `org_admin`,
 "All downloads".
+Para `org_admin`: Administration (áreas, agentes, usuários, atividade) e All downloads.
 
 Limitação conhecida: o conteúdo dos relatórios vindo do backend (ressalvas, textos do resumo) continua
 em português; só a interface foi traduzida. Itens "Soon" (Sign Up, Pricing, redes sociais, Docs,
