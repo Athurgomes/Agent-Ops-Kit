@@ -354,7 +354,13 @@ def test_cli_publica_na_plataforma_e_repete_409(env, monkeypatch, check_argv, ca
     out = capsys.readouterr()
     assert "versão 1" in out.out and token not in out.out + out.err
     assert seen["url"] == "http://plataforma.local/v1/reports" and seen["timeout"] > 0
-    # mesmo pacote de novo: o servidor responde 409 e o CLI explica em português
+    # mesmo pacote de novo: o servidor responde 409 e o CLI explica em português.
+    # Reaproveita os arquivos já gravados (generated_at tem precisão de segundos: regerar
+    # o pacote na virada do segundo mudaria o sha256 e tornaria o teste instável).
+    pkg_json = Path(argv[argv.index("--out") + 1]) / "relatorio.json"
+    monkeypatch.setattr(
+        cli, "_write_package", lambda args: json.loads(pkg_json.read_text(encoding="utf-8"))
+    )
     assert cli.main(argv) == 2
     err = capsys.readouterr().err
     assert "já foi publicado" in err and token not in err
