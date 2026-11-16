@@ -6,13 +6,18 @@ encadeado e guardrails, tudo ligado pelo `agent.yaml`. Os documentos em `corpus/
 ## Como rodar
 
 Requisitos: Python 3.11+, [Ollama](https://ollama.com) com `llama3.1:8b` e `nomic-embed-text`
-(`ollama pull ...`) e `pip install "agent-ops-kit[rag]"`.
+(`ollama pull ...`) e as dependências do extra `rag`. O pacote não está publicado: a partir da
+raiz do repositório do agent-ops-kit, rode `pip install -e ".[rag]"`.
 
 ```
 python run.py "Quantos dias de férias a Aurora Papéis concede?"
 ```
 
 Na 1ª execução o corpus é indexado em `chroma/`.
+
+Limitação do modelo: o `llama3.1:8b` local às vezes responde "não encontrei" sem consultar os
+documentos em perguntas genéricas. Citar a empresa na pergunta ajuda. Isso é limitação do modelo,
+não dos documentos.
 
 ## Trace no Jaeger
 

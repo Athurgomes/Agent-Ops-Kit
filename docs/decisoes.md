@@ -70,5 +70,5 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 **Consequências.**
 - O comportamento do agente de referência e os artefatos em `evals/` e `redteam/results/` ficam intactos.
 - Correções no núcleo precisam ser repetidas no template; o teste de deriva avisa se esquecerem.
-- O agente gerado depende de `agent-ops-kit[rag]` (Chroma e Ollama) e de `docker compose up` do kit para ver o trace; o tracing se desliga com `AOK_TRACING=off`.
+- O agente gerado depende do extra `rag` do kit (Chroma e Ollama), instalado com `pip install -e ".[rag]"` a partir do repositório do kit e de `docker compose up` do kit para ver o trace; o tracing se desliga com `AOK_TRACING=off`.
 - Os arquivos do template são excluídos do ruff, por serem código de um projeto à parte (`app` não é pacote do kit).

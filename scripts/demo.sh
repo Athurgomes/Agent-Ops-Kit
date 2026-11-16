@@ -60,6 +60,7 @@ scene "3/5 Testar a segurança: aok redteam report"
   --fp-dir redteam/results --summary --output "$WORK/redteam.md"
 
 scene "4/5 Relatório de auditoria e prova de integridade"
+echo "Os eventos deste log são FICTÍCIOS: gerados para a demonstração, com relógio fixo."
 "$PY" - "$WORK/auditoria.jsonl" <<'PY'
 import datetime as dt
 import sys
