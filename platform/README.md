@@ -147,3 +147,20 @@ curl -X POST http://127.0.0.1:8000/v1/admin/users -H "Authorization: Bearer $AOK
   `agent` permanece no SQLite (o Postgres a remove); lá o slug segue global até recriar a tabela.
 - `seed_demo` continua usando a única organização (a primeira).
 
+## Operador da plataforma (`/v1/ops`)
+
+Desligado por padrão: só existe com `AOK_OPS_ENABLED=true` (senão 404). O operador não pertence a
+nenhuma organização, tem login e cookie próprios (`aok_ops_session`, `Path=/v1/ops`, 4 h) e a chave de
+bootstrap não tem relação com ele. Criação só por linha de comando:
+
+```bash
+python -m aok_platform.create_operator --email ops@example.com          # imprime a senha UMA vez
+python -m aok_platform.create_operator --email ops@example.com --reset-password
+```
+
+Rotas (todas com sessão de operador; escritas vão para `operator_event`): `POST /v1/ops/auth/login|logout`,
+`GET /v1/ops/auth/me`, `GET|POST /v1/ops/organizations`, `GET|PATCH /v1/ops/organizations/{id}` (sem DELETE),
+`POST /v1/ops/organizations/{id}/admins` e `.../admins/{user_id}/reset-password` (a senha gerada volta
+uma única vez), `GET /v1/ops/organizations/{id}/events` e `GET /v1/ops/events`. O operador só vê
+metadados: nenhuma rota devolve conteúdo de relatório, download, token, hash ou senha (ADR-010).
+
