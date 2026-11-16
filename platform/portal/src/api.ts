@@ -144,6 +144,42 @@ export const api = {
     if (!res.ok) throw failure(res);
     return (await res.json()) as Me;
   },
+  /** Whether password recovery by email is switched on in this server (never throws). */
+  async capabilities(): Promise<{ password_reset: boolean }> {
+    try {
+      const res = await request("/v1/auth/capabilities", {}, false);
+      if (!res.ok) return { password_reset: false };
+      return { password_reset: (await res.json()).password_reset === true };
+    } catch {
+      return { password_reset: false };
+    }
+  },
+  /** Returns the HTTP status (0 = network error). The caller must show the same message for any of them. */
+  async forgotPassword(email: string): Promise<number> {
+    try {
+      const res = await request(
+        "/v1/auth/password/forgot",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) },
+        false,
+      );
+      return res.status;
+    } catch {
+      return 0;
+    }
+  },
+  /** Returns the HTTP status (204 = done, 400 = invalid or expired link, 422 = password too short, 429 = too many). */
+  async resetPassword(token: string, newPassword: string): Promise<number> {
+    try {
+      const res = await request(
+        "/v1/auth/password/reset",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, new_password: newPassword }) },
+        false,
+      );
+      return res.status;
+    } catch {
+      return 0;
+    }
+  },
   areas: () => getJson<AreaNode[]>("/v1/areas"),
   agents: (areaId: number) => getJson<AgentItem[]>(`/v1/areas/${areaId}/agents`),
   reports: (agentId: number) => getJson<ReportItem[]>(`/v1/agents/${agentId}/reports`),

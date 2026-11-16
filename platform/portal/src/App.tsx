@@ -16,7 +16,9 @@ import { AdminAreas } from "./pages/admin/AdminAreas";
 import { AdminUsers } from "./pages/admin/AdminUsers";
 import { Downloads } from "./pages/Downloads";
 import { Landing } from "./pages/Landing";
+import { ForgotPassword } from "./pages/ForgotPassword";
 import { Login } from "./pages/Login";
+import { ResetPassword } from "./pages/ResetPassword";
 import { NotFound } from "./pages/NotFound";
 import { ReportView } from "./pages/ReportView";
 
@@ -29,6 +31,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       {/* Operator console: not linked from anywhere; looks like an unknown page when the server has it off. */}
       <Route path="/ops" element={<OpsRoot />}>
         <Route index element={<Navigate to="/ops/organizations" replace />} />

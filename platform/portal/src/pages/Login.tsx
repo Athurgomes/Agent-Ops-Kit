@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { ApiError } from "../api";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { ApiError, api } from "../api";
 import { useAuth } from "../auth";
 import { Button, ErrorBox, Field, Logo, SoonText } from "../ui";
 
@@ -13,6 +13,15 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // null = still asking the server; true = the real link; false = the "Soon" placeholder
+  const [canReset, setCanReset] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.capabilities().then((c) => alive && setCanReset(c.password_reset));
+    return () => {
+      alive = false;
+    };
+  }, []);
   const target = from?.startsWith("/app") ? from : "/app";
 
   if (!loading && me) return <Navigate to={target} replace />;
@@ -56,7 +65,15 @@ export function Login() {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            aside={<SoonText className="text-sm text-subtle">Forgot password?</SoonText>}
+            aside={
+              canReset === true ? (
+                <Link to="/forgot-password" className="link text-sm">
+                  Forgot password?
+                </Link>
+              ) : canReset === false ? (
+                <SoonText className="text-sm text-subtle">Forgot password?</SoonText>
+              ) : undefined
+            }
           />
           {error && <ErrorBox>{error}</ErrorBox>}
           <Button type="submit" variant="primary" size="lg" disabled={busy} className="mt-2 w-full">
