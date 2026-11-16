@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useParams } from "react-router-dom";
 import type { AreaNode } from "./api";
 import { areaPath, CatalogProvider, RequireAuth, useAuth, useCatalog } from "./auth";
 import { BRAND, REPO_URL } from "./brand";
@@ -181,9 +181,9 @@ function TreeNode({ node, selected, trail }: { node: AreaNode; selected: number 
 function SidebarContent() {
   const { me, logout } = useAuth();
   const cat = useCatalog();
-  const nav = useNavigate();
   const params = useParams();
   const selected = params.areaId ? Number(params.areaId) : null;
+  const [logoutError, setLogoutError] = useState(false);
   const trail = new Set(selected ? areaPath(cat.areas, selected).map((a) => a.id) : []);
   const itemCls = ({ isActive }: { isActive: boolean }) => cx("side-item", isActive && "active");
   const label = "px-4 pb-2 pt-8 text-sm font-extrabold";
@@ -222,12 +222,21 @@ function SidebarContent() {
           size="sm"
           className="w-full"
           onClick={async () => {
-            nav("/"); // leave the private area first, so we land on the public home page
-            await logout();
+            setLogoutError(false);
+            try {
+              await logout(); // clears local state only after the server confirmed; then RequireAuth sends us home
+            } catch {
+              setLogoutError(true); // never pretend the session ended
+            }
           }}
         >
           Log out
         </Button>
+        {logoutError && (
+          <p role="alert" className="mt-3 text-sm font-semibold">
+            Could not end the session on the server; try again.
+          </p>
+        )}
       </div>
     </div>
   );

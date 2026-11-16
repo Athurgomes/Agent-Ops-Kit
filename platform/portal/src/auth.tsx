@@ -9,6 +9,7 @@ type AuthState = {
   me: Me | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loggedOut: boolean; // true after an explicit log out (so we go home, not to the login page)
   logout: () => Promise<void>;
 };
 const AuthCtx = createContext<AuthState | null>(null);
@@ -16,6 +17,7 @@ const AuthCtx = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loggedOut, setLoggedOut] = useState(false);
 
   useEffect(() => {
     setUnauthorizedHandler(() => setMe(null)); // 401 em qualquer chamada limpa o estado
@@ -28,13 +30,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     setMe(await api.login(email, password));
+    setLoggedOut(false);
   }, []);
+  // Only clears the local state after the server confirmed the session ended; otherwise it throws.
   const logout = useCallback(async () => {
     await api.logout();
+    setLoggedOut(true);
     setMe(null);
   }, []);
 
-  const value = useMemo(() => ({ me, loading, login, logout }), [me, loading, login, logout]);
+  const value = useMemo(
+    () => ({ me, loading, loggedOut, login, logout }),
+    [me, loading, loggedOut, login, logout],
+  );
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 
@@ -46,9 +54,10 @@ export function useAuth(): AuthState {
 
 /** Rotas protegidas: sem sessão volta ao login (e para onde a pessoa queria ir depois). */
 export function RequireAuth({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
-  const { me, loading } = useAuth();
+  const { me, loading, loggedOut } = useAuth();
   const loc = useLocation();
   if (loading) return <Loading />;
+  if (!me && loggedOut) return <Navigate to="/" replace />;
   if (!me) return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />;
   if (admin && !me.is_org_admin) return <Navigate to="/app" replace />;
   return <>{children}</>;

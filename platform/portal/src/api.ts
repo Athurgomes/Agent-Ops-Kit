@@ -133,8 +133,10 @@ export const api = {
     if (!res.ok) throw failure(res);
     return (await res.json()) as Me;
   },
+  /** Throws if the server could not end the session (an already-expired 401 counts as ended). */
   async logout(): Promise<void> {
-    await request("/v1/auth/logout", { method: "POST" }, false).catch(() => {});
+    const res = await request("/v1/auth/logout", { method: "POST" }, false);
+    if (!res.ok && res.status !== 401) throw failure(res);
   },
   async me(): Promise<Me | null> {
     const res = await request("/v1/auth/me", {}, false);
