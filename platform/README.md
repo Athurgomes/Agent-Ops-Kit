@@ -187,3 +187,34 @@ docker rm -f aok-pg-test
 A suíte em Postgres é bem mais lenta (um schema por teste). O CI tem o job `postgres` com o mesmo teste, mas
 este README não afirma que ele já foi verificado no GitHub.
 
+## Recuperação de senha (e-mail, opcional)
+
+Só existe com `AOK_SMTP_HOST` **e** `AOK_PUBLIC_URL` definidos; sem isso `POST /v1/auth/password/forgot|reset`
+respondem 404 e `GET /v1/auth/capabilities` devolve `{"password_reset": false}` (com tudo configurado, `true`).
+
+| Variável | Função |
+|----------|--------|
+| `AOK_SMTP_HOST`, `AOK_SMTP_PORT` (587) | servidor SMTP (stdlib `smtplib`, sem serviço externo obrigatório) |
+| `AOK_SMTP_USER`, `AOK_SMTP_PASSWORD` | credenciais, opcionais |
+| `AOK_SMTP_STARTTLS` (true) | `false` só para SMTP local sem TLS |
+| `AOK_SMTP_FROM` | remetente (padrão `no-reply@<host>`) |
+| `AOK_PUBLIC_URL` | base do link do e-mail (ex.: `https://farol.suaempresa.com`). **Nunca** vem do cabeçalho Host/X-Forwarded (evita host header poisoning) |
+
+- `POST /v1/auth/password/forgot {email}`: responde **sempre 202**, com o mesmo corpo, exista ou não o e-mail,
+  esteja o usuário ou a organização ativos ou não. A consulta, o token e o envio rodam depois da resposta. Só
+  envia se o usuário e a organização estiverem ativos. Limites em memória: 3 pedidos por e-mail e 10 por IP por
+  hora (ao exceder, continua 202 sem enviar). Falha de SMTP não aparece para o cliente; o log traz só o e-mail
+  mascarado (`a***@e***.com`), nunca o token.
+- O e-mail leva só o link `{AOK_PUBLIC_URL}/reset-password#token=<token>` (token no **fragmento**, que não vai
+  para logs nem Referer), validade de 30 min e o aviso "if you didn't request this, ignore it".
+- `POST /v1/auth/password/reset {token, new_password}`: senha com 12+ caracteres (422 se curta); falha por
+  qualquer motivo (inexistente, expirado, usado, usuário ou organização inativos) = `400 invalid or expired
+  token`; mais de 10 tentativas inválidas por IP por hora = 429. Sucesso = 204 sem corpo: troca a senha, revoga
+  **todas** as sessões do usuário, invalida os outros tokens pendentes, grava `user.password_reset` em
+  `admin_event` e envia um aviso "Your password was changed". Não faz login automático.
+- Token: `token_urlsafe(32)`, só o hash SHA-256 na tabela `password_reset` (sem IP), uso único, 30 min; um novo
+  pedido invalida os anteriores.
+- Limitações: os limites são por processo (reiniciam no deploy e não somam entre vários workers); atrás de
+  proxy o IP visto é o do proxy (não se confia em `X-Forwarded-For`). O operador da plataforma não usa este
+  fluxo (a senha dele só se redefine pela linha de comando).
+
