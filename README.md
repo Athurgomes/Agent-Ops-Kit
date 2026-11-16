@@ -56,6 +56,20 @@ Saída real de ambos neste repositório: `Pacote gravado em reports/pacote/ (rel
 - O log de auditoria nunca entra no pacote: com `--audit`, só entram o resultado da verificação da cadeia e a âncora.
 - O semáforo usa regras provisórias, e verde não significa seguro.
 
+### Plataforma (fase 2: API)
+
+Serviço opcional em `platform/` que recebe o pacote publicado. Como subir: ver [platform/README.md](platform/README.md). Como publicar, com o token emitido pelo admin só em variável de ambiente:
+
+```bash
+export AOK_PLATFORM_TOKEN="<token emitido>"
+aok check --publish https://sua-plataforma --agent-id meu-agente   # ou platform.agent_id no agent.yaml
+```
+
+- Só agregados e hashes sobem; o log de auditoria não. O relatório é autodeclarado: a plataforma não reexecuta o teste (ADR-007).
+- Não verificado: `docker build` e o Postgres real não foram testados; os testes usam SQLite.
+- Não existe ainda: portal, login, SSO, leitura de relatórios pela API e multiempresa.
+- `python -m pytest -q` neste commit: 390 passed.
+
 ### Com o modelo (usa o Ollama)
 
 ```bash
@@ -162,6 +176,7 @@ src/agent_ops_kit/   pacote: cli, tracing, audit, metrics, guardrails/, eval/, r
 examples/rag_agent/  agente de referência e corpus fictício
 evals/               dataset, prompts v1/v2, respostas gravadas, manifesto, relatórios
 redteam/             ataques, perguntas benignas, resultados gravados
+platform/            plataforma (API de recebimento de relatórios)
 docs/                arquitetura, decisões (ADRs), resultados
 scripts/demo.sh      demo reproduzível (respostas gravadas)
 tests/               testes (sem Ollama e sem Docker)
