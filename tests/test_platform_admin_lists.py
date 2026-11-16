@@ -325,3 +325,78 @@ def test_evento_e_imutavel(env):
         ev.action = "adulterado"
         with pytest.raises(RuntimeError):
             s.commit()
+
+
+# ---- proteção contra auto-bloqueio -----------------------------------------------------------
+
+
+def _second_admin(c, ids):
+    u = c.post("/v1/admin/users", json={"email": "admin2@x.com", "password": PWD}, headers=H).json()
+    m = c.post("/v1/admin/memberships", json={"user_id": u["id"], "role": "org_admin"}, headers=H).json()
+    ids["admin2"], ids["admin2_m"] = u["id"], m["id"]
+
+
+def _admin_membership(app, user_id):
+    with Session(app.state.engine) as s:
+        return s.scalar(select(Membership.id).where(Membership.user_id == user_id, Membership.role == "org_admin"))
+
+
+def _event_count(app):
+    with Session(app.state.engine) as s:
+        return len(list(s.scalars(select(AdminEvent.id))))
+
+
+def test_admin_nao_desativa_a_propria_conta(env):
+    app, c, ids, _ = env
+    _second_admin(c, ids)  # há outro admin: mesmo assim a própria conta é protegida
+    admin = _session(app, "admin@x.com")
+    before = _event_count(app)
+    r = admin.patch(f"/v1/admin/users/{ids['admin@x.com']}", json={"active": False})
+    assert r.status_code == 409 and "própria conta" in r.json()["detail"]
+    assert admin.get("/v1/auth/me").status_code == 200  # nada mudou
+    assert _event_count(app) == before  # tentativa bloqueada não gera evento
+    # o bootstrap não é usuário: pode desativar um admin quando sobra outro
+    assert c.patch(f"/v1/admin/users/{ids['admin@x.com']}", json={"active": False}, headers=H).status_code == 200
+
+
+def test_admin_nao_revoga_o_proprio_org_admin(env):
+    app, c, ids, _ = env
+    _second_admin(c, ids)
+    admin = _session(app, "admin@x.com")
+    mid = _admin_membership(app, ids["admin@x.com"])
+    before = _event_count(app)
+    r = admin.delete(f"/v1/admin/memberships/{mid}")
+    assert r.status_code == 409 and "próprio acesso" in r.json()["detail"]
+    assert _admin_membership(app, ids["admin@x.com"]) == mid and _event_count(app) == before
+    # a chave de bootstrap pode revogar o de outro admin quando sobra um
+    assert c.delete(f"/v1/admin/memberships/{ids['admin2_m']}", headers=H).status_code == 204
+
+
+def test_ultimo_org_admin_ativo_nao_sai_por_nenhum_ator(env):
+    app, c, ids, _ = env
+    before = _event_count(app)
+    url = f"/v1/admin/users/{ids['admin@x.com']}"
+    r = c.patch(url, json={"active": False}, headers=H)  # bootstrap também é barrado
+    assert r.status_code == 409 and "última" in r.json()["detail"]
+    mid = _admin_membership(app, ids["admin@x.com"])
+    r = c.delete(f"/v1/admin/memberships/{mid}", headers=H)
+    assert r.status_code == 409 and "última" in r.json()["detail"]
+    assert _event_count(app) == before
+    # com um segundo admin ativo, um deles pode sair; o que sobra passa a ser o último
+    _second_admin(c, ids)
+    admin2 = _session(app, "admin2@x.com")
+    assert admin2.patch(url, json={"active": False}).status_code == 200  # desativa o outro
+    r = c.patch(f"/v1/admin/users/{ids['admin2']}", json={"active": False}, headers=H)
+    assert r.status_code == 409 and "última" in r.json()["detail"]
+    assert c.delete(f"/v1/admin/memberships/{ids['admin2_m']}", headers=H).status_code == 409
+
+
+def test_admin_inativo_nao_conta_como_ativo_e_viewer_nao_e_afetado(env):
+    _, c, ids, _ = env
+    _second_admin(c, ids)
+    assert c.patch(f"/v1/admin/users/{ids['admin2']}", json={"active": False}, headers=H).status_code == 200
+    # admin2 está inativo: revogar o vínculo dele não deixa a org sem admin ativo
+    assert c.delete(f"/v1/admin/memberships/{ids['admin2_m']}", headers=H).status_code == 204
+    # mas desativar o único admin ativo continua barrado, e o viewer pode ser desativado
+    assert c.patch(f"/v1/admin/users/{ids['admin@x.com']}", json={"active": False}, headers=H).status_code == 409
+    assert c.patch(f"/v1/admin/users/{ids['viewer@x.com']}", json={"active": False}, headers=H).status_code == 200
