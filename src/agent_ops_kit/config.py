@@ -6,6 +6,14 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class PlatformConfig(BaseModel):
+    """Identidade do agente na plataforma (usada por `aok check --publish URL`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str = Field(pattern=r"^[a-z0-9-]{1,64}$")
+
+
 class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -17,6 +25,7 @@ class AgentConfig(BaseModel):
     guardrails: list[str] = Field(default_factory=list)
     retrieval: dict[str, str | int | float | bool] = Field(default_factory=dict)
     audit: str | None = None  # caminho do log de auditoria; None = desligado
+    platform: PlatformConfig | None = None  # opcional; só a publicação por URL usa
 
 
 def load_config(path: str | Path) -> AgentConfig:

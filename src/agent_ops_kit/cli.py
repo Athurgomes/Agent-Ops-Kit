@@ -500,19 +500,30 @@ def cmd_check(args: argparse.Namespace) -> int:
                 raise publish.PublishError("--publish exige --agent-id ou --config")
             if agent_id is not None:
                 publish.validate_agent_id(agent_id)
+        remote = bool(args.publish) and publish.is_url(args.publish)
+        if remote and agent_id is None:
+            from agent_ops_kit.config import load_config
+
+            plat = load_config(args.config).platform
+            agent_id = plat.agent_id if plat else None
         data = _write_package(args)
         if args.publish:
             if agent_id is None:
                 agent_id = data["agent"]["name"]
-            dest, color = publish.publish(args.out, args.publish, agent_id)
-    except (ReportError, publish.PublishError, OSError) as exc:
+            if remote:
+                seq, color = publish.publish_remote(args.out, args.publish, agent_id)
+            else:
+                dest, color = publish.publish(args.out, args.publish, agent_id)
+    except (ReportError, publish.PublishError, OSError, ValueError) as exc:
         print(f"erro: {exc}", file=sys.stderr)
         return 2
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     print(f"Pacote gravado em {Path(args.out).as_posix()}/ (relatorio.md, relatorio.html, relatorio.json)")
     print(f"Semáforo (regras provisórias): {render.COLOR_LABEL[data['semaphore']['color']]}")
-    if args.publish:
+    if args.publish and remote:
+        print(f"Publicado na plataforma como versão {seq} (semáforo: {color})")
+    elif args.publish:
         print(f"Publicado em {dest.as_posix()} (semáforo: {color})")
     return 0
 
@@ -667,7 +678,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("check", help="gera o pacote a partir dos resultados gravados e, opcional, publica")
     add_package_args(p, None)
-    p.add_argument("--publish", default=None, metavar="ROOT", help="publica em ROOT/<agent-id>/<timestamp UTC>/ (pasta local)")
+    p.add_argument("--publish", default=None, metavar="ROOT|URL", help="publica em ROOT/<agent-id>/<timestamp UTC>/ (pasta local) ou envia à plataforma (http/https; token em AOK_PLATFORM_TOKEN)")
     p.add_argument("--agent-id", default=None, help="[a-z0-9-], 1 a 64 (padrão: name do --config)")
     p.set_defaults(func=cmd_check)
     return parser
