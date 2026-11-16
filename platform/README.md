@@ -1,4 +1,4 @@
-# Plataforma agent-ops-kit (fases 2 e 3: API e login)
+# Plataforma agent-ops-kit (fases 2 e 3: API, login e portal)
 
 API FastAPI que recebe o pacote de relatório publicado por `aok check --publish URL`.
 A leitura (áreas, agentes, relatórios, download) é só para usuários com sessão; o token de agente só publica.
@@ -57,3 +57,42 @@ Use HTTPS na frente da API fora de testes locais: o token trafega no cabeçalho.
    `/v1/reports/{id}`, `/v1/reports/{id}/download?format=md|html|json`. Área fora do alcance: 404.
 5. Todo download grava em `download_log`. `GET /v1/me/downloads` mostra só os do próprio usuário
    (`downloaded_at` e `generated_at`); `GET /v1/admin/downloads` (org_admin por sessão) mostra todos.
+
+## Portal (fase 3, front-end)
+
+Código em `platform/portal/` (React + Vite + TypeScript + Tailwind, sem biblioteca de UI). Tudo em
+português; o nome "Farol" é provisório e fictício e vive só em `platform/portal/src/brand.ts`.
+Páginas: landing pública, login, áreas > agentes > relatórios > detalhe (baixar MD/HTML/JSON),
+"Meus downloads" e, para `org_admin`, "Todos os downloads".
+
+```bash
+cd platform/portal
+npm ci
+npm run build      # tsc --noEmit + vite build -> platform/portal/dist
+npm run dev        # http://localhost:5173 com proxy de /v1 para http://127.0.0.1:8000
+```
+
+A API serve `platform/portal/dist` em `/` (com fallback de SPA para o `index.html`) quando a pasta
+existe; sem ela a API fica como antes. `AOK_PORTAL_DIR` aponta outra pasta. As rotas `/v1` não mudam.
+A imagem Docker já faz o build do portal (estágio `node:22-slim`) e o serve.
+
+## Demonstração local
+
+```bash
+pip install -e ".[platform]"                 # na raiz do repositório
+export AOK_COOKIE_SECURE=false               # só para teste local sem HTTPS
+# opcional: AOK_DATABASE_URL e AOK_DATA_DIR (padrão: SQLite ./aok_platform.db e ./aok_data)
+python -m aok_platform.seed_demo             # rode na raiz do repositório
+uvicorn aok_platform.app:create_app --factory   # abra http://127.0.0.1:8000
+```
+
+O seed é idempotente e só roda em banco local (SQLite ou localhost). Cria 2 áreas raiz
+(Operações, com a sub-área Atendimento, e Finanças), 3 agentes fictícios e 3 usuários
+(`admin@demo.example` como `org_admin`; `operacoes@demo.example` e `financas@demo.example` como
+`area_viewer`). As senhas são geradas na hora e impressas uma única vez no terminal; não ficam em
+arquivo (`--reset-passwords` gera novas). Cada agente recebe 2 versões do relatório REAL gerado
+por `aok report build` a partir dos resultados gravados no repositório (a segunda usa
+`--previous`); nenhum número é inventado. Rótulo: dados de demonstração: relatório do exemplo do
+repositório. Os nomes dos agentes são fictícios; o conteúdo interno dos relatórios é o do
+exemplo do repositório.
+
