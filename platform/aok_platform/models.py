@@ -42,9 +42,14 @@ class Base(DeclarativeBase):
 
 
 class Organization(Base):
+    """Organização (empresa). Inativa: ninguém dela loga, sessões e tokens param, nada é apagado."""
+
     __tablename__ = "organization"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
+    slug: Mapped[str] = mapped_column(String(64), unique=True)  # [a-z0-9-]{1,64}
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
 class Area(Base):
@@ -56,10 +61,14 @@ class Area(Base):
 
 
 class Agent(Base):
+    """O slug é único por organização (não global); a org do agente é a da sua área."""
+
     __tablename__ = "agent"
+    __table_args__ = (UniqueConstraint("org_id", "slug", name="uq_agent_org_slug"),)
     id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organization.id"), index=True)
     area_id: Mapped[int] = mapped_column(ForeignKey("area.id"))
-    slug: Mapped[str] = mapped_column(String(64), unique=True)
+    slug: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(200))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 

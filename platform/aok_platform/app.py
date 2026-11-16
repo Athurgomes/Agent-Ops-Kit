@@ -474,7 +474,9 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
         body: AgentIn, actor: Actor = Depends(require_admin), s: Session = Depends(get_session)
     ):
         _area_or_404(s, body.area_id, actor.org_id)
-        agent = Agent(area_id=body.area_id, slug=body.slug, name=body.name, active=True)
+        agent = Agent(
+            org_id=actor.org_id, area_id=body.area_id, slug=body.slug, name=body.name, active=True
+        )
         s.add(agent)
         try:
             s.flush()

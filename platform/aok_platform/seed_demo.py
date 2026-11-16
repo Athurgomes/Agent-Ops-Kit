@@ -120,9 +120,9 @@ def seed(root: Path, data_dir: Path, reset_passwords: bool = False) -> dict[str,
             )
         agents: dict[str, Agent] = {}
         for slug, name, area in AGENTS:
-            agent = s.scalar(select(Agent).where(Agent.slug == slug))
+            agent = s.scalar(select(Agent).where(Agent.org_id == org_id, Agent.slug == slug))
             if agent is None:
-                agent = Agent(area_id=areas[area].id, slug=slug, name=name, active=True)
+                agent = Agent(org_id=org_id, area_id=areas[area].id, slug=slug, name=name, active=True)
                 s.add(agent)
                 s.flush()
             agents[slug] = agent
