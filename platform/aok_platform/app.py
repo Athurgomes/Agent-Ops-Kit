@@ -1,23 +1,45 @@
-"""API FastAPI (fase 2): cadastro, tokens e publicação de relatórios (POST /v1/reports)."""
+"""API FastAPI: cadastro, tokens, publicação (fase 2); usuários, login e leitura (fase 3)."""
 
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from .auth import hash_token, new_token, require_admin
+from .auth import (
+    AREA_VIEWER,
+    MIN_PASSWORD,
+    ORG_ADMIN,
+    hash_password,
+    hash_token,
+    make_dependencies,
+    new_token,
+)
 from .db import init_db, make_engine, session_dependency
-from .models import Agent, AgentCredential, Area, Organization, utcnow
+from .models import (
+    Agent,
+    AgentCredential,
+    Area,
+    Membership,
+    Organization,
+    User,
+    UserSession,
+    utcnow,
+)
+from .portal import build_portal_router
 from .reports import build_reports_router
+from .sessions import LoginThrottle, build_auth_router
 
 SLUG = r"^[a-z0-9-]{1,64}$"
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class _In(BaseModel):
@@ -67,6 +89,55 @@ class TokenOut(BaseModel):
     revoked_at: datetime | None = None
 
 
+def _email(v: str) -> str:
+    v = v.strip().lower()
+    if len(v) > 254 or not _EMAIL.fullmatch(v):
+        raise ValueError("e-mail inválido")
+    return v
+
+
+class UserIn(_In):
+    email: str
+    password: str = Field(min_length=MIN_PASSWORD, max_length=256)
+
+    @field_validator("email")
+    @classmethod
+    def _norm(cls, v):
+        return _email(v)
+
+
+class UserPatch(_In):
+    email: str | None = None
+    password: str | None = Field(default=None, min_length=MIN_PASSWORD, max_length=256)
+    active: bool | None = None
+
+    @field_validator("email")
+    @classmethod
+    def _norm(cls, v):
+        return None if v is None else _email(v)
+
+
+class UserOut(BaseModel):  # nunca inclui senha nem hash
+    id: int
+    org_id: int
+    email: str
+    active: bool
+    created_at: datetime
+
+
+class MembershipIn(_In):
+    user_id: int
+    role: Literal["org_admin", "area_viewer"]
+    area_id: int | None = None  # obrigatório para area_viewer; org_admin vale para a organização
+
+
+class MembershipOut(BaseModel):
+    id: int
+    user_id: int
+    area_id: int | None
+    role: str
+
+
 def _area_or_404(s: Session, area_id: int) -> Area:
     area = s.get(Area, area_id)
     if area is None:
@@ -81,7 +152,15 @@ def _agent_or_404(s: Session, agent_id: int) -> Agent:
     return agent
 
 
-def build_admin_router(get_session) -> APIRouter:
+def _revoke_sessions(s: Session, user_id: int) -> None:
+    now = utcnow()
+    for row in s.scalars(
+        select(UserSession).where(UserSession.user_id == user_id, UserSession.revoked_at.is_(None))
+    ):
+        row.revoked_at = now
+
+
+def build_admin_router(get_session, require_admin) -> APIRouter:
     r = APIRouter(prefix="/v1/admin", dependencies=[Depends(require_admin)])
 
     @r.post("/areas", status_code=201, response_model=AreaOut)
@@ -151,6 +230,76 @@ def build_admin_router(get_session) -> APIRouter:
             s.commit()
         return TokenOut(token_id=cred.id, created_at=cred.created_at, revoked_at=cred.revoked_at)
 
+    @r.post("/users", status_code=201, response_model=UserOut)
+    def create_user(body: UserIn, s: Session = Depends(get_session)):
+        org_id = s.scalar(select(Organization.id).order_by(Organization.id).limit(1))
+        user = User(
+            org_id=org_id,
+            email=body.email,
+            password_hash=hash_password(body.password),
+            active=True,
+        )
+        s.add(user)
+        try:
+            s.commit()
+        except IntegrityError as exc:
+            s.rollback()
+            raise HTTPException(409, "e-mail já cadastrado") from exc
+        return user
+
+    @r.patch("/users/{user_id}", response_model=UserOut)
+    def patch_user(user_id: int, body: UserPatch, s: Session = Depends(get_session)):
+        user = s.get(User, user_id)
+        if user is None:
+            raise HTTPException(404, "usuário não encontrado")
+        if body.email is not None:
+            user.email = body.email
+        if body.active is not None:
+            user.active = body.active
+        if body.password is not None:
+            user.password_hash = hash_password(body.password)
+        if body.password is not None or body.active is False:
+            _revoke_sessions(s, user.id)  # trocar a senha ou desativar encerra as sessões
+        try:
+            s.commit()
+        except IntegrityError as exc:
+            s.rollback()
+            raise HTTPException(409, "e-mail já cadastrado") from exc
+        return user
+
+    @r.post("/memberships", status_code=201, response_model=MembershipOut)
+    def create_membership(body: MembershipIn, s: Session = Depends(get_session)):
+        if s.get(User, body.user_id) is None:
+            raise HTTPException(404, "usuário não encontrado")
+        if body.role == AREA_VIEWER:
+            if body.area_id is None:
+                raise HTTPException(422, "area_viewer exige area_id")
+            _area_or_404(s, body.area_id)
+        elif body.area_id is not None:
+            raise HTTPException(422, f"{ORG_ADMIN} não tem area_id")
+        dup = select(Membership.id).where(
+            Membership.user_id == body.user_id,
+            Membership.role == body.role,
+            Membership.area_id.is_(None)
+            if body.area_id is None
+            else Membership.area_id == body.area_id,
+        )
+        if s.scalar(dup) is not None:
+            raise HTTPException(409, "vínculo já existe")
+        m = Membership(user_id=body.user_id, area_id=body.area_id, role=body.role)
+        s.add(m)
+        s.commit()
+        return m
+
+    @r.delete("/memberships/{membership_id}", status_code=204)
+    def delete_membership(membership_id: int, s: Session = Depends(get_session)):
+        m = s.get(Membership, membership_id)
+        if m is None:
+            raise HTTPException(404, "vínculo não encontrado")
+        s.delete(m)
+        s.commit()
+        return Response(status_code=204)
+
     return r
 
 
@@ -163,6 +312,10 @@ def create_app(database_url: str | None = None, data_dir: str | Path | None = No
     app.state.session_factory = factory
     data = Path(data_dir or os.environ.get("AOK_DATA_DIR") or "./aok_data")
     get_session = session_dependency(factory)
-    app.include_router(build_admin_router(get_session))
+    current_user, current_org_admin, require_admin = make_dependencies(get_session)
+    app.state.throttle = LoginThrottle()
+    app.include_router(build_admin_router(get_session, require_admin))
     app.include_router(build_reports_router(get_session, data))
+    app.include_router(build_auth_router(get_session, current_user, app.state.throttle))
+    app.include_router(build_portal_router(get_session, current_user, current_org_admin, data))
     return app

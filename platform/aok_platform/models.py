@@ -1,4 +1,4 @@
-"""Tabelas da fase 2 (plataforma.md seção 5). Sem user/membership/download_log."""
+"""Tabelas da plataforma (plataforma.md seção 5): fase 2 + user/membership/session/download_log."""
 
 from __future__ import annotations
 
@@ -99,6 +99,45 @@ class ReportVersion(Base):
     file_md: Mapped[str] = mapped_column(String(300))  # caminhos relativos a AOK_DATA_DIR
     file_html: Mapped[str] = mapped_column(String(300))
     file_json: Mapped[str] = mapped_column(String(300))
+
+
+class User(Base):
+    __tablename__ = "user"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organization.id"))
+    email: Mapped[str] = mapped_column(String(254), unique=True)  # sempre em minúsculas
+    password_hash: Mapped[str] = mapped_column(String(300))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class Membership(Base):
+    """area_viewer exige area_id (vale para a área e sub-áreas); org_admin tem area_id nulo."""
+
+    __tablename__ = "membership"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
+    area_id: Mapped[int | None] = mapped_column(ForeignKey("area.id"), nullable=True)
+    role: Mapped[str] = mapped_column(String(20))  # org_admin | area_viewer
+
+
+class UserSession(Base):
+    __tablename__ = "session"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # SHA-256 hex
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
+
+class DownloadLog(Base):
+    __tablename__ = "download_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    report_version_id: Mapped[int] = mapped_column(ForeignKey("report_version.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
+    downloaded_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    format: Mapped[str] = mapped_column(String(4))  # md | html | json
 
 
 def _immutable(*_args) -> None:

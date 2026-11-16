@@ -1,4 +1,4 @@
-"""POST /v1/reports (fase 2): publica o pacote com token de agente. Sem rota de leitura (fase 3)."""
+"""POST /v1/reports (fase 2): publica o pacote com token de agente. A leitura está em portal.py."""
 
 from __future__ import annotations
 
@@ -86,6 +86,7 @@ def _summarize(js: dict) -> dict:
     """Resumo do relatorio.json calculado no servidor (nada vindo do cliente além do arquivo)."""
     ev, rt, au = js.get("eval") or {}, js.get("redteam") or {}, js.get("audit")
     return {
+        "generated_at": js.get("generated_at"),
         "semaphore": js["semaphore"],
         "agent": js.get("agent"),
         "eval": {
