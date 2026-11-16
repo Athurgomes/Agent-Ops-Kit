@@ -1,7 +1,7 @@
 """Cria (ou redefine a senha de) um operador da plataforma. SÓ por linha de comando.
 
 `python -m aok_platform.create_operator --email ops@example.com`
-`python -m aok_platform.create_operator --email ops@example.com --reset-password`
+`python -m aok_platform.create_operator --email ops@example.com --reset-password [--activate]`
 
 A senha é aleatória (20 caracteres), impressa UMA vez no terminal; nunca vem por argumento nem fica em
 arquivo. Usa o banco de AOK_DATABASE_URL (SQLite local se vazio). O operador não pertence a organização.
@@ -21,8 +21,12 @@ from .models import OperatorSession, PlatformOperator, utcnow
 from .ops import normalize_email
 
 
-def create_operator(email: str, reset: bool = False, url: str | None = None) -> tuple[str, bool]:
+def create_operator(
+    email: str, reset: bool = False, url: str | None = None, activate: bool = False
+) -> tuple[str, bool]:
     """Devolve (senha gerada, criado). Levanta SystemExit com mensagem curta se não puder."""
+    if activate and not reset:
+        raise SystemExit("--activate só vale junto com --reset-password")
     try:
         email = normalize_email(email)
     except ValueError:
@@ -40,7 +44,8 @@ def create_operator(email: str, reset: bool = False, url: str | None = None) -> 
             s.add(PlatformOperator(email=email, password_hash=hash_password(password), active=True))
         else:
             op.password_hash = hash_password(password)
-            op.active = True
+            if activate:
+                op.active = True  # só reativa se for pedido de forma explícita (mais seguro)
             now = utcnow()
             for row in s.scalars(
                 select(OperatorSession).where(OperatorSession.operator_id == op.id, OperatorSession.revoked_at.is_(None))
@@ -54,11 +59,14 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Cria ou redefine a senha de um operador da plataforma.")
     ap.add_argument("--email", required=True)
     ap.add_argument("--reset-password", action="store_true", help="gera senha nova para um operador existente")
+    ap.add_argument("--activate", action="store_true", help="com --reset-password: reativa um operador inativo")
     args = ap.parse_args(argv)
-    password, created = create_operator(args.email, args.reset_password)
+    password, created = create_operator(args.email, args.reset_password, activate=args.activate)
     print(f"Operador {'criado' if created else 'com senha redefinida'}: {args.email.strip().lower()}")
     print("Senha (aparece só desta vez; não fica gravada em arquivo):")
     print(f"  {password}")
+    if args.reset_password:
+        print("Se o operador estiver inativo, ele continua inativo (use --activate junto para reativar).")
     print("As rotas /v1/ops só existem com AOK_OPS_ENABLED=true.")
     return 0
 
