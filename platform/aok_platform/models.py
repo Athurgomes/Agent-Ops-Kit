@@ -140,6 +140,18 @@ class UserSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
 
+class PasswordReset(Base):
+    """Token de recuperação de senha: só o hash (SHA-256) fica no banco; uso único; 30 min. Sem IP."""
+
+    __tablename__ = "password_reset"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)  # usado ou invalidado
+
+
 class DownloadLog(Base):
     __tablename__ = "download_log"
     id: Mapped[int] = mapped_column(primary_key=True)
