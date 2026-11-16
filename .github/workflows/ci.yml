@@ -36,3 +36,25 @@ jobs:
 
       - name: Testes unitários
         run: python -m pytest -q
+
+  # Opcional: confere que o portal (platform/portal) compila. Independente do job Python.
+  portal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: platform/portal
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: platform/portal/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Build (tsc --noEmit e vite build)
+        run: npm run build

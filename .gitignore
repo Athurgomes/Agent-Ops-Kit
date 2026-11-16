@@ -12,3 +12,6 @@ chroma/
 reports/
 *.db
 aok_data/
+node_modules/
+platform/portal/dist/
+*.tsbuildinfo

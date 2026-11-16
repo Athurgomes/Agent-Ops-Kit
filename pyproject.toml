@@ -26,6 +26,7 @@ platform = ["fastapi", "uvicorn", "sqlalchemy>=2", "psycopg[binary]", "httpx"]
 
 [tool.setuptools.packages.find]
 where = ["src", "platform"]
+include = ["agent_ops_kit*", "aok_platform*"]
 
 [tool.setuptools.package-data]
 agent_ops_kit = ["templates/agent/**/*"]
