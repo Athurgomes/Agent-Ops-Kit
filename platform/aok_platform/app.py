@@ -1,8 +1,10 @@
-"""API FastAPI (fase 2): cadastro de áreas/agentes e emissão/revogação de tokens."""
+"""API FastAPI (fase 2): cadastro, tokens e publicação de relatórios (POST /v1/reports)."""
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,6 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from .auth import hash_token, new_token, require_admin
 from .db import init_db, make_engine, session_dependency
 from .models import Agent, AgentCredential, Area, Organization, utcnow
+from .reports import build_reports_router
 
 SLUG = r"^[a-z0-9-]{1,64}$"
 
@@ -151,12 +154,15 @@ def build_admin_router(get_session) -> APIRouter:
     return r
 
 
-def create_app(database_url: str | None = None) -> FastAPI:
+def create_app(database_url: str | None = None, data_dir: str | Path | None = None) -> FastAPI:
     engine = make_engine(database_url)
     init_db(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     app = FastAPI(title="agent-ops-kit platform", version="0.1.0")
     app.state.engine = engine
     app.state.session_factory = factory
-    app.include_router(build_admin_router(session_dependency(factory)))
+    data = Path(data_dir or os.environ.get("AOK_DATA_DIR") or "./aok_data")
+    get_session = session_dependency(factory)
+    app.include_router(build_admin_router(get_session))
+    app.include_router(build_reports_router(get_session, data))
     return app

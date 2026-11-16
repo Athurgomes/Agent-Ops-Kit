@@ -10,3 +10,5 @@ chroma/
 .claude/settings.local.json
 *.egg-info/
 reports/
+*.db
+aok_data/
