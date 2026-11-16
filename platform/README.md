@@ -60,10 +60,15 @@ Use HTTPS na frente da API fora de testes locais: o token trafega no cabeçalho.
 
 ## Portal (fase 3, front-end)
 
-Código em `platform/portal/` (React + Vite + TypeScript + Tailwind, sem biblioteca de UI). Tudo em
-português; o nome "Farol" é provisório e fictício e vive só em `platform/portal/src/brand.ts`.
-Páginas: landing pública, login, áreas > agentes > relatórios > detalhe (baixar MD/HTML/JSON),
-"Meus downloads" e, para `org_admin`, "Todos os downloads".
+Código em `platform/portal/` (React + Vite + TypeScript + Tailwind, sem biblioteca de UI). Interface
+em inglês; o nome "Farol" é provisório e fictício e vive só em `platform/portal/src/brand.ts`.
+A interface está toda em inglês (landing, login, área logada). Páginas: landing pública, login,
+areas > agents > reports > report detail (baixar MD/HTML/JSON), "My downloads" e, para `org_admin`,
+"All downloads".
+
+Limitação conhecida: o conteúdo dos relatórios vindo do backend (ressalvas, textos do resumo) continua
+em português; só a interface foi traduzida. Itens "Soon" (Sign Up, Pricing, redes sociais, Docs,
+Blog, Contact, Terms, Privacy) são placeholders não clicáveis.
 
 ```bash
 cd platform/portal
