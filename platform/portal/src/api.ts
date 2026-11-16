@@ -85,7 +85,7 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
 
-async function request(path: string, init: RequestInit = {}, handle401 = true): Promise<Response> {
+export async function request(path: string, init: RequestInit = {}, handle401 = true): Promise<Response> {
   let res: Response;
   try {
     res = await fetch(path, { credentials: "same-origin", ...init });
@@ -96,7 +96,7 @@ async function request(path: string, init: RequestInit = {}, handle401 = true): 
   return res;
 }
 
-function failure(res: Response): ApiError {
+export function failure(res: Response): ApiError {
   let msg = "Something went wrong. Please try again.";
   if (res.status === 404) msg = "Not found, or you do not have access.";
   else if (res.status === 429) msg = "Too many attempts. Wait a few minutes and try again.";

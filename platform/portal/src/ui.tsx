@@ -163,8 +163,9 @@ export function Field({
   label,
   id,
   aside,
+  hint,
   ...p
-}: { label: string; id: string; aside?: ReactNode } & InputHTMLAttributes<HTMLInputElement>) {
+}: { label: string; id: string; aside?: ReactNode; hint?: string } & InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-4">
@@ -173,7 +174,17 @@ export function Field({
         </label>
         {aside}
       </div>
-      <input id={id} className="rounded-full border border-ink bg-paper px-5 py-3" {...p} />
+      <input
+        id={id}
+        aria-describedby={hint ? `${id}-hint` : undefined}
+        className="rounded-full border border-ink bg-paper px-5 py-3"
+        {...p}
+      />
+      {hint && (
+        <p id={`${id}-hint`} className="text-sm text-subtle">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }

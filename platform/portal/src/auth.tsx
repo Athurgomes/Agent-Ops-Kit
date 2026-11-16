@@ -72,6 +72,7 @@ type CatalogState = {
   agents: AgentItem[];
   ready: boolean;
   error: string | null;
+  reload: () => void; // refetch after an admin changes areas or agents
 };
 const CatalogCtx = createContext<CatalogState>({
   tree: [],
@@ -79,6 +80,7 @@ const CatalogCtx = createContext<CatalogState>({
   agents: [],
   ready: false,
   error: null,
+  reload: () => {},
 });
 
 function flatten(nodes: AreaNode[], depth = 0, out: Flat[] = []): Flat[] {
@@ -90,12 +92,15 @@ function flatten(nodes: AreaNode[], depth = 0, out: Flat[] = []): Flat[] {
 }
 
 export function CatalogProvider({ children }: { children: ReactNode }) {
+  const [tick, setTick] = useState(0);
+  const reload = useCallback(() => setTick((t) => t + 1), []);
   const [state, setState] = useState<CatalogState>({
     tree: [],
     areas: [],
     agents: [],
     ready: false,
     error: null,
+    reload,
   });
   useEffect(() => {
     let alive = true;
@@ -104,7 +109,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
         const tree = await api.areas();
         const areas = flatten(tree);
         const lists = await Promise.all(areas.map((a) => api.agents(a.id)));
-        if (alive) setState({ tree, areas, agents: lists.flat(), ready: true, error: null });
+        if (alive) setState({ tree, areas, agents: lists.flat(), ready: true, error: null, reload });
       } catch (e) {
         if (alive)
           setState((s) => ({ ...s, ready: true, error: e instanceof Error ? e.message : "Error." }));
@@ -113,7 +118,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [tick, reload]);
   return <CatalogCtx.Provider value={state}>{children}</CatalogCtx.Provider>;
 }
 

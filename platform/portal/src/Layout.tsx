@@ -209,9 +209,24 @@ function SidebarContent() {
           My downloads
         </NavLink>
         {me?.is_org_admin && (
-          <NavLink to="/app/admin/downloads" className={itemCls}>
-            All downloads
-          </NavLink>
+          <>
+            <p className={label}>Administration</p>
+            <NavLink to="/app/admin/areas" className={itemCls}>
+              Areas
+            </NavLink>
+            <NavLink to="/app/admin/agents" className={itemCls}>
+              Agents
+            </NavLink>
+            <NavLink to="/app/admin/users" className={itemCls}>
+              Users
+            </NavLink>
+            <NavLink to="/app/admin/activity" className={itemCls}>
+              Activity
+            </NavLink>
+            <NavLink to="/app/admin/downloads" className={itemCls}>
+              All downloads
+            </NavLink>
+          </>
         )}
       </nav>
       <div className="rule-t shrink-0 p-4">
