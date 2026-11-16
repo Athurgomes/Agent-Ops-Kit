@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 
 import pytest
 
@@ -84,11 +85,11 @@ def _sha(t):
     return hashlib.sha256(t.encode("utf-8")).hexdigest()
 
 
-def _package(slug, tag="x"):
+def _package(slug, tag="x", color="green"):
     js = {
         "generated_at": "2026-01-02T03:04:05-03:00",
         "agent": {"name": slug, "model": "m"},
-        "semaphore": {"color": "green", "triggered": []},
+        "semaphore": {"color": color, "triggered": []},
         "eval": {"baseline": "v1", "candidate": "v2", "n_cases": 5, "tag": tag},
         "limitations": ["texto de ressalva secreto"],
     }
@@ -96,7 +97,7 @@ def _package(slug, tag="x"):
     return {
         "agent_id": slug,
         "timestamp": "20260102T030405Z",
-        "semaphore": "green",
+        "semaphore": color,
         "sha256": {k: _sha(v) for k, v in files.items()},
         "files": files,
     }
@@ -462,3 +463,72 @@ def test_cli_cria_operador_imprime_senha_uma_vez_e_recusa_duplicado(monkeypatch,
     assert old.get("/v1/ops/auth/me").status_code == 401  # sessão antiga encerrada
     assert TestClient(app).post("/v1/ops/auth/login", json={"email": "novo@ops.test", "password": pwd}).status_code == 401
     _ops_login(app, "novo@ops.test", new_pwd)
+
+
+# ---- ajustes do crivo: no-store, LIMIT em SQL, reativação explícita ----------------------------------
+
+
+def test_respostas_com_senha_nao_podem_ser_cacheadas(ops):
+    _app, c = ops
+    org = c.post("/v1/ops/organizations", json={"slug": "alfa", "name": "Alfa"}).json()
+    r = c.post(f"/v1/ops/organizations/{org['id']}/admins", json={"email": "a@alfa.test"})
+    assert r.status_code == 201 and r.headers["cache-control"] == "no-store" and r.headers["pragma"] == "no-cache"
+    uid = r.json()["user_id"]
+    r = c.post(f"/v1/ops/organizations/{org['id']}/admins/{uid}/reset-password")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store" and r.headers["pragma"] == "no-cache"
+
+
+def test_detalhe_aplica_limit_em_sql_e_busca_o_ultimo_relatorio_a_parte(ops, tmp_path):
+    from sqlalchemy import event
+
+    app, c = ops
+    w = _populated_org(ops, tmp_path)
+    auth = {"Authorization": f"Bearer {w['token']}"}
+    assert TestClient(app).post("/v1/reports", json=_package("rag-fin", "dois", "yellow"), headers=auth).status_code == 201
+    assert TestClient(app).post("/v1/reports", json=_package("rag-fin", "tres", "red"), headers=auth).status_code == 201
+    oid = w["adm"]["org_id"]
+    statements = []
+
+    def spy(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(app.state.engine, "before_cursor_execute", spy)
+    try:
+        d = c.get(f"/v1/ops/organizations/{oid}?limit=1").json()
+    finally:
+        event.remove(app.state.engine, "before_cursor_execute", spy)
+    assert [r["seq"] for r in d["reports"]] == [3]  # só 1 versão, a mais recente
+    assert d["agents"][0]["latest_semaforo"] == "red" and d["agents"][0]["last_report_at"]  # não depende do limit
+    assert d["reports"][0]["generated_at"] == "2026-01-02T03:04:05-03:00"
+    report_sql = [q for q in statements if "FROM report_version" in q]
+    assert any("LIMIT" in q for q in report_sql)  # o corte é feito no banco
+    # o resumo inteiro não é carregado: toda menção a summary_json em consultas de report_version fica
+    # dentro de JSON_EXTRACT( (SQLite) ou de ->> (Postgres); a coluna crua nunca vai no SELECT
+    for q in report_sql:
+        rest = re.sub(r"JSON_EXTRACT\(report_version\.summary_json,", "", q)
+        rest = re.sub(r"report_version\.summary_json\s*->>", "", rest)
+        assert "summary_json" not in rest, q
+    d3 = c.get(f"/v1/ops/organizations/{oid}?limit=3").json()
+    assert [r["seq"] for r in d3["reports"]] == [3, 2, 1]
+    assert c.get(f"/v1/ops/organizations/{oid}?limit=501").status_code == 422
+
+
+def test_cli_reset_nao_reativa_operador_inativo_sem_activate(monkeypatch, tmp_path, capsys):
+    url = f"sqlite:///{tmp_path / 'ops2.db'}"
+    monkeypatch.setenv("AOK_DATABASE_URL", url)
+    assert create_operator.main(["--email", "ops@x.test"]) == 0
+    app = _make_app(monkeypatch, tmp_path, url=url)
+    with Session(app.state.engine) as s:
+        s.execute(update(PlatformOperator).values(active=False))
+        s.commit()
+    capsys.readouterr()
+    assert create_operator.main(["--email", "ops@x.test", "--reset-password"]) == 0
+    out = capsys.readouterr().out
+    pwd = next(ln.strip() for ln in out.splitlines() if ln.startswith("  "))
+    assert "continua inativo" in out
+    assert TestClient(app).post("/v1/ops/auth/login", json={"email": "ops@x.test", "password": pwd}).status_code == 401
+    assert create_operator.main(["--email", "ops@x.test", "--reset-password", "--activate"]) == 0
+    pwd2 = next(ln.strip() for ln in capsys.readouterr().out.splitlines() if ln.startswith("  "))
+    assert TestClient(app).post("/v1/ops/auth/login", json={"email": "ops@x.test", "password": pwd2}).status_code == 200
+    with pytest.raises(SystemExit):  # --activate sozinho não faz sentido
+        create_operator.main(["--email", "ops@x.test", "--activate"])
