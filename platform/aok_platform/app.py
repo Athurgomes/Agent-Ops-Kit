@@ -40,6 +40,7 @@ from .models import (
     UserSession,
     utcnow,
 )
+from .ops import build_ops_router, ops_enabled
 from .portal import build_portal_router
 from .reports import build_reports_router
 from .sessions import LoginThrottle, build_auth_router
@@ -696,5 +697,8 @@ def create_app(database_url: str | None = None, data_dir: str | Path | None = No
     app.include_router(build_reports_router(get_session, data))
     app.include_router(build_auth_router(get_session, current_user, app.state.throttle))
     app.include_router(build_portal_router(get_session, current_user, current_org_admin, data))
+    if ops_enabled():  # desligado por padrão: sem a variável, /v1/ops/* nem existe (404)
+        app.state.ops_throttle = LoginThrottle()
+        app.include_router(build_ops_router(get_session, app.state.ops_throttle))
     mount_portal(app, default_portal_dir())
     return app
