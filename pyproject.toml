@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "agent-ops-kit"
 version = "0.1.0"
 description = "Observabilidade, avaliação e segurança para agentes de IA."
+readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
