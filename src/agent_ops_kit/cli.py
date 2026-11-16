@@ -13,6 +13,7 @@ from pathlib import Path
 ALPHA = 0.05
 DEFAULT_EVAL_REPORT = "reports/eval_report.md"
 DEFAULT_REDTEAM_REPORT = "reports/redteam_report.md"
+DEFAULT_CONFIG = "examples/rag_agent/agent.yaml"
 
 JUDGE_WARNING = (
     "Aviso sobre o juiz: o juiz é o mesmo modelo de 8B que gera as respostas (viés de "
@@ -431,49 +432,88 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_report(args: argparse.Namespace) -> int:
-    """`aok report build`: pacote relatorio.{json,md,html} a partir dos resultados gravados."""
+def _write_package(args: argparse.Namespace) -> dict:
+    """Gera relatorio.{json,md,html} em args.out (compartilhado por `report build` e `check`)."""
     import json
 
-    from agent_ops_kit.redteam.report import ReportError
     from agent_ops_kit.report import build, render
 
     cwd = os.getcwd()  # o runner importa examples.rag_agent, na raiz do repositório
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
+    data = build.build_data(
+        config=args.config,
+        dataset=args.dataset,
+        prompts_dir=args.prompts_dir,
+        answers_dir=args.answers_dir,
+        baseline=args.baseline,
+        candidate=args.candidate,
+        seed=args.seed,
+        redteam_baseline=args.redteam_baseline,
+        redteam_guardrails=args.redteam_guardrails,
+        fp_dir=args.fp_dir,
+        audit_path=args.audit,
+        previous=args.previous,
+    )
+    blocks = render.build_blocks(data)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    title = f"Relatório de teste do agente {data['agent']['name']}"
+    (out / "relatorio.json").write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (out / "relatorio.md").write_text(render.to_markdown(blocks), encoding="utf-8")
+    (out / "relatorio.html").write_text(render.to_html(blocks, title), encoding="utf-8")
+    return data
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    """`aok report build`: pacote relatorio.{json,md,html} a partir dos resultados gravados."""
+    from agent_ops_kit.redteam.report import ReportError
+    from agent_ops_kit.report import render
 
     try:
-        data = build.build_data(
-            config=args.config,
-            dataset=args.dataset,
-            prompts_dir=args.prompts_dir,
-            answers_dir=args.answers_dir,
-            baseline=args.baseline,
-            candidate=args.candidate,
-            seed=args.seed,
-            redteam_baseline=args.redteam_baseline,
-            redteam_guardrails=args.redteam_guardrails,
-            fp_dir=args.fp_dir,
-            audit_path=args.audit,
-            previous=args.previous,
-        )
-        blocks = render.build_blocks(data)
-        out = Path(args.out)
-        out.mkdir(parents=True, exist_ok=True)
-        title = f"Relatório de teste do agente {data['agent']['name']}"
-        (out / "relatorio.json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
-        (out / "relatorio.md").write_text(render.to_markdown(blocks), encoding="utf-8")
-        (out / "relatorio.html").write_text(render.to_html(blocks, title), encoding="utf-8")
+        data = _write_package(args)
     except (ReportError, OSError) as exc:
         print(f"erro: {exc}", file=sys.stderr)
         return 2
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     label = render.COLOR_LABEL[data["semaphore"]["color"]]
-    print(f"Pacote gravado em {out.as_posix()}/ (relatorio.md, relatorio.html, relatorio.json)")
+    print(f"Pacote gravado em {Path(args.out).as_posix()}/ (relatorio.md, relatorio.html, relatorio.json)")
     print(f"Semáforo (regras provisórias): {label}")
+    return 0
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    """`aok check`: gera o pacote (sem modelo) e, com --publish, publica em pasta local versionada."""
+    from agent_ops_kit.redteam.report import ReportError
+    from agent_ops_kit.report import publish, render
+
+    config_given = args.config is not None
+    if not config_given:
+        args.config = DEFAULT_CONFIG
+    try:
+        agent_id = args.agent_id
+        if args.publish:
+            if agent_id is None and not config_given:
+                raise publish.PublishError("--publish exige --agent-id ou --config")
+            if agent_id is not None:
+                publish.validate_agent_id(agent_id)
+        data = _write_package(args)
+        if args.publish:
+            if agent_id is None:
+                agent_id = data["agent"]["name"]
+            dest, color = publish.publish(args.out, args.publish, agent_id)
+    except (ReportError, publish.PublishError, OSError) as exc:
+        print(f"erro: {exc}", file=sys.stderr)
+        return 2
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    print(f"Pacote gravado em {Path(args.out).as_posix()}/ (relatorio.md, relatorio.html, relatorio.json)")
+    print(f"Semáforo (regras provisórias): {render.COLOR_LABEL[data['semaphore']['color']]}")
+    if args.publish:
+        print(f"Publicado em {dest.as_posix()} (semáforo: {color})")
     return 0
 
 
@@ -604,23 +644,32 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("log")
     p.set_defaults(func=cmd_audit)
 
+    def add_package_args(r, config_default):
+        r.add_argument("--baseline", default="v1", help="variante de referência do eval")
+        r.add_argument("--candidate", default="v2", help="variante candidata do eval")
+        r.add_argument("--dataset", default="evals/dataset.jsonl")
+        r.add_argument("--prompts-dir", default="evals/prompts")
+        r.add_argument("--config", default=config_default)
+        r.add_argument("--answers-dir", default="evals/answers", help="pasta com as respostas e o manifest.json")
+        r.add_argument("--seed", type=int, default=42)
+        r.add_argument("--redteam-baseline", default="redteam/results/baseline.jsonl")
+        r.add_argument("--redteam-guardrails", default="redteam/results/guardrails.jsonl")
+        r.add_argument("--fp-dir", default="redteam/results", help="pasta com fp_dataset.jsonl e fp_benign.jsonl")
+        r.add_argument("--audit", default=None, help="log de auditoria (só o resultado da cadeia e a âncora entram)")
+        r.add_argument("--previous", default=None, help="relatorio.json anterior, para comparar")
+        r.add_argument("--out", default="reports/pacote", help="pasta de saída")
+
     p = sub.add_parser("report", help="pacote de relatório para a liderança (sem modelo)")
     rsub = p.add_subparsers(dest="report_cmd", required=True)
     r = rsub.add_parser("build", help="gera relatorio.md, relatorio.html e relatorio.json")
-    r.add_argument("--baseline", default="v1", help="variante de referência do eval")
-    r.add_argument("--candidate", default="v2", help="variante candidata do eval")
-    r.add_argument("--dataset", default="evals/dataset.jsonl")
-    r.add_argument("--prompts-dir", default="evals/prompts")
-    r.add_argument("--config", default="examples/rag_agent/agent.yaml")
-    r.add_argument("--answers-dir", default="evals/answers", help="pasta com as respostas e o manifest.json")
-    r.add_argument("--seed", type=int, default=42)
-    r.add_argument("--redteam-baseline", default="redteam/results/baseline.jsonl")
-    r.add_argument("--redteam-guardrails", default="redteam/results/guardrails.jsonl")
-    r.add_argument("--fp-dir", default="redteam/results", help="pasta com fp_dataset.jsonl e fp_benign.jsonl")
-    r.add_argument("--audit", default=None, help="log de auditoria (só o resultado da cadeia e a âncora entram)")
-    r.add_argument("--previous", default=None, help="relatorio.json anterior, para comparar")
-    r.add_argument("--out", default="reports/pacote", help="pasta de saída")
+    add_package_args(r, DEFAULT_CONFIG)
     p.set_defaults(func=cmd_report)
+
+    p = sub.add_parser("check", help="gera o pacote a partir dos resultados gravados e, opcional, publica")
+    add_package_args(p, None)
+    p.add_argument("--publish", default=None, metavar="ROOT", help="publica em ROOT/<agent-id>/<timestamp UTC>/ (pasta local)")
+    p.add_argument("--agent-id", default=None, help="[a-z0-9-], 1 a 64 (padrão: name do --config)")
+    p.set_defaults(func=cmd_check)
     return parser
 
 
