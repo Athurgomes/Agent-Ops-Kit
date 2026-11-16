@@ -40,7 +40,7 @@ Os guardrails também atuam na allowlist de tools (antes de cada chamada) e marc
 - **Avaliação**: dataset de 50 casos, checagens determinísticas, juiz opcional (mesmo modelo de 8B), A/B pareado (permutação e bootstrap, semente fixa) e gate de CI que reavalia respostas gravadas conferindo um manifesto.
 - **Red team**: ataques em arquivos do repositório (`redteam/`), critérios de sucesso por categoria, ASR com intervalo de Wilson e medição de falsos positivos em perguntas legítimas.
 - **Relatório** (`aok report build`, `aok check --publish`): resultados gravados (eval e red team, mais o resultado da verificação da auditoria, se houver) viram um pacote (`relatorio.md/html/json`, `pacote.json`) que `--publish` copia para uma pasta local versionada, `<pasta>/<agent-id>/<timestamp UTC>/`, com `index.json` listando as versões. Não roda modelo e o log de auditoria não entra no pacote (ADR-006).
-- **Plataforma** (`platform/`, fase 2: API): serviço FastAPI que recebe o pacote por `POST /v1/reports`; ver abaixo e ADR-007.
+- **Plataforma** (`platform/`, fases 2 e 3): serviço FastAPI que recebe o pacote por `POST /v1/reports` e, para pessoas com sessão, serve a leitura e o portal; ver abaixo, ADR-007 e ADR-008.
 - **Template** (`aok new`): gera um agente já instrumentado a partir de `src/agent_ops_kit/templates/agent/`.
 
 ## Plataforma (`platform/`)
@@ -51,9 +51,17 @@ flowchart LR
     AD[Admin<br/>chave AOK_ADMIN_BOOTSTRAP_KEY] -->|/v1/admin: áreas, agentes, tokens| API
     API --> DB[(SQLite nos testes<br/>Postgres no Docker)]
     API --> FS[(Arquivos dos relatórios<br/>AOK_DATA_DIR)]
+    PO[Portal React<br/>servido pela API] -->|cookie de sessão| API
+    API --> DL[(download_log)]
 ```
 
-O admin cria área e agente e emite o token do agente (guardado como hash). O agente publica com `platform.agent_id` do `agent.yaml` (ou `--agent-id`), que deve ser o slug dono do token. A API valida o esquema fechado, o limite de 1 MiB e o sha256 de cada arquivo, e grava uma versão com `seq` por agente. O log de auditoria não sobe. Não há rota de leitura nem portal nesta fase.
+O admin cria área e agente e emite o token do agente (guardado como hash). O agente publica com `platform.agent_id` do `agent.yaml` (ou `--agent-id`), que deve ser o slug dono do token. A API valida o esquema fechado, o limite de 1 MiB e o sha256 de cada arquivo, e grava uma versão com `seq` por agente. O log de auditoria não sobe.
+
+Fase 3 (ADR-008), fluxos:
+
+- **Login**: `POST /v1/auth/login` (e-mail e senha, scrypt) cria uma sessão e devolve o cookie `aok_session` (HttpOnly, SameSite=Strict). O throttle por e-mail é em memória.
+- **Leitura**: o portal chama `/v1/areas`, `/v1/areas/{id}/agents`, `/v1/agents/{id}/reports` e `/v1/reports/{id}`. O alcance vem da `membership`: `area_viewer` vê a área e as sub-áreas (CTE recursiva), `org_admin` vê tudo, o resto responde 404. O token de agente não lê.
+- **Download com log**: `GET /v1/reports/{id}/download?format=md|html|json` confere o alcance, grava uma linha em `download_log` (baixado em, relatório gerado em) e devolve o arquivo. `/v1/me/downloads` mostra os do próprio usuário; `/v1/admin/downloads` (`org_admin` por sessão) mostra todos.
 
 ## Módulos
 
@@ -82,8 +90,9 @@ O admin cria área e agente e emite o token do agente (guardado como hash). O ag
 | `examples/rag_agent/` | agente de referência (agent, tools, indexer, corpus fictício) |
 | `.github/workflows/` | `ci.yml` (ruff e pytest) e `eval.yml` (gate com respostas gravadas) |
 | `docker-compose.yml` | Jaeger (all-in-one) |
-| `platform/aok_platform/` | API da plataforma: `app`, `auth`, `models`, `reports`, `db` |
-| `platform/docker-compose.yml` | API e Postgres (build não testado) |
+| `platform/aok_platform/` | API da plataforma: `app`, `auth` (senha, token, papéis), `sessions` (login, sessão, throttle), `portal` (leitura, download, histórico), `models`, `reports`, `db`, `seed_demo` |
+| `platform/portal/` | front-end React, Vite, TypeScript e Tailwind, servido pela API |
+| `platform/docker-compose.yml` | API e Postgres (`docker build` verificado localmente; Postgres real e o job de CI do portal no GitHub não verificados) |
 
 ## Decisões
 
@@ -96,6 +105,7 @@ As decisões e suas limitações estão em [decisoes.md](decisoes.md):
 - ADR-005: template do `aok new` dentro do pacote, com cópia do núcleo do agente.
 - ADR-006: relatório publicado em pasta local versionada, só agregados e hashes.
 - ADR-007: plataforma em `platform/`, relatório autodeclarado, só agregados e hashes.
+- ADR-008: portal e login (scrypt, cookie de sessão, CSRF só por SameSite, acesso por área, `download_log`).
 
 Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 
@@ -104,7 +114,7 @@ Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 - Kafka (eventos do agente em tópico, consumidores de auditoria e métricas).
 - Adaptador para outro framework de agentes: só existe o loop do agente de referência.
 - Prometheus e Grafana: as métricas são calculadas em Python, não exportadas.
-- Portal, login, SSO, leitura de relatórios e multiempresa na plataforma.
+- SSO, trilha além do download, multiempresa, dark mode e PDF na plataforma.
 - Deploy em nuvem.
 - Publicação em PyPI: o pacote se instala a partir do repositório.
 - Validação do gate do eval em um PR real que piore um prompt: até agora só foi simulado localmente (ver README).

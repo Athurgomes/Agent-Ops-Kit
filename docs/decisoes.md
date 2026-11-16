@@ -98,6 +98,26 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 **Consequências e limitações.**
 - O relatório é autodeclarado: a plataforma confere o esquema, o tamanho e o sha256 dos arquivos, mas não reexecuta eval nem red team. Quem publica pode enviar números que não vieram de uma execução real.
 - A imutabilidade das versões vale só pela API: quem opera o banco ou o disco pode alterar ou apagar.
-- A chave de bootstrap é única e compartilhada entre admins; não há login, papéis nem SSO.
-- `docker build` e Postgres real não foram testados; os testes automatizados usam SQLite.
+- A chave de bootstrap é única e compartilhada entre admins; não há login, papéis nem SSO na fase 2; login e papéis chegam na ADR-008.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API); Postgres real e o job de CI do portal no GitHub não verificados; os testes automatizados usam SQLite.
 - Alternativa descartada: enviar o log de auditoria (expõe conteúdo das interações).
+
+## ADR-008: portal e login de usuários (fase 3)
+
+**Contexto.** A fase 2 só recebe relatórios. Para pessoas lerem e baixarem, é preciso login, controle de acesso por área e um front-end. Extensão fora do plano original.
+
+**Decisão.**
+- Login por e-mail e senha, com hash scrypt da biblioteca padrão. Sessão em cookie `aok_session` (HttpOnly, SameSite=Strict, 8 h, `Secure` por padrão).
+- CSRF só por SameSite=Strict. Isso vale enquanto portal e API estiverem no mesmo site (a API serve o portal); com domínios diferentes seria preciso token CSRF.
+- Throttle de login em memória, por e-mail: 5 falhas travam o e-mail por 5 minutos (429).
+- Acesso por área com herança para sub-áreas (CTE recursiva, nunca para cima). `org_admin` vê a organização toda. Área fora do alcance responde 404.
+- `download_log` foi antecipado da fase 4 para a 3. Cada download grava o instante (baixado em) e o instante de geração do relatório (gerado em). Cada pessoa vê só os seus; só `org_admin` vê todos, por sessão e não pela chave de bootstrap, por LGPD. O filtro de área do histórico é por área exata, sem sub-áreas.
+- Tabelas criadas com `create_all`, sem migração.
+- Portal em React, Vite, TypeScript e Tailwind, servido pela própria API. O nome "Farol" é provisório e fictício (só em `platform/portal/src/brand.ts`). O visual se inspira em um template neo-brutalista, sem copiar nome nem textos.
+
+**Consequências e limitações.**
+- O throttle reinicia a cada deploy, não funciona com vários workers (cada processo conta separado) e permite que terceiros travem a conta de outra pessoa por 5 minutos.
+- Dívida: sem Alembic, mudança de coluna não é aplicada em banco existente; adotar migração antes disso.
+- A trilha cobre só o download; não há registro de login nem de leitura.
+- Não há SSO, multiempresa, dark mode nem PDF.
+- `docker build` verificado localmente (a imagem sobe e serve o portal e a API); Postgres real e o job de CI do portal no GitHub não verificados.
