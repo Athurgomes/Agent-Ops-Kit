@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ApiError } from "../api";
 import { useAuth } from "../auth";
-import { Button, Card, ErrorBox, Field, Title } from "../ui";
+import { Button, ErrorBox, Field, Logo, SoonText } from "../ui";
 
 export function Login() {
   const { me, loading, login } = useAuth();
@@ -33,44 +33,40 @@ export function Login() {
   }
 
   return (
-    <div className="flex h-full items-center bg-tint">
-      <div className="container-page grid w-full grid-cols-12 items-center gap-x-0 lg:gap-x-12 gap-y-12 py-24">
-        <div className="col-span-12 flex flex-col gap-6 lg:col-span-6">
-          <Title className="text-5xl lg:text-6xl">Log in</Title>
-          <p className="max-w-md text-lg text-subtle">
-            Use the email and password your organization's admin created for you. If you do not have access yet, ask an
-            admin.
-          </p>
-        </div>
-        <div className="col-span-12 lg:col-span-5 lg:col-start-8">
-          <Card shadow className="p-8">
-            <form onSubmit={submit} className="flex flex-col gap-6">
-              <Field
-                label="Email"
-                id="email"
-                type="email"
-                autoComplete="username"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-              <Field
-                label="Password"
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              {error && <ErrorBox>{error}</ErrorBox>}
-              <Button type="submit" variant="primary" size="lg" disabled={busy}>
-                {busy ? "Logging in…" : "Log In"}
-              </Button>
-            </form>
-          </Card>
-        </div>
+    <main id="content" className="flex min-h-screen flex-col items-center px-6 py-12">
+      <Logo size="text-4xl" />
+      <div className="box mt-12 w-full max-w-md p-8 sm:p-12">
+        <h1 className="heading text-4xl sm:text-5xl">Welcome back</h1>
+        <p className="mt-3 text-subtle">Sign in to read your agents' reports</p>
+        <form onSubmit={submit} className="mt-8 flex flex-col gap-6">
+          <Field
+            label="Email"
+            id="email"
+            type="email"
+            autoComplete="username"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <Field
+            label="Password"
+            id="password"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            aside={<SoonText className="text-sm text-subtle">Forgot password?</SoonText>}
+          />
+          {error && <ErrorBox>{error}</ErrorBox>}
+          <Button type="submit" variant="primary" size="lg" disabled={busy} className="mt-2 w-full">
+            {busy ? "Logging in…" : "Log In"}
+          </Button>
+        </form>
+        <p className="mt-8 flex flex-wrap items-center gap-2 text-sm text-subtle">
+          Don't have an account? <SoonText className="font-semibold text-ink">Sign up</SoonText>
+        </p>
       </div>
-    </div>
+    </main>
   );
 }

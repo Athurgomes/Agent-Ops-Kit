@@ -30,12 +30,12 @@ export const fmtSigned = (x: number | undefined | null) =>
 type Light = { label: string; cls: string; dot: string };
 /** The traffic light colors only ever mean the report result; they are never decoration. */
 const SEMAFORO: Record<Semaforo, Light> = {
-  green: { label: "Green", cls: "bg-[#dcfce7] text-[#14532d]", dot: "bg-[#16a34a]" },
-  yellow: { label: "Yellow", cls: "bg-[#fef3c7] text-[#78350f]", dot: "bg-[#d97706]" },
-  red: { label: "Red", cls: "bg-[#fee2e2] text-[#7f1d1d]", dot: "bg-[#dc2626]" },
+  green: { label: "Green", cls: "bg-[#dcfce7] text-black", dot: "bg-[#16a34a]" },
+  yellow: { label: "Yellow", cls: "bg-[#fef3c7] text-black", dot: "bg-[#d97706]" },
+  red: { label: "Red", cls: "bg-[#fee2e2] text-black", dot: "bg-[#dc2626]" },
 };
 export function semaforoOf(s: string): Light {
-  return SEMAFORO[s as Semaforo] ?? { label: s, cls: "bg-soft text-ink", dot: "bg-subtle" };
+  return SEMAFORO[s as Semaforo] ?? { label: s, cls: "bg-white text-black", dot: "bg-black" };
 }
 
 // Reasons for the traffic light (engine rules, version "provisoria-1").

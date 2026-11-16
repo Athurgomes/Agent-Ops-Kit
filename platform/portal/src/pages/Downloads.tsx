@@ -60,7 +60,7 @@ export function Downloads({ admin = false }: { admin?: boolean }) {
 
       <form
         aria-label="Filters"
-        className="mb-6 grid grid-cols-1 gap-4 rounded-2xl bg-soft p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-end"
+        className="mb-6 grid grid-cols-1 gap-4 box p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-end"
         onSubmit={(e) => e.preventDefault()}
       >
         <Select
@@ -111,7 +111,7 @@ export function Downloads({ admin = false }: { admin?: boolean }) {
       )}
 
       {rows.length > 0 && (
-        <div className="card max-h-[70vh] overflow-auto">
+        <div className="box max-h-[70vh] overflow-auto">
           <table className="data-table min-w-[48rem]">
             <caption className="sr-only">Download history</caption>
             <thead>
@@ -128,8 +128,8 @@ export function Downloads({ admin = false }: { admin?: boolean }) {
               {rows.map((d) => (
                 <tr key={d.id}>
                   {admin && <td className="whitespace-nowrap">{d.user_email}</td>}
-                  <td className="min-w-[16rem]">
-                    <Link to={`/app/reports/${d.report_id}`} className="font-semibold text-navy">
+                  <td className="min-w-[13rem]">
+                    <Link to={`/app/reports/${d.report_id}`} className="font-bold">
                       {d.agent_name}
                     </Link>
                     <span className="block text-sm">version {d.seq}</span>

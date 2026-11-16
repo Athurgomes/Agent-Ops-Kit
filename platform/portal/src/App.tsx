@@ -12,9 +12,9 @@ import { ReportView } from "./pages/ReportView";
 export default function App() {
   return (
     <Routes>
+      <Route path="/login" element={<Login />} />
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<Login />} />
         <Route path="*" element={<NotFound />} />
       </Route>
       <Route path="/app" element={<AppShell />}>

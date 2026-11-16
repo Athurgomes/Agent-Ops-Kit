@@ -1,124 +1,67 @@
 import type { ReactNode } from "react";
 import { BRAND } from "../brand";
 import { LIMITS_TEXT, SELF_DECLARED_TEXT } from "../format";
-import { Chevron, LinkButton, SoonButton } from "../ui";
+import { LinkButton, SoonButton } from "../ui";
 import { BeforeAfter, Proof, Showcase } from "./LandingSections";
 
-// ---- icons (simple stroke SVGs) --------------------------------------------------------------
+// ---- plain line icons (no containers) --------------------------------------------------------
 
-function Icon({ children, className = "size-6" }: { children: ReactNode; className?: string }) {
+function Icon({ children, className = "size-7" }: { children: ReactNode; className?: string }) {
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <svg aria-hidden="true" viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
       {children}
     </svg>
   );
 }
-const AgentIcon = ({ className }: { className?: string }) => (
-  <Icon className={className}>
-    <rect x="4" y="8" width="16" height="11" rx="3" />
+const AgentIcon = () => (
+  <Icon>
+    <rect x="4" y="8" width="16" height="11" rx="2" />
     <path d="M12 8V4.5M10.5 4.5h3" />
     <circle cx="9" cy="13.5" r="1" />
     <circle cx="15" cy="13.5" r="1" />
     <path d="M9.5 16.5h5" />
   </Icon>
 );
-const TestIcon = ({ className }: { className?: string }) => (
-  <Icon className={className}>
+const TestIcon = () => (
+  <Icon>
     <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" />
     <path d="M9 12l2 2 4-4" />
   </Icon>
 );
-const ReportIcon = ({ className }: { className?: string }) => (
-  <Icon className={className}>
+const ReportIcon = () => (
+  <Icon>
     <path d="M7 3h7l4 4v14H7z" />
     <path d="M14 3v4h4M10 12h5M10 16h5" />
-  </Icon>
-);
-const TreeIcon = () => (
-  <Icon>
-    <rect x="3" y="3" width="7" height="5" rx="1.5" />
-    <rect x="14" y="10" width="7" height="5" rx="1.5" />
-    <rect x="14" y="17" width="7" height="4" rx="1.5" />
-    <path d="M6.5 8v10h7.5M6.5 12.5H14" />
-  </Icon>
-);
-const LayersIcon = () => (
-  <Icon>
-    <path d="M12 4l9 5-9 5-9-5z" />
-    <path d="M3 14l9 5 9-5" />
-  </Icon>
-);
-const DownloadIcon = () => (
-  <Icon>
-    <path d="M12 4v11M7.5 11l4.5 4.5 4.5-4.5M5 20h14" />
-  </Icon>
-);
-const NoteIcon = () => (
-  <Icon>
-    <path d="M12 3l9.5 17h-19z" />
-    <path d="M12 10v4.5M12 17.5v.01" />
-  </Icon>
-);
-const HashIcon = () => (
-  <Icon>
-    <path d="M5 9h15M4 15h15M10 4L8 20M16 4l-2 16" />
-  </Icon>
-);
-const KeyIcon = () => (
-  <Icon>
-    <circle cx="8" cy="15" r="4" />
-    <path d="M11 12l9-9M16 7l3 3" />
   </Icon>
 );
 
 // ---- hero ------------------------------------------------------------------------------------
 
-function FlowNode({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
+function FlowRow({ n, icon, title, text }: { n: string; icon: ReactNode; title: string; text: string }) {
   return (
-    <li className="flex items-center gap-4 rounded-2xl border border-line bg-paper p-4 shadow-[var(--shadow-soft)]">
-      <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-tint text-accent">{icon}</span>
+    <li className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-5">
+      <span className="font-mono text-sm font-bold text-subtle">{n}</span>
       <div>
-        <p className="font-bold text-navy">{title}</p>
+        <p className="text-lg font-extrabold">{title}</p>
         <p className="text-sm text-subtle">{text}</p>
       </div>
-    </li>
-  );
-}
-
-function Arrow() {
-  return (
-    <li aria-hidden="true" className="flex justify-center text-accent">
-      <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 4v15M6 13l6 6 6-6" />
-      </svg>
+      {icon}
     </li>
   );
 }
 
 function AgentFlow() {
   return (
-    <figure className="rounded-3xl bg-tint p-6 sm:p-8">
-      <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-paper px-4 py-2 text-sm font-semibold text-navy shadow-[var(--shadow-soft)]">
-        <AgentIcon className="size-5 text-accent" />
-        AI agent → tested → report
+    <figure className="m-0">
+      <div className="box">
+        <p className="rule-b px-6 py-4 text-sm font-extrabold">AI agent → tested → report</p>
+        <ol className="m-0 list-none divide-y divide-ink p-0 px-6">
+          <FlowRow n="01" icon={<AgentIcon />} title="Your AI agent" text="Runs where your team runs it." />
+          <FlowRow n="02" icon={<TestIcon />} title="Tested" text="Quality evaluation and red-team attacks." />
+          <FlowRow n="03" icon={<ReportIcon />} title="Report" text="Published here, with its caveats." />
+        </ol>
       </div>
-      <ol className="m-0 flex list-none flex-col gap-2 p-0">
-        <FlowNode icon={<AgentIcon />} title="Your AI agent" text="Runs where your team runs it." />
-        <Arrow />
-        <FlowNode icon={<TestIcon />} title="Tested" text="Quality evaluation and red-team attacks." />
-        <Arrow />
-        <FlowNode icon={<ReportIcon />} title="Report" text="Published here, with its caveats." />
-      </ol>
-      <figcaption className="mt-6 text-sm text-subtle">
+      <figcaption className="mt-4 text-sm text-subtle">
         Illustrative diagram. {BRAND} never runs your agent; it only stores and shows the report your team publishes.
       </figcaption>
     </figure>
@@ -127,9 +70,9 @@ function AgentFlow() {
 
 function Hero() {
   return (
-    <div className="container-page grid grid-cols-12 items-center gap-x-0 lg:gap-x-12 gap-y-12 py-24">
-      <div className="col-span-12 flex flex-col items-start gap-6 lg:col-span-7">
-        <p className="rounded-full bg-tint px-4 py-1 text-sm font-semibold text-navy">Reports for AI agents</p>
+    <div className="container-page grid grid-cols-12 items-end gap-x-0 gap-y-12 py-24 lg:gap-x-12">
+      <div className="col-span-12 flex flex-col items-start gap-8 lg:col-span-7">
+        <p className="text-sm font-extrabold">Reports for AI agents</p>
         <h1 className="heading text-5xl sm:text-6xl lg:text-7xl">
           See what your AI agents were tested for. Read what was left out.
         </h1>
@@ -153,36 +96,30 @@ function Hero() {
   );
 }
 
-// ---- features --------------------------------------------------------------------------------
+// ---- features: a ruled list, not a grid of cards ---------------------------------------------
 
 const FEATURES = [
   {
-    icon: <TreeIcon />,
     title: "An agent registry by area",
     text: "Every agent belongs to an area. Access to an area covers its sub-areas, and never the areas above it.",
   },
   {
-    icon: <LayersIcon />,
     title: "Versioned agent reports",
     text: "Each publication becomes a numbered version that the API cannot edit or delete. The latest one is highlighted.",
   },
   {
-    icon: <DownloadIcon />,
     title: "A log of every download",
     text: "Each download records who took the report, in which format and when. You see yours; admins see the organization's.",
   },
   {
-    icon: <NoteIcon />,
     title: "Caveats on every report page",
     text: "Every report page shows the caveats and the fixed statement of limits, with the traffic light on the same page.",
   },
   {
-    icon: <HashIcon />,
     title: "Summary and hashes only",
     text: "The kit builds each report with a summary, the caveats and file hashes. The full audit log, attack texts and judge criteria are not part of it.",
   },
   {
-    icon: <KeyIcon />,
     title: "Agent tokens that only publish",
     text: "An agent's token can publish that agent's reports and nothing else. It cannot read, and it can be revoked.",
   },
@@ -190,17 +127,23 @@ const FEATURES = [
 
 function Features() {
   return (
-    <section id="features" className="container-page py-24">
-      <h2 className="heading max-w-2xl text-4xl lg:text-5xl">Everything about your agents' reports, in one place</h2>
-      <ul className="m-0 mt-12 grid list-none grid-cols-1 gap-x-0 lg:gap-x-12 gap-y-12 p-0 md:grid-cols-2 lg:grid-cols-3">
-        {FEATURES.map((f) => (
-          <li key={f.title} className="flex flex-col gap-3 border-t border-line pt-6">
-            <span className="flex size-11 items-center justify-center rounded-xl bg-tint text-accent">{f.icon}</span>
-            <h3 className="heading text-xl">{f.title}</h3>
-            <p className="text-subtle">{f.text}</p>
-          </li>
-        ))}
-      </ul>
+    <section id="features" className="rule-t">
+      <div className="container-page grid grid-cols-12 gap-x-0 gap-y-12 py-24 lg:gap-x-12">
+        <div className="col-span-12 lg:col-span-4">
+          <h2 className="heading text-4xl lg:text-5xl">Everything about your agents' reports, in one place</h2>
+        </div>
+        <ol className="col-span-12 m-0 list-none p-0 lg:col-span-8">
+          {FEATURES.map((f, i) => (
+            <li key={f.title} className="rule-t grid grid-cols-[3rem_1fr] gap-4 py-6 first:border-t-0 lg:first:pt-0">
+              <span className="font-mono text-sm font-bold text-subtle">{String(i + 1).padStart(2, "0")}</span>
+              <div>
+                <h3 className="heading text-xl lg:text-2xl">{f.title}</h3>
+                <p className="mt-2 max-w-xl text-subtle">{f.text}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
     </section>
   );
 }
@@ -225,20 +168,16 @@ const STEPS = [
 
 function HowItWorks() {
   return (
-    <section id="how-it-works" className="border-y border-line bg-tint">
+    <section id="how-it-works" className="rule-t">
       <div className="container-page py-24">
         <h2 className="heading text-4xl lg:text-5xl">How it works</h2>
-        <ol className="m-0 mt-12 grid list-none grid-cols-1 gap-12 p-0 md:grid-cols-3">
+        <ol className="m-0 mt-12 grid list-none grid-cols-1 p-0 md:grid-cols-3">
           {STEPS.map((s, i) => (
-            <li key={s.title} className="flex flex-col items-start gap-3">
-              <span className="flex size-10 items-center justify-center rounded-full bg-navy font-bold text-white">
-                {i + 1}
-              </span>
+            <li key={s.title} className="rule-t flex flex-col items-start gap-3 py-8 md:border-l md:border-t md:border-ink md:px-8 md:first:border-l-0 md:first:pl-0">
+              <span className="heading text-7xl">{i + 1}</span>
               <h3 className="heading text-xl">{s.title}</h3>
               <p className="text-subtle">{s.text}</p>
-              {s.code && (
-                <code className="rounded-lg bg-paper px-3 py-1 font-mono text-sm text-navy">{s.code}</code>
-              )}
+              {s.code && <code className="border border-ink px-3 py-1 font-mono text-sm">{s.code}</code>}
             </li>
           ))}
         </ol>
@@ -251,15 +190,13 @@ function HowItWorks() {
 
 function Limits() {
   return (
-    <section id="limits" className="container-page py-24">
-      <div className="grid grid-cols-12 gap-x-0 lg:gap-x-12 gap-y-6">
+    <section id="limits" className="rule-t">
+      <div className="container-page grid grid-cols-12 gap-x-0 gap-y-8 py-24 lg:gap-x-12">
         <div className="col-span-12 lg:col-span-4">
           <h2 className="heading text-4xl lg:text-5xl">What a green report does not mean</h2>
         </div>
         <div className="col-span-12 flex flex-col gap-6 lg:col-span-8">
-          <p className="border-l-4 border-accent pl-6 text-2xl font-semibold leading-snug text-navy lg:text-3xl">
-            {LIMITS_TEXT}
-          </p>
+          <p className="border-l-4 border-accent pl-6 text-2xl font-bold leading-snug lg:text-3xl">{LIMITS_TEXT}</p>
           <p className="pl-7 text-subtle">{SELF_DECLARED_TEXT}</p>
         </div>
       </div>
@@ -291,8 +228,8 @@ const FAQ: { q: string; a: ReactNode }[] = [
     a: (
       <>
         An admin registers the agent and issues a token, shown once. The team puts it in an environment variable and
-        runs <code className="rounded bg-soft px-1.5 font-mono text-sm">aok check --publish</code> with the platform URL.
-        The token can only publish reports for that agent, and it can be revoked.
+        runs <code className="border border-ink px-1.5 font-mono text-sm">aok check --publish</code> with the platform
+        URL. The token can only publish reports for that agent, and it can be revoked.
       </>
     ),
   },
@@ -316,17 +253,19 @@ const FAQ: { q: string; a: ReactNode }[] = [
 
 function Faq() {
   return (
-    <section id="faq" className="border-t border-line">
-      <div className="container-page grid grid-cols-12 gap-x-0 lg:gap-x-12 gap-y-12 py-24">
+    <section id="faq" className="rule-t">
+      <div className="container-page grid grid-cols-12 gap-x-0 gap-y-12 py-24 lg:gap-x-12">
         <div className="col-span-12 lg:col-span-4">
           <h2 className="heading text-4xl lg:text-5xl">Questions</h2>
         </div>
         <div className="col-span-12 lg:col-span-8">
           {FAQ.map((f) => (
-            <details key={f.q} className="faq border-b border-line first:border-t">
-              <summary className="flex items-center justify-between gap-4 py-6 text-lg font-semibold text-navy hover:text-accent">
+            <details key={f.q} className="faq rule-t first:border-t last:border-b last:border-ink">
+              <summary className="flex items-center justify-between gap-4 py-5 text-lg font-extrabold hover:text-accent">
                 {f.q}
-                <Chevron />
+                <span aria-hidden="true" className="plus text-2xl font-normal leading-none">
+                  +
+                </span>
               </summary>
               <p className="max-w-2xl pb-6 text-subtle">{f.a}</p>
             </details>
@@ -339,21 +278,17 @@ function Faq() {
 
 function FinalCta() {
   return (
-    <section className="container-page py-24">
-      <div className="flex flex-col items-start gap-6 rounded-3xl bg-navy p-12 text-white lg:p-24">
-        <h2 className="max-w-3xl text-4xl font-extrabold leading-tight tracking-tight lg:text-5xl">
-          Ready to read your agents' reports?
-        </h2>
-        <p className="max-w-xl text-lg text-[#c7d7fe]">
-          Log in with the email and password your organization's admin created for you.
-        </p>
-        <div className="flex flex-wrap items-center gap-4">
-          <LinkButton to="/login" size="lg" className="!bg-white !text-navy hover:!bg-tint">
-            Log In
-          </LinkButton>
-          <SoonButton variant="secondary" size="lg" className="!border-[#4a63a6] !bg-transparent !text-white">
-            Sign Up
-          </SoonButton>
+    <section className="rule-t">
+      <div className="container-page grid grid-cols-12 items-end gap-x-0 gap-y-8 py-24 lg:gap-x-12">
+        <h2 className="heading col-span-12 text-5xl lg:col-span-8 lg:text-6xl">Ready to read your agents' reports?</h2>
+        <div className="col-span-12 flex flex-col items-start gap-6 lg:col-span-4">
+          <p className="text-subtle">Log in with the email and password your organization's admin created for you.</p>
+          <div className="flex flex-wrap items-center gap-4">
+            <LinkButton to="/login" variant="primary" size="lg">
+              Log In
+            </LinkButton>
+            <SoonButton size="lg">Sign Up</SoonButton>
+          </div>
         </div>
       </div>
     </section>

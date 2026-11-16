@@ -1,20 +1,18 @@
 @import "tailwindcss";
 
-/* Design tokens. To change the visual identity, edit this block only. */
+/* Design tokens. To change the visual identity, edit this block only.
+   Rule: text is black on white; the single vivid blue is only for the main call to action,
+   links, focus, the active-item marker and small accents. */
 :root {
-  --ink: #0f172a; /* body text */
-  --navy: #0b1f4d; /* headings, primary button */
-  --navy-hover: #12306f;
-  --accent: #2563eb; /* medium blue accent */
-  --tint: #eff6ff; /* very light blue: section bands */
-  --tint-2: #dbeafe; /* light blue: highlights */
-  --subtle: #5b6579; /* secondary text */
-  --line: #e5e7eb; /* 1px borders and dividers */
-  --soft: #f8fafc; /* quiet backgrounds */
+  --ink: #000000;
   --paper: #ffffff;
+  --subtle: #595959; /* secondary text (7:1 on white) */
+  --hair: #d9d9d9; /* very light fill for skeleton loaders */
+  --accent: #2563eb;
+  --accent-hover: #1d4fd8;
+  --line: #000000; /* thin black rules */
   --focus: #2563eb;
-  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
-  --shadow-hover: 0 2px 4px rgba(15, 23, 42, 0.06), 0 12px 32px rgba(15, 23, 42, 0.1);
+  --hard-shadow: 4px 4px 0 0 #000;
   --container: 1200px;
   --header-h: 72px;
   --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -23,14 +21,10 @@
 
 @theme inline {
   --color-ink: var(--ink);
-  --color-navy: var(--navy);
-  --color-accent: var(--accent);
-  --color-tint: var(--tint);
-  --color-tint-2: var(--tint-2);
-  --color-subtle: var(--subtle);
-  --color-line: var(--line);
-  --color-soft: var(--soft);
   --color-paper: var(--paper);
+  --color-subtle: var(--subtle);
+  --color-hair: var(--hair);
+  --color-accent: var(--accent);
   --font-sans: var(--font-body);
   --font-mono: var(--font-mono);
   --text-sm: 0.9375rem;
@@ -60,13 +54,13 @@
   ol,
   dl,
   dd,
-  figure {
+  figure,
+  blockquote {
     margin: 0;
   }
   :focus-visible {
-    outline: 2px solid var(--focus);
+    outline: 3px solid var(--focus);
     outline-offset: 3px;
-    border-radius: 8px;
   }
   a {
     color: inherit;
@@ -90,66 +84,80 @@
     margin-inline: auto;
     padding-inline: 24px;
   }
+  /* Titles: very heavy, black, tight. */
   .heading {
-    color: var(--navy);
-    font-weight: 800;
-    letter-spacing: -0.025em;
-    line-height: 1.1;
+    color: var(--ink);
+    font-weight: 900;
+    letter-spacing: -0.035em;
+    line-height: 1.02;
     overflow-wrap: anywhere;
   }
-  .card {
-    background: var(--paper);
+  /* Main containers: thin black border, square corners. */
+  .box {
     border: 1px solid var(--line);
-    border-radius: 20px;
+    background: var(--paper);
   }
-  .card-soft {
-    box-shadow: var(--shadow-soft);
+  .rule-t {
+    border-top: 1px solid var(--line);
   }
-  .card-link {
-    transition: box-shadow 150ms, border-color 150ms;
+  .rule-b {
+    border-bottom: 1px solid var(--line);
   }
-  .card-link:hover {
-    box-shadow: var(--shadow-hover);
-    border-color: #cbd5e1;
+  /* Links in the accent color. */
+  .link {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
   }
-  /* Buttons: pills */
+  .link:hover {
+    text-decoration: underline;
+  }
+  /* Buttons: pills. Primary = vivid blue with a hard black offset shadow. */
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    border: 1px solid transparent;
+    border: 1px solid var(--line);
     border-radius: 999px;
-    padding: 10px 20px;
-    font-weight: 600;
+    padding: 10px 22px;
+    font-weight: 700;
     line-height: 1.2;
+    color: var(--ink);
+    background: var(--paper);
     text-decoration: none;
     cursor: pointer;
-    transition: background-color 120ms, border-color 120ms, color 120ms;
+    transition: transform 80ms, box-shadow 80ms, background-color 80ms;
   }
   .btn-sm {
-    padding: 8px 16px;
+    padding: 7px 16px;
     font-size: 0.9375rem;
   }
   .btn-lg {
-    padding: 14px 28px;
+    padding: 14px 30px;
     font-size: 1.0625rem;
   }
   .btn-primary {
-    background: var(--navy);
+    background: var(--accent);
     color: #fff;
+    box-shadow: var(--hard-shadow);
   }
   .btn-primary:hover:not(:disabled) {
-    background: var(--navy-hover);
+    background: var(--accent-hover);
+    transform: translate(-1px, -1px);
+    box-shadow: 5px 5px 0 0 #000;
   }
-  .btn-secondary {
-    background: var(--paper);
-    border-color: #cbd5e1;
-    color: var(--navy);
+  .btn-primary:active:not(:disabled) {
+    transform: translate(4px, 4px);
+    box-shadow: none;
   }
   .btn-secondary:hover:not(:disabled) {
-    background: var(--tint);
-    border-color: var(--accent);
+    background: var(--ink);
+    color: #fff;
+  }
+  .btn-dark {
+    background: var(--ink);
+    color: #fff;
   }
   .btn:disabled {
     opacity: 0.5;
@@ -161,55 +169,47 @@
     user-select: none;
   }
   .soon-badge {
-    border-radius: 999px;
-    background: var(--tint-2);
-    color: var(--navy);
+    border: 1px solid currentColor;
     font-size: 0.6875rem;
     font-weight: 700;
     line-height: 1;
-    padding: 3px 7px;
+    padding: 2px 5px;
+    letter-spacing: 0.02em;
   }
   .navlink {
     display: inline-block;
     padding: 4px 0;
     color: var(--ink);
-    font-weight: 500;
+    font-weight: 600;
     text-decoration: none;
     border-bottom: 2px solid transparent;
   }
   .navlink:hover {
     color: var(--accent);
   }
-  .navlink.active {
-    color: var(--navy);
-    border-bottom-color: var(--accent);
-  }
+  /* Sidebar item: the active one gets an accent bar on the left. */
   .side-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    border-radius: 10px;
-    padding: 8px 12px;
+    display: block;
+    padding: 6px 12px 6px 16px;
     font-weight: 500;
     text-decoration: none;
+    border-left: 3px solid transparent;
   }
   .side-item:hover {
-    background: var(--soft);
+    text-decoration: underline;
   }
   .side-item.active {
-    background: var(--tint);
-    color: var(--navy);
-    font-weight: 700;
+    border-left-color: var(--accent);
+    font-weight: 800;
   }
   .data-table {
     width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
+    border-collapse: collapse;
     text-align: left;
   }
   .data-table th,
   .data-table td {
-    padding: 14px 20px;
+    padding: 12px 14px;
     border-bottom: 1px solid var(--line);
     vertical-align: top;
   }
@@ -221,18 +221,13 @@
     position: sticky;
     top: 0;
     z-index: 1;
-    background: var(--soft);
-    color: var(--subtle);
+    background: var(--paper);
     font-size: 0.875rem;
-    font-weight: 600;
+    font-weight: 800;
     white-space: nowrap;
   }
   .data-table tbody th {
-    color: var(--navy);
-    font-weight: 600;
-  }
-  .data-table tbody tr:hover td {
-    background: var(--soft);
+    font-weight: 700;
   }
   .faq summary {
     cursor: pointer;
@@ -241,7 +236,10 @@
   .faq summary::-webkit-details-marker {
     display: none;
   }
-  .faq[open] summary .chev {
-    transform: rotate(180deg);
+  .faq .plus {
+    transition: transform 120ms;
+  }
+  .faq[open] .plus {
+    transform: rotate(45deg);
   }
 }

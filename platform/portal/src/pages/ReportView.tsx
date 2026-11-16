@@ -5,7 +5,7 @@ import { api } from "../api";
 import type { Format, ReportDetail } from "../api";
 import { areaPath, useCatalog } from "../auth";
 import { fmtDateLong, fmtNum, fmtPct, fmtSigned, LIMITS_TEXT, RULE_TEXT, SELF_DECLARED_TEXT } from "../format";
-import { Button, Card, ErrorBox, Loading, PageHeader, SemaforoBadge, useAsync } from "../ui";
+import { Box, Button, ErrorBox, Loading, PageHeader, SemaforoBadge, useAsync } from "../ui";
 
 const FORMATS: { f: Format; label: string }[] = [
   { f: "md", label: "Download MD" },
@@ -40,7 +40,7 @@ function DownloadButtons({ r }: { r: ReportDetail }) {
       </div>
       <p className="text-sm text-subtle">
         Every download is logged in{" "}
-        <Link to="/app/downloads" className="font-semibold text-accent">
+        <Link to="/app/downloads" className="link">
           My downloads
         </Link>
         .
@@ -73,7 +73,7 @@ function Summary({ r }: { r: ReportDetail }) {
       : "Not available";
 
   return (
-    <div className="card overflow-x-auto">
+    <div className="box overflow-x-auto">
       <table className="data-table">
         <caption className="sr-only">Report summary</caption>
         <tbody>
@@ -145,7 +145,7 @@ export function ReportView() {
         <div className="grid grid-cols-12 gap-x-0 gap-y-12 lg:gap-x-12">
           <aside className="order-first col-span-12 min-w-0 lg:order-last lg:col-span-4">
             <div className="flex flex-col gap-6 lg:sticky lg:top-12">
-              <Card shadow className="flex flex-col gap-6">
+              <Box className="flex flex-col gap-6">
                 <SemaforoBadge value={r.status_semaforo} size="lg" />
                 <dl className="m-0 grid grid-cols-1 gap-4 text-sm">
                   <div>
@@ -173,17 +173,17 @@ export function ReportView() {
                     <dd className="m-0 break-all font-mono text-sm">{r.sha256}</dd>
                   </div>
                 </dl>
-              </Card>
-              <Card>
-                <h2 className="mb-4 text-lg font-bold text-navy">Download</h2>
+              </Box>
+              <Box>
+                <h2 className="mb-4 text-lg font-extrabold">Download</h2>
                 <DownloadButtons r={r} />
-              </Card>
+              </Box>
             </div>
           </aside>
 
           <div className="col-span-12 flex min-w-0 flex-col gap-12 lg:col-span-8">
-            <div className="rounded-2xl bg-tint p-6">
-              <p className="text-lg font-semibold leading-snug text-navy">{LIMITS_TEXT}</p>
+            <div className="box border-l-4 border-l-accent p-6">
+              <p className="text-lg font-semibold leading-snug">{LIMITS_TEXT}</p>
               <p className="mt-4 text-sm text-subtle">{SELF_DECLARED_TEXT}</p>
             </div>
 
@@ -218,7 +218,7 @@ export function ReportView() {
               <h2 id="caveats" className="heading text-2xl">
                 Caveats
               </h2>
-              <Card>
+              <Box>
                 {r.limitations.length > 0 ? (
                   <ul className="m-0 list-disc space-y-2 pl-6">
                     {r.limitations.map((l, i) => (
@@ -228,7 +228,7 @@ export function ReportView() {
                 ) : (
                   <p>The caveats list is not available here; check the downloaded report.</p>
                 )}
-              </Card>
+              </Box>
             </section>
           </div>
         </div>

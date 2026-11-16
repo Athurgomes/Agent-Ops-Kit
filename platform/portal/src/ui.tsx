@@ -9,7 +9,7 @@ export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Bool
 
 // ---- buttons ---------------------------------------------------------------------------------
 
-type Variant = "primary" | "secondary";
+type Variant = "primary" | "secondary" | "dark";
 type Size = "sm" | "md" | "lg";
 const btnCls = (v: Variant, s: Size, extra?: string) =>
   cx("btn", `btn-${v}`, s === "sm" && "btn-sm", s === "lg" && "btn-lg", extra);
@@ -43,10 +43,10 @@ export function LinkButton({
   );
 }
 
-/** Not-yet-available action: not clickable (no href, no handler), default cursor, "Soon" badge. */
+/** Not-yet-available action: not clickable (no href, no handler), default cursor, "Soon" label. */
 export function SoonButton({
   children,
-  variant = "primary",
+  variant = "dark",
   size = "sm",
   className,
 }: {
@@ -56,22 +56,17 @@ export function SoonButton({
   className?: string;
 }) {
   return (
-    <span
-      role="button"
-      aria-disabled="true"
-      title="Coming soon"
-      className={cx(btnCls(variant, size, className), "soon")}
-    >
+    <span role="button" aria-disabled="true" title="Coming soon" className={cx(btnCls(variant, size, className), "soon")}>
       {children}
       <span className="soon-badge">Soon</span>
     </span>
   );
 }
 
-/** Not-yet-available text item (nav or footer): not a link, with a discreet "Soon" label. */
+/** Not-yet-available text item (nav, footer, login): not a link, with a discreet "Soon" label. */
 export function SoonText({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <span aria-disabled="true" title="Coming soon" className={cx("soon inline-flex items-center gap-2 text-subtle", className)}>
+    <span aria-disabled="true" title="Coming soon" className={cx("soon inline-flex items-center gap-2", className)}>
       {children}
       <span className="soon-badge">Soon</span>
     </span>
@@ -80,49 +75,33 @@ export function SoonText({ children, className }: { children: ReactNode; classNa
 
 // ---- blocks ----------------------------------------------------------------------------------
 
-export function Logo({ to = "/" }: { to?: string }) {
+export function Logo({ to = "/", size = "text-2xl" }: { to?: string; size?: string }) {
   return (
-    <Link to={to} className="text-2xl font-extrabold tracking-tight text-navy no-underline" aria-label={`${BRAND}, home`}>
+    <Link to={to} className={cx("heading no-underline", size)} aria-label={`${BRAND}, home`}>
       {BRAND}
     </Link>
   );
 }
 
-export function Card({
-  shadow = false,
-  className,
-  children,
-}: {
-  shadow?: boolean;
-  className?: string;
-  children: ReactNode;
-}) {
-  return <div className={cx("card p-6", shadow && "card-soft", className)}>{children}</div>;
+/** Container: thin black border, square corners, no shadow. */
+export function Box({ className, children }: { className?: string; children: ReactNode }) {
+  return <div className={cx("box p-6", className)}>{children}</div>;
 }
 
-/** Small neutral label. */
-export function Tag({ children, tone = "tint" }: { children: ReactNode; tone?: "tint" | "soft" }) {
-  return (
-    <span
-      className={cx(
-        "inline-block rounded-full px-3 py-1 text-sm font-semibold",
-        tone === "tint" ? "bg-tint text-navy" : "bg-soft text-subtle",
-      )}
-    >
-      {children}
-    </span>
-  );
+/** Small square label. */
+export function Tag({ children }: { children: ReactNode }) {
+  return <span className="inline-block border border-ink px-2 py-0.5 text-sm font-semibold">{children}</span>;
 }
 
-/** Traffic-light pill: color + dot + text (never color alone). */
+/** Traffic-light label: color + dot + text (never color alone). Colors only ever mean the result. */
 export function SemaforoBadge({ value, size = "md" }: { value: string; size?: "md" | "lg" }) {
   const s = semaforoOf(value);
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-2 whitespace-nowrap rounded-full font-semibold",
+        "inline-flex items-center gap-2 whitespace-nowrap border border-ink font-bold",
         s.cls,
-        size === "lg" ? "px-4 py-2 text-lg" : "px-3 py-1 text-sm",
+        size === "lg" ? "px-4 py-2 text-lg" : "px-2.5 py-0.5 text-sm",
       )}
     >
       <span aria-hidden="true" className={cx("size-2.5 rounded-full", s.dot)} />
@@ -141,16 +120,8 @@ export function Title({
   children: ReactNode;
   className?: string;
 }) {
-  const size = As === "h1" ? "text-3xl lg:text-4xl" : As === "h2" ? "text-2xl lg:text-3xl" : "text-xl";
+  const size = As === "h1" ? "text-4xl lg:text-5xl" : As === "h2" ? "text-2xl lg:text-3xl" : "text-xl";
   return <As className={cx("heading", size, className)}>{children}</As>;
-}
-
-export function Chevron({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" className={cx("chev shrink-0 transition-transform", className)}>
-      <path d="M3 6l5 5 5-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
 }
 
 // ---- states ----------------------------------------------------------------------------------
@@ -159,17 +130,17 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
   return (
     <div role="status" className="flex animate-pulse flex-col gap-4" aria-live="polite">
       <span className="sr-only">{label}</span>
-      <div className="h-8 w-1/3 rounded-lg bg-line" />
-      <div className="h-24 w-full rounded-2xl bg-soft" />
-      <div className="h-24 w-full rounded-2xl bg-soft" />
+      <div className="h-8 w-1/3 bg-hair" />
+      <div className="h-20 w-full bg-hair/60" />
+      <div className="h-20 w-full bg-hair/60" />
     </div>
   );
 }
 
 export function ErrorBox({ children }: { children: ReactNode }) {
   return (
-    <div role="alert" className="flex items-start gap-3 rounded-2xl border border-[#fecaca] bg-[#fef2f2] p-4 text-[#7f1d1d]">
-      <span aria-hidden="true" className="font-bold">
+    <div role="alert" className="box flex items-start gap-3 bg-[#fee2e2] p-4">
+      <span aria-hidden="true" className="font-black">
         !
       </span>
       <div>{children}</div>
@@ -179,22 +150,30 @@ export function ErrorBox({ children }: { children: ReactNode }) {
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="flex flex-col items-start gap-2 rounded-2xl border border-dashed border-[#cbd5e1] bg-soft p-12">
-      <p className="text-xl font-bold text-navy">{title}</p>
+    <div className="flex flex-col items-start gap-2 border border-dashed border-ink p-12">
+      <p className="heading text-2xl">{title}</p>
       {children && <p className="max-w-xl text-subtle">{children}</p>}
     </div>
   );
 }
 
-// ---- forms -----------------------------------------------------------------------------------
+// ---- forms (pills) ---------------------------------------------------------------------------
 
-export function Field({ label, id, ...p }: { label: string; id: string } & InputHTMLAttributes<HTMLInputElement>) {
+export function Field({
+  label,
+  id,
+  aside,
+  ...p
+}: { label: string; id: string; aside?: ReactNode } & InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={id} className="text-sm font-semibold text-navy">
-        {label}
-      </label>
-      <input id={id} className="rounded-xl border border-[#cbd5e1] bg-paper px-4 py-3 hover:border-accent" {...p} />
+      <div className="flex items-baseline justify-between gap-4">
+        <label htmlFor={id} className="font-bold">
+          {label}
+        </label>
+        {aside}
+      </div>
+      <input id={id} className="rounded-full border border-ink bg-paper px-5 py-3" {...p} />
     </div>
   );
 }
@@ -207,10 +186,10 @@ export function Select({
 }: { label: string; id: string; children: ReactNode } & SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <label htmlFor={id} className="text-sm font-semibold text-navy">
+      <label htmlFor={id} className="text-sm font-bold">
         {label}
       </label>
-      <select id={id} className="rounded-xl border border-[#cbd5e1] bg-paper px-4 py-2.5 hover:border-accent" {...p}>
+      <select id={id} className="rounded-full border border-ink bg-paper px-5 py-2.5" {...p}>
         {children}
       </select>
     </div>
@@ -228,11 +207,11 @@ export function Breadcrumbs({ items }: { items: Crumb[] }) {
           <li key={i} className="flex min-w-0 items-center gap-2">
             {i > 0 && <span aria-hidden="true">/</span>}
             {c.to ? (
-              <Link to={c.to} className="hover:text-accent hover:underline">
+              <Link to={c.to} className="underline hover:text-accent">
                 {c.label}
               </Link>
             ) : (
-              <span aria-current="page" className="truncate font-medium text-ink">
+              <span aria-current="page" className="truncate font-semibold text-ink">
                 {c.label}
               </span>
             )}
@@ -255,7 +234,7 @@ export function PageHeader({
   children?: ReactNode;
 }) {
   return (
-    <header className="mb-12 flex flex-col gap-4">
+    <header className="rule-b mb-12 flex flex-col gap-4 pb-8">
       <Breadcrumbs items={crumbs} />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <Title className="min-w-0 max-w-3xl">{title}</Title>
