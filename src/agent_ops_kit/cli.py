@@ -431,6 +431,52 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report(args: argparse.Namespace) -> int:
+    """`aok report build`: pacote relatorio.{json,md,html} a partir dos resultados gravados."""
+    import json
+
+    from agent_ops_kit.redteam.report import ReportError
+    from agent_ops_kit.report import build, render
+
+    cwd = os.getcwd()  # o runner importa examples.rag_agent, na raiz do repositório
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
+    try:
+        data = build.build_data(
+            config=args.config,
+            dataset=args.dataset,
+            prompts_dir=args.prompts_dir,
+            answers_dir=args.answers_dir,
+            baseline=args.baseline,
+            candidate=args.candidate,
+            seed=args.seed,
+            redteam_baseline=args.redteam_baseline,
+            redteam_guardrails=args.redteam_guardrails,
+            fp_dir=args.fp_dir,
+            audit_path=args.audit,
+            previous=args.previous,
+        )
+        blocks = render.build_blocks(data)
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        title = f"Relatório de teste do agente {data['agent']['name']}"
+        (out / "relatorio.json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        (out / "relatorio.md").write_text(render.to_markdown(blocks), encoding="utf-8")
+        (out / "relatorio.html").write_text(render.to_html(blocks, title), encoding="utf-8")
+    except (ReportError, OSError) as exc:
+        print(f"erro: {exc}", file=sys.stderr)
+        return 2
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    label = render.COLOR_LABEL[data["semaphore"]["color"]]
+    print(f"Pacote gravado em {out.as_posix()}/ (relatorio.md, relatorio.html, relatorio.json)")
+    print(f"Semáforo (regras provisórias): {label}")
+    return 0
+
+
 NAME_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 _TEMPLATE_TEXT_SUFFIXES = {".py", ".md", ".yaml"}
 
@@ -557,6 +603,24 @@ def build_parser() -> argparse.ArgumentParser:
     a = asub.add_parser("anchor", help="imprime o último hash (para guardar fora do arquivo)")
     a.add_argument("log")
     p.set_defaults(func=cmd_audit)
+
+    p = sub.add_parser("report", help="pacote de relatório para a liderança (sem modelo)")
+    rsub = p.add_subparsers(dest="report_cmd", required=True)
+    r = rsub.add_parser("build", help="gera relatorio.md, relatorio.html e relatorio.json")
+    r.add_argument("--baseline", default="v1", help="variante de referência do eval")
+    r.add_argument("--candidate", default="v2", help="variante candidata do eval")
+    r.add_argument("--dataset", default="evals/dataset.jsonl")
+    r.add_argument("--prompts-dir", default="evals/prompts")
+    r.add_argument("--config", default="examples/rag_agent/agent.yaml")
+    r.add_argument("--answers-dir", default="evals/answers", help="pasta com as respostas e o manifest.json")
+    r.add_argument("--seed", type=int, default=42)
+    r.add_argument("--redteam-baseline", default="redteam/results/baseline.jsonl")
+    r.add_argument("--redteam-guardrails", default="redteam/results/guardrails.jsonl")
+    r.add_argument("--fp-dir", default="redteam/results", help="pasta com fp_dataset.jsonl e fp_benign.jsonl")
+    r.add_argument("--audit", default=None, help="log de auditoria (só o resultado da cadeia e a âncora entram)")
+    r.add_argument("--previous", default=None, help="relatorio.json anterior, para comparar")
+    r.add_argument("--out", default="reports/pacote", help="pasta de saída")
+    p.set_defaults(func=cmd_report)
     return parser
 
 
