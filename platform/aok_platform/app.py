@@ -42,6 +42,13 @@ from .models import (
 )
 from .ops import build_ops_router, ops_enabled
 from .portal import build_portal_router
+from .recovery import (
+    FORGOT_PER_EMAIL,
+    FORGOT_PER_IP,
+    RESET_FAILS_PER_IP,
+    HourlyLimiter,
+    build_recovery_router,
+)
 from .reports import build_reports_router
 from .sessions import LoginThrottle, build_auth_router
 
@@ -696,6 +703,12 @@ def create_app(database_url: str | None = None, data_dir: str | Path | None = No
     app.include_router(build_admin_router(get_session, require_admin, current_org_admin))
     app.include_router(build_reports_router(get_session, data))
     app.include_router(build_auth_router(get_session, current_user, app.state.throttle))
+    app.state.recovery_limiters = {
+        "email": HourlyLimiter(FORGOT_PER_EMAIL),
+        "ip": HourlyLimiter(FORGOT_PER_IP),
+        "fail": HourlyLimiter(RESET_FAILS_PER_IP),
+    }
+    app.include_router(build_recovery_router(get_session, factory, app.state.recovery_limiters))
     app.include_router(build_portal_router(get_session, current_user, current_org_admin, data))
     if ops_enabled():  # desligado por padrão: sem a variável, /v1/ops/* nem existe (404)
         app.state.ops_throttle = LoginThrottle()
