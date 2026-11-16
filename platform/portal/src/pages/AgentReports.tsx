@@ -1,20 +1,8 @@
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
-import type { ReportItem } from "../api";
 import { areaPath, useCatalog } from "../auth";
-import { fmtDate } from "../format";
-import { Breadcrumbs, Card, ErrorBox, Loading, Semaforo, Tag, Title, useAsync } from "../ui";
-
-function Dates({ r }: { r: ReportItem }) {
-  return (
-    <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-      <dt className="font-black uppercase">Gerado em</dt>
-      <dd className="m-0">{fmtDate(r.generated_at)}</dd>
-      <dt className="font-black uppercase">Publicado em</dt>
-      <dd className="m-0">{fmtDate(r.published_at)}</dd>
-    </dl>
-  );
-}
+import { fmtDate, semaforoOf } from "../format";
+import { EmptyState, ErrorBox, Loading, PageHeader, SemaforoBadge, LinkButton, cx, useAsync } from "../ui";
 
 export function AgentReports() {
   const { areaId, agentId } = useParams();
@@ -31,61 +19,88 @@ export function AgentReports() {
   const [latest, ...older] = st.data ?? [];
 
   return (
-    <div className="flex flex-col gap-6">
-      <Breadcrumbs items={crumbs} />
-      <Title>{agent?.name ?? "Relatórios"}</Title>
+    <>
+      <PageHeader
+        crumbs={crumbs}
+        title={agent?.name ?? "Relatórios"}
+        lead="Relatórios publicados para este agente. Eles são autodeclarados pelo time responsável."
+      />
       {st.loading && <Loading />}
       {st.error && <ErrorBox>{st.error}</ErrorBox>}
       {st.data && st.data.length === 0 && (
-        <Card>
-          <p className="font-bold">Este agente ainda não tem relatório publicado.</p>
-        </Card>
+        <EmptyState title="Nenhum relatório publicado ainda.">
+          Quando o time publicar o primeiro relatório deste agente, ele aparece aqui.
+        </EmptyState>
       )}
+
       {latest && (
-        <section aria-labelledby="recente">
-          <Card tone="yellow">
-            <div className="flex flex-wrap items-center gap-3">
-              <Tag tone="orange">Mais recente</Tag>
-              <Semaforo value={latest.status_semaforo} big />
+        <section aria-labelledby="recente" className="mb-12">
+          <h2 id="recente" className="display mb-4 text-xl">
+            Relatório mais recente
+          </h2>
+          <div className="brutal shadow-hard bg-paper">
+            <div className={cx("h-4 border-b-[3px] border-ink", semaforoOf(latest.status_semaforo).bg)} aria-hidden="true" />
+            <div className="grid grid-cols-12 items-center gap-6 p-6">
+              <div className="col-span-12 flex flex-col items-start gap-2 md:col-span-4">
+                <SemaforoBadge value={latest.status_semaforo} size="lg" />
+                <p className="display text-xl">Versão {latest.seq}</p>
+              </div>
+              <dl className="col-span-12 m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 md:col-span-5">
+                <dt className="font-bold">Gerado em</dt>
+                <dd className="m-0">{fmtDate(latest.generated_at)}</dd>
+                <dt className="font-bold">Publicado em</dt>
+                <dd className="m-0">{fmtDate(latest.published_at)}</dd>
+              </dl>
+              <div className="col-span-12 md:col-span-3 md:justify-self-end">
+                <LinkButton to={`/app/relatorios/${latest.id}`} variant="primary">
+                  Abrir relatório
+                </LinkButton>
+              </div>
             </div>
-            <Title as="h2" className="my-4">
-              <span id="recente">Versão {latest.seq}</span>
-            </Title>
-            <Dates r={latest} />
-            <Link
-              to={`/app/relatorios/${latest.id}`}
-              className="brutal brutal-shadow press mt-5 inline-block bg-orange px-5 py-3 font-display font-black uppercase text-ink no-underline"
-            >
-              Abrir relatório
-            </Link>
-          </Card>
+          </div>
         </section>
       )}
+
       {older.length > 0 && (
         <section aria-labelledby="anteriores">
-          <Title as="h2" className="mb-4">
-            <span id="anteriores">Versões anteriores</span>
-          </Title>
-          <ul className="m-0 flex list-none flex-col gap-4 p-0">
-            {older.map((r) => (
-              <li key={r.id}>
-                <Card className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-3">
-                      <span className="title text-xl">Versão {r.seq}</span>
-                      <Semaforo value={r.status_semaforo} />
-                    </div>
-                    <Dates r={r} />
-                  </div>
-                  <Link to={`/app/relatorios/${r.id}`} className="font-black uppercase underline">
-                    Abrir relatório →
-                  </Link>
-                </Card>
-              </li>
-            ))}
-          </ul>
+          <h2 id="anteriores" className="display mb-4 text-xl">
+            Versões anteriores
+          </h2>
+          <div className="brutal overflow-x-auto">
+            <table className="data-table min-w-[36rem]">
+              <caption className="sr-only">Versões anteriores do relatório</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Versão</th>
+                  <th scope="col">Semáforo</th>
+                  <th scope="col">Gerado em</th>
+                  <th scope="col">Publicado em</th>
+                  <th scope="col">
+                    <span className="sr-only">Ação</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {older.map((r) => (
+                  <tr key={r.id}>
+                    <td className="font-bold">Versão {r.seq}</td>
+                    <td>
+                      <SemaforoBadge value={r.status_semaforo} />
+                    </td>
+                    <td>{fmtDate(r.generated_at)}</td>
+                    <td>{fmtDate(r.published_at)}</td>
+                    <td className="text-right">
+                      <Link to={`/app/relatorios/${r.id}`} className="font-bold">
+                        Abrir
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
-    </div>
+    </>
   );
 }

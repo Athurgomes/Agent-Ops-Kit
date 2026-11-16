@@ -4,7 +4,7 @@ import { api } from "../api";
 import type { DownloadItem } from "../api";
 import { useCatalog } from "../auth";
 import { fmtDate } from "../format";
-import { Button, Card, ErrorBox, Loading, Select, Tag, Title } from "../ui";
+import { Button, EmptyState, ErrorBox, Loading, PageHeader, Select, Tag } from "../ui";
 
 const PAGE = 50;
 
@@ -44,84 +44,102 @@ export function Downloads({ admin = false }: { admin?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin, area, agent]);
 
-  return (
-    <div className="flex flex-col gap-6">
-      <Title>{admin ? "Todos os downloads" : "Meus downloads"}</Title>
-      <p className="max-w-3xl font-medium">
-        {admin
-          ? "Todos os downloads da organização, com o e-mail de quem baixou. Este registro existe para rastreio e deve ser tratado com cuidado (LGPD)."
-          : "Seus downloads. Ninguém além de você (e dos administradores da organização) vê esta lista."}{" "}
-        Datas no fuso do seu navegador.
-      </p>
+  const filtered = area !== "" || agent !== "";
 
-      <Card tone="pink">
-        <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => e.preventDefault()}>
-          <Select
-            label="Área"
-            id="f-area"
-            value={area}
-            onChange={(e) => {
-              setArea(e.target.value);
-              setAgent("");
-            }}
-          >
-            <option value="">Todas</option>
-            {cat.areas.map((a) => (
-              <option key={a.id} value={a.id}>
-                {"— ".repeat(a.depth)}
-                {a.name}
-              </option>
-            ))}
-          </Select>
-          <Select label="Agente" id="f-agent" value={agent} onChange={(e) => setAgent(e.target.value)}>
-            <option value="">Todos</option>
-            {agentOptions.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </Select>
-        </form>
-      </Card>
+  return (
+    <>
+      <PageHeader
+        crumbs={[{ label: "Downloads" }, { label: admin ? "Todos os downloads" : "Meus downloads" }]}
+        title={admin ? "Todos os downloads" : "Meus downloads"}
+        lead={
+          admin
+            ? "Todos os downloads da organização, com o e-mail de quem baixou. Este registro existe para rastreio e deve ser tratado com cuidado (LGPD). Datas no fuso do seu navegador."
+            : "Os relatórios que você baixou e quando. Só você e os administradores da organização veem esta lista. Datas no fuso do seu navegador."
+        }
+      />
+
+      <form
+        aria-label="Filtros"
+        className="brutal mb-6 grid grid-cols-1 gap-4 bg-muted p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-end"
+        onSubmit={(e) => e.preventDefault()}
+      >
+        <Select
+          label="Área"
+          id="f-area"
+          value={area}
+          onChange={(e) => {
+            setArea(e.target.value);
+            setAgent("");
+          }}
+        >
+          <option value="">Todas as áreas</option>
+          {cat.areas.map((a) => (
+            <option key={a.id} value={a.id}>
+              {"— ".repeat(a.depth)}
+              {a.name}
+            </option>
+          ))}
+        </Select>
+        <Select label="Agente" id="f-agent" value={agent} onChange={(e) => setAgent(e.target.value)}>
+          <option value="">Todos os agentes</option>
+          {agentOptions.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </Select>
+        <Button
+          size="sm"
+          disabled={!filtered}
+          onClick={() => {
+            setArea("");
+            setAgent("");
+          }}
+        >
+          Limpar filtros
+        </Button>
+      </form>
 
       {error && <ErrorBox>{error}</ErrorBox>}
       {loading && rows.length === 0 && <Loading />}
       {!loading && !error && rows.length === 0 && (
-        <Card>
-          <p className="font-bold">Nenhum download encontrado.</p>
-        </Card>
+        <EmptyState title={filtered ? "Nenhum download com esses filtros." : "Nenhum download ainda."}>
+          {filtered
+            ? "Tente limpar os filtros."
+            : "Quando um relatório for baixado, ele aparece aqui com a data e a hora."}
+        </EmptyState>
       )}
 
       {rows.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[40rem] border-collapse">
+        <div className="brutal max-h-[70vh] overflow-auto">
+          <table className="data-table min-w-[48rem]">
             <caption className="sr-only">Histórico de downloads</caption>
             <thead>
-              <tr className="bg-yellow">
-                {admin && <th scope="col" className="brutal p-2 text-left uppercase">E-mail</th>}
-                <th scope="col" className="brutal p-2 text-left uppercase">Agente</th>
-                <th scope="col" className="brutal p-2 text-left uppercase">Área</th>
-                <th scope="col" className="brutal p-2 text-left uppercase">Formato</th>
-                <th scope="col" className="brutal p-2 text-left uppercase">Baixado em</th>
-                <th scope="col" className="brutal p-2 text-left uppercase">Relatório gerado em</th>
+              <tr>
+                {admin && <th scope="col">E-mail</th>}
+                <th scope="col">Agente</th>
+                <th scope="col">Área</th>
+                <th scope="col">Formato</th>
+                <th scope="col">Baixado em</th>
+                <th scope="col">Relatório gerado em</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((d) => (
-                <tr key={d.id} className="align-top">
-                  {admin && <td className="brutal break-all p-2">{d.user_email}</td>}
-                  <td className="brutal p-2">
-                    <Link to={`/app/relatorios/${d.report_id}`} className="font-bold underline">
+                <tr key={d.id}>
+                  {admin && <td className="whitespace-nowrap">{d.user_email}</td>}
+                  <td>
+                    <Link to={`/app/relatorios/${d.report_id}`} className="font-bold">
                       {d.agent_name}
-                    </Link>{" "}
-                    <span className="text-sm">(versão {d.seq})</span>
+                    </Link>
+                    <span className="block text-sm">versão {d.seq}</span>
                   </td>
-                  <td className="brutal p-2">{d.area_name}</td>
-                  <td className="brutal p-2">
-                    <Tag tone="mint">{d.format}</Tag>
+                  <td>{d.area_name}</td>
+                  <td>
+                    <Tag tone="mint">{d.format.toUpperCase()}</Tag>
                   </td>
-                  <td className="brutal p-2">{fmtDate(d.downloaded_at)}</td>
-                  <td className="brutal p-2">{fmtDate(d.generated_at)}</td>
+                  <td className="whitespace-nowrap">{fmtDate(d.downloaded_at)}</td>
+                  <td className="whitespace-nowrap">{fmtDate(d.generated_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -129,12 +147,12 @@ export function Downloads({ admin = false }: { admin?: boolean }) {
         </div>
       )}
       {more && (
-        <div>
-          <Button tone="yellow" disabled={loading} onClick={() => load(rows.length)}>
+        <div className="mt-6">
+          <Button disabled={loading} onClick={() => load(rows.length)}>
             {loading ? "Carregando…" : "Carregar mais"}
           </Button>
         </div>
       )}
-    </div>
+    </>
   );
 }
