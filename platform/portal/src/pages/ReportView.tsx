@@ -8,9 +8,9 @@ import { fmtDateLong, fmtNum, fmtPct, fmtSigned, LIMITS_TEXT, RULE_TEXT, SELF_DE
 import { Button, Card, ErrorBox, Loading, PageHeader, SemaforoBadge, useAsync } from "../ui";
 
 const FORMATS: { f: Format; label: string }[] = [
-  { f: "md", label: "Baixar MD" },
-  { f: "html", label: "Baixar HTML" },
-  { f: "json", label: "Baixar JSON" },
+  { f: "md", label: "Download MD" },
+  { f: "html", label: "Download HTML" },
+  { f: "json", label: "Download JSON" },
 ];
 
 function DownloadButtons({ r }: { r: ReportDetail }) {
@@ -21,27 +21,27 @@ function DownloadButtons({ r }: { r: ReportDetail }) {
     setMsg(null);
     try {
       await api.download(r, f);
-      setMsg({ ok: true, text: `Download de ${f.toUpperCase()} iniciado e registrado no seu histórico.` });
+      setMsg({ ok: true, text: `${f.toUpperCase()} download started and logged in your history.` });
     } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : "Erro ao baixar." });
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Download failed." });
     } finally {
       setBusy(null);
     }
   }
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       {FORMATS.map(({ f, label }) => (
-        <Button key={f} variant={f === "html" ? "dark" : "secondary"} disabled={busy !== null} onClick={() => go(f)}>
-          {busy === f ? "Baixando…" : label}
+        <Button key={f} variant={f === "md" ? "primary" : "secondary"} disabled={busy !== null} onClick={() => go(f)}>
+          {busy === f ? "Downloading…" : label}
         </Button>
       ))}
       <div role="status" aria-live="polite">
-        {msg && (msg.ok ? <p className="text-sm font-semibold">{msg.text}</p> : <ErrorBox>{msg.text}</ErrorBox>)}
+        {msg && (msg.ok ? <p className="text-sm text-subtle">{msg.text}</p> : <ErrorBox>{msg.text}</ErrorBox>)}
       </div>
-      <p className="text-sm">
-        Cada download fica registrado em{" "}
-        <Link to="/app/downloads" className="font-bold">
-          Meus downloads
+      <p className="text-sm text-subtle">
+        Every download is logged in{" "}
+        <Link to="/app/downloads" className="font-semibold text-accent">
+          My downloads
         </Link>
         .
       </p>
@@ -52,7 +52,7 @@ function DownloadButtons({ r }: { r: ReportDetail }) {
 function Row({ k, children }: { k: string; children: ReactNode }) {
   return (
     <tr>
-      <th scope="row" className="w-48">
+      <th scope="row" className="w-44">
         {k}
       </th>
       <td>{children}</td>
@@ -66,50 +66,50 @@ function Summary({ r }: { r: ReportDetail }) {
   const rt = s.redteam ?? {};
   const fpd = rt.false_positives?.dataset;
   const fpb = rt.false_positives?.benign;
-  const ci = (lo?: number, hi?: number, f = fmtPct) => `IC 95%: ${f(lo)} a ${f(hi)}`;
+  const ci = (lo?: number, hi?: number, f = fmtPct) => `95% CI: ${f(lo)} to ${f(hi)}`;
   const attacks = (x: typeof rt.asr_baseline, label: string) =>
     x && x.n != null
-      ? `${x.successes} de ${x.n} ataques tiveram sucesso ${label} (${fmtPct(x.asr)}; ${ci(x.ci95_low, x.ci95_high)}).`
-      : "não informado";
+      ? `${x.successes} of ${x.n} attacks succeeded ${label} (${fmtPct(x.asr)}; ${ci(x.ci95_low, x.ci95_high)}).`
+      : "Not available";
 
   return (
-    <div className="brutal overflow-x-auto">
+    <div className="card overflow-x-auto">
       <table className="data-table">
-        <caption className="sr-only">Resumo do relatório</caption>
+        <caption className="sr-only">Report summary</caption>
         <tbody>
-          <Row k="Qualidade (eval)">
+          <Row k="Quality (eval)">
             {ev.n_cases != null
-              ? `Média de ${fmtNum(ev.mean_candidate)} na variante ${ev.candidate} contra ${fmtNum(ev.mean_baseline)} na ${ev.baseline}, em ${ev.n_cases} casos. Diferença ${fmtSigned(ev.mean_diff)} (${ci(ev.ci95_low, ev.ci95_high, fmtSigned)}; p = ${fmtNum(ev.p_value)}).`
-              : "não informado"}
+              ? `Mean score ${fmtNum(ev.mean_candidate)} for variant ${ev.candidate} against ${fmtNum(ev.mean_baseline)} for ${ev.baseline}, over ${ev.n_cases} cases. Difference ${fmtSigned(ev.mean_diff)} (${ci(ev.ci95_low, ev.ci95_high, fmtSigned)}; p = ${fmtNum(ev.p_value)}).`
+              : "Not available"}
           </Row>
           <Row k="Red team">
-            <p>{attacks(rt.asr_baseline, "sem guardrails")}</p>
-            <p className="mt-2">{attacks(rt.asr_guardrails, "com guardrails")}</p>
+            <p>{attacks(rt.asr_baseline, "without guardrails")}</p>
+            <p className="mt-2">{attacks(rt.asr_guardrails, "with guardrails")}</p>
           </Row>
-          <Row k="Falsos positivos">
+          <Row k="False positives">
             {fpd || fpb ? (
               <>
                 {fpd && (
                   <p>
-                    Conjunto do dataset: {fpd.blocked} de {fpd.n} perguntas legítimas bloqueadas.
+                    Dataset questions: {fpd.blocked} of {fpd.n} legitimate questions blocked.
                   </p>
                 )}
                 {fpb && (
                   <p className="mt-2">
-                    Perguntas benignas extras: {fpb.blocked} de {fpb.n} bloqueadas.
+                    Extra benign questions: {fpb.blocked} of {fpb.n} blocked.
                   </p>
                 )}
               </>
             ) : (
-              "não informado"
+              "Not available"
             )}
           </Row>
-          <Row k="Auditoria">
+          <Row k="Audit">
             {r.audit_verify_ok == null
-              ? "Nenhum log de auditoria foi informado neste relatório."
+              ? "No audit log was reported with this report."
               : r.audit_verify_ok
-                ? "Cadeia de auditoria verificada."
-                : "Cadeia de auditoria inválida."}
+                ? "Audit chain verified."
+                : "Audit chain invalid."}
           </Row>
         </tbody>
       </table>
@@ -124,17 +124,21 @@ export function ReportView() {
   const r = st.data;
   const crumbs = r
     ? [
-        { label: "Áreas", to: "/app" },
+        { label: "Areas", to: "/app" },
         ...areaPath(cat.areas, r.area_id).map((a) => ({ label: a.name, to: `/app/areas/${a.id}` })),
-        { label: r.agent_name, to: `/app/areas/${r.area_id}/agentes/${r.agent_id}` },
-        { label: `Versão ${r.seq}` },
+        { label: r.agent_name, to: `/app/areas/${r.area_id}/agents/${r.agent_id}` },
+        { label: `Version ${r.seq}` },
       ]
-    : [{ label: "Áreas", to: "/app" }, { label: "Relatório" }];
+    : [{ label: "Areas", to: "/app" }, { label: "Report" }];
   const triggered = r?.summary.semaphore?.triggered ?? [];
 
   return (
     <>
-      <PageHeader crumbs={crumbs} title={r ? `${r.agent_name} · versão ${r.seq}` : "Relatório"} />
+      <PageHeader
+        crumbs={crumbs}
+        title={r ? `${r.agent_name} · version ${r.seq}` : "Report"}
+        lead={r ? "Known limitation: the report content below (summary data and caveats) is currently written in Portuguese." : undefined}
+      />
       {st.loading && <Loading />}
       {st.error && <ErrorBox>{st.error}</ErrorBox>}
       {r && (
@@ -145,53 +149,52 @@ export function ReportView() {
                 <SemaforoBadge value={r.status_semaforo} size="lg" />
                 <dl className="m-0 grid grid-cols-1 gap-4 text-sm">
                   <div>
-                    <dt className="font-bold">Gerado em</dt>
-                    <dd className="m-0">{fmtDateLong(r.generated_at)}</dd>
+                    <dt className="text-subtle">Generated</dt>
+                    <dd className="m-0 font-medium">{fmtDateLong(r.generated_at)}</dd>
                   </div>
                   <div>
-                    <dt className="font-bold">Publicado em</dt>
-                    <dd className="m-0">{fmtDateLong(r.published_at)}</dd>
+                    <dt className="text-subtle">Published</dt>
+                    <dd className="m-0 font-medium">{fmtDateLong(r.published_at)}</dd>
                   </div>
                   <div>
-                    <dt className="font-bold">Modelo</dt>
-                    <dd className="m-0">{r.model ?? "não informado"}</dd>
+                    <dt className="text-subtle">Model</dt>
+                    <dd className="m-0 font-medium">{r.model ?? "Not available"}</dd>
                   </div>
                   <div>
-                    <dt className="font-bold">Casos de avaliação</dt>
-                    <dd className="m-0">{r.n_cases ?? "não informado"}</dd>
+                    <dt className="text-subtle">Evaluation cases</dt>
+                    <dd className="m-0 font-medium">{r.n_cases ?? "Not available"}</dd>
                   </div>
                   <div>
-                    <dt className="font-bold">Semente</dt>
-                    <dd className="m-0">{r.seed ?? "não informada"}</dd>
+                    <dt className="text-subtle">Seed</dt>
+                    <dd className="m-0 font-medium">{r.seed ?? "Not available"}</dd>
                   </div>
                   <div>
-                    <dt className="font-bold">SHA-256 do relatório</dt>
+                    <dt className="text-subtle">Report SHA-256</dt>
                     <dd className="m-0 break-all font-mono text-sm">{r.sha256}</dd>
                   </div>
                 </dl>
               </Card>
-              <Card tone="muted">
-                <h2 className="display mb-4 text-lg">Baixar</h2>
+              <Card>
+                <h2 className="mb-4 text-lg font-bold text-navy">Download</h2>
                 <DownloadButtons r={r} />
               </Card>
             </div>
           </aside>
 
           <div className="col-span-12 flex min-w-0 flex-col gap-12 lg:col-span-8">
-            <div className="brutal bg-yellow p-6">
-              <p className="text-lg font-extrabold leading-snug">{LIMITS_TEXT}</p>
-              <p className="mt-4 text-sm">{SELF_DECLARED_TEXT}</p>
+            <div className="rounded-2xl bg-tint p-6">
+              <p className="text-lg font-semibold leading-snug text-navy">{LIMITS_TEXT}</p>
+              <p className="mt-4 text-sm text-subtle">{SELF_DECLARED_TEXT}</p>
             </div>
 
-            <section aria-labelledby="regra" className="flex flex-col gap-4">
-              <h2 id="regra" className="display text-2xl">
-                Por que este semáforo
+            <section aria-labelledby="rule" className="flex flex-col gap-4">
+              <h2 id="rule" className="heading text-2xl">
+                Why this traffic light
               </h2>
-              <p>
-                Regras provisórias (versão {r.summary.semaphore?.rules_version ?? "não informada"}):
-                vermelho se o gate de regressão disparar ou a auditoria informada for inválida; amarelo
-                se houver ataque bem-sucedido com guardrails, falso positivo, queda não significativa ou
-                ausência de auditoria; verde se nada disso ocorrer.
+              <p className="text-subtle">
+                Provisional rules (version {r.summary.semaphore?.rules_version ?? "unknown"}): red if the regression
+                gate fires or the reported audit is invalid; yellow if an attack succeeds with guardrails, there is a
+                false positive, a drop without significance, or no audit log; green if none of these happens.
               </p>
               {triggered.length > 0 ? (
                 <ul className="m-0 list-disc space-y-1 pl-6">
@@ -200,22 +203,22 @@ export function ReportView() {
                   ))}
                 </ul>
               ) : (
-                <p>Nenhuma regra de alerta disparou neste teste.</p>
+                <p>No warning rule fired in this test.</p>
               )}
             </section>
 
-            <section aria-labelledby="resumo" className="flex flex-col gap-4">
-              <h2 id="resumo" className="display text-2xl">
-                Resumo
+            <section aria-labelledby="summary" className="flex flex-col gap-4">
+              <h2 id="summary" className="heading text-2xl">
+                Summary
               </h2>
               <Summary r={r} />
             </section>
 
-            <section aria-labelledby="ressalvas">
-              <Card tone="pink" className="flex flex-col gap-4">
-                <h2 id="ressalvas" className="display text-2xl">
-                  Ressalvas
-                </h2>
+            <section aria-labelledby="caveats" className="flex flex-col gap-4">
+              <h2 id="caveats" className="heading text-2xl">
+                Caveats
+              </h2>
+              <Card>
                 {r.limitations.length > 0 ? (
                   <ul className="m-0 list-disc space-y-2 pl-6">
                     {r.limitations.map((l, i) => (
@@ -223,7 +226,7 @@ export function ReportView() {
                     ))}
                   </ul>
                 ) : (
-                  <p>A lista de ressalvas não está disponível aqui; consulte o relatório baixado.</p>
+                  <p>The caveats list is not available here; check the downloaded report.</p>
                 )}
               </Card>
             </section>

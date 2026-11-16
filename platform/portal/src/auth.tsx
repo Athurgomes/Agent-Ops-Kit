@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth(): AuthState {
   const v = useContext(AuthCtx);
-  if (!v) throw new Error("AuthProvider ausente");
+  if (!v) throw new Error("AuthProvider missing");
   return v;
 }
 
@@ -49,7 +49,7 @@ export function RequireAuth({ children, admin = false }: { children: ReactNode; 
   const { me, loading } = useAuth();
   const loc = useLocation();
   if (loading) return <Loading />;
-  if (!me) return <Navigate to="/entrar" replace state={{ from: loc.pathname + loc.search }} />;
+  if (!me) return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />;
   if (admin && !me.is_org_admin) return <Navigate to="/app" replace />;
   return <>{children}</>;
 }
@@ -98,7 +98,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
         if (alive) setState({ tree, areas, agents: lists.flat(), ready: true, error: null });
       } catch (e) {
         if (alive)
-          setState((s) => ({ ...s, ready: true, error: e instanceof Error ? e.message : "Erro." }));
+          setState((s) => ({ ...s, ready: true, error: e instanceof Error ? e.message : "Error." }));
       }
     })();
     return () => {

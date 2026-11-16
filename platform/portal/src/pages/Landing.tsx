@@ -1,42 +1,125 @@
+import type { ReactNode } from "react";
 import { BRAND } from "../brand";
 import { LIMITS_TEXT, SELF_DECLARED_TEXT } from "../format";
-import { Card, Chevron, cx, LinkButton, Section, SemaforoBadge, Tag, Title } from "../ui";
-import type { Tone } from "../ui";
+import { Chevron, LinkButton, SoonButton } from "../ui";
+import { BeforeAfter, Proof, Showcase } from "./LandingSections";
 
-// ---- hero: mockup ilustrativo (sem dados reais) ------------------------------------------------
+// ---- icons (simple stroke SVGs) --------------------------------------------------------------
 
-function MockReport() {
+function Icon({ children, className = "size-6" }: { children: ReactNode; className?: string }) {
   return (
-    <figure className="m-0">
-      <div className="relative">
-        <div aria-hidden="true" className="brutal absolute -bottom-4 -right-4 left-4 top-4 bg-pink" />
-        <div className="brutal shadow-hard relative bg-paper p-6">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <Tag tone="yellow">Exemplo ilustrativo</Tag>
-          <span className="text-sm font-semibold">Versão 2</span>
-        </div>
-        <p className="display text-xl">Nome do agente</p>
-        <p className="mb-4 text-sm">Área · Sub-área</p>
-        <SemaforoBadge value="yellow" size="lg" />
-        <dl className="m-0 mt-6 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-          <dt className="font-bold">Gerado em</dt>
-          <dd className="m-0">dd/mm/aaaa, hh:mm</dd>
-          <dt className="font-bold">Publicado em</dt>
-          <dd className="m-0">dd/mm/aaaa, hh:mm</dd>
-        </dl>
-        <div aria-hidden="true" className="mt-6 flex flex-col gap-2">
-          <div className="h-3 w-full bg-muted-2" />
-          <div className="h-3 w-11/12 bg-muted-2" />
-          <div className="h-3 w-2/3 bg-muted-2" />
-        </div>
-        <div aria-hidden="true" className="mt-6 flex gap-4">
-          <span className="btn btn-secondary btn-sm">Baixar MD</span>
-          <span className="btn btn-secondary btn-sm">Baixar HTML</span>
-        </div>
-        </div>
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </svg>
+  );
+}
+const AgentIcon = ({ className }: { className?: string }) => (
+  <Icon className={className}>
+    <rect x="4" y="8" width="16" height="11" rx="3" />
+    <path d="M12 8V4.5M10.5 4.5h3" />
+    <circle cx="9" cy="13.5" r="1" />
+    <circle cx="15" cy="13.5" r="1" />
+    <path d="M9.5 16.5h5" />
+  </Icon>
+);
+const TestIcon = ({ className }: { className?: string }) => (
+  <Icon className={className}>
+    <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" />
+    <path d="M9 12l2 2 4-4" />
+  </Icon>
+);
+const ReportIcon = ({ className }: { className?: string }) => (
+  <Icon className={className}>
+    <path d="M7 3h7l4 4v14H7z" />
+    <path d="M14 3v4h4M10 12h5M10 16h5" />
+  </Icon>
+);
+const TreeIcon = () => (
+  <Icon>
+    <rect x="3" y="3" width="7" height="5" rx="1.5" />
+    <rect x="14" y="10" width="7" height="5" rx="1.5" />
+    <rect x="14" y="17" width="7" height="4" rx="1.5" />
+    <path d="M6.5 8v10h7.5M6.5 12.5H14" />
+  </Icon>
+);
+const LayersIcon = () => (
+  <Icon>
+    <path d="M12 4l9 5-9 5-9-5z" />
+    <path d="M3 14l9 5 9-5" />
+  </Icon>
+);
+const DownloadIcon = () => (
+  <Icon>
+    <path d="M12 4v11M7.5 11l4.5 4.5 4.5-4.5M5 20h14" />
+  </Icon>
+);
+const NoteIcon = () => (
+  <Icon>
+    <path d="M12 3l9.5 17h-19z" />
+    <path d="M12 10v4.5M12 17.5v.01" />
+  </Icon>
+);
+const HashIcon = () => (
+  <Icon>
+    <path d="M5 9h15M4 15h15M10 4L8 20M16 4l-2 16" />
+  </Icon>
+);
+const KeyIcon = () => (
+  <Icon>
+    <circle cx="8" cy="15" r="4" />
+    <path d="M11 12l9-9M16 7l3 3" />
+  </Icon>
+);
+
+// ---- hero ------------------------------------------------------------------------------------
+
+function FlowNode({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
+  return (
+    <li className="flex items-center gap-4 rounded-2xl border border-line bg-paper p-4 shadow-[var(--shadow-soft)]">
+      <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-tint text-accent">{icon}</span>
+      <div>
+        <p className="font-bold text-navy">{title}</p>
+        <p className="text-sm text-subtle">{text}</p>
       </div>
-      <figcaption className="mt-6 text-sm font-semibold">
-        Exemplo ilustrativo: só mostra o layout de um relatório. Nenhum dado real.
+    </li>
+  );
+}
+
+function Arrow() {
+  return (
+    <li aria-hidden="true" className="flex justify-center text-accent">
+      <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 4v15M6 13l6 6 6-6" />
+      </svg>
+    </li>
+  );
+}
+
+function AgentFlow() {
+  return (
+    <figure className="rounded-3xl bg-tint p-6 sm:p-8">
+      <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-paper px-4 py-2 text-sm font-semibold text-navy shadow-[var(--shadow-soft)]">
+        <AgentIcon className="size-5 text-accent" />
+        AI agent → tested → report
+      </div>
+      <ol className="m-0 flex list-none flex-col gap-2 p-0">
+        <FlowNode icon={<AgentIcon />} title="Your AI agent" text="Runs where your team runs it." />
+        <Arrow />
+        <FlowNode icon={<TestIcon />} title="Tested" text="Quality evaluation and red-team attacks." />
+        <Arrow />
+        <FlowNode icon={<ReportIcon />} title="Report" text="Published here, with its caveats." />
+      </ol>
+      <figcaption className="mt-6 text-sm text-subtle">
+        Illustrative diagram. {BRAND} never runs your agent; it only stores and shows the report your team publishes.
       </figcaption>
     </figure>
   );
@@ -44,236 +127,236 @@ function MockReport() {
 
 function Hero() {
   return (
-    <div className="container-page grid grid-cols-12 items-center gap-x-6 gap-y-12 py-24">
+    <div className="container-page grid grid-cols-12 items-center gap-x-0 lg:gap-x-12 gap-y-12 py-24">
       <div className="col-span-12 flex flex-col items-start gap-6 lg:col-span-7">
-        <Tag tone="mint">Relatórios de teste de agentes de IA</Tag>
-        <h1 className="display text-5xl sm:text-6xl lg:text-7xl">
-          Veja o que foi testado. Leia o que ficou de fora.
+        <p className="rounded-full bg-tint px-4 py-1 text-sm font-semibold text-navy">Reports for AI agents</p>
+        <h1 className="heading text-5xl sm:text-6xl lg:text-7xl">
+          See what your AI agents were tested for. Read what was left out.
         </h1>
-        <p className="max-w-xl text-lg">
-          O {BRAND} reúne, por área, os relatórios que os times publicam sobre seus agentes de IA, com
-          o resultado do teste e as ressalvas no mesmo lugar.
+        <p className="max-w-xl text-xl text-subtle">
+          {BRAND} gathers the test reports of your AI agents by area, with every result and every caveat in the same
+          place.
         </p>
-        <div className="flex flex-wrap items-center gap-6 pt-2">
-          <LinkButton to="/entrar" variant="primary" size="lg">
-            Entrar
+        <div className="flex flex-wrap items-center gap-4 pt-2">
+          <LinkButton to="/login" variant="primary" size="lg">
+            Log In
           </LinkButton>
-          <a href="#como" className="font-bold">
-            Ver como funciona
+          <a href="#how-it-works" className="btn btn-secondary btn-lg">
+            How it works
           </a>
         </div>
       </div>
       <div className="col-span-12 lg:col-span-5">
-        <MockReport />
+        <AgentFlow />
       </div>
     </div>
   );
 }
 
-// ---- como funciona ---------------------------------------------------------------------------
+// ---- features --------------------------------------------------------------------------------
+
+const FEATURES = [
+  {
+    icon: <TreeIcon />,
+    title: "An agent registry by area",
+    text: "Every agent belongs to an area. Access to an area covers its sub-areas, and never the areas above it.",
+  },
+  {
+    icon: <LayersIcon />,
+    title: "Versioned agent reports",
+    text: "Each publication becomes a numbered version that the API cannot edit or delete. The latest one is highlighted.",
+  },
+  {
+    icon: <DownloadIcon />,
+    title: "A log of every download",
+    text: "Each download records who took the report, in which format and when. You see yours; admins see the organization's.",
+  },
+  {
+    icon: <NoteIcon />,
+    title: "Caveats on every report page",
+    text: "Every report page shows the caveats and the fixed statement of limits, with the traffic light on the same page.",
+  },
+  {
+    icon: <HashIcon />,
+    title: "Summary and hashes only",
+    text: "The kit builds each report with a summary, the caveats and file hashes. The full audit log, attack texts and judge criteria are not part of it.",
+  },
+  {
+    icon: <KeyIcon />,
+    title: "Agent tokens that only publish",
+    text: "An agent's token can publish that agent's reports and nothing else. It cannot read, and it can be revoked.",
+  },
+];
+
+function Features() {
+  return (
+    <section id="features" className="container-page py-24">
+      <h2 className="heading max-w-2xl text-4xl lg:text-5xl">Everything about your agents' reports, in one place</h2>
+      <ul className="m-0 mt-12 grid list-none grid-cols-1 gap-x-0 lg:gap-x-12 gap-y-12 p-0 md:grid-cols-2 lg:grid-cols-3">
+        {FEATURES.map((f) => (
+          <li key={f.title} className="flex flex-col gap-3 border-t border-line pt-6">
+            <span className="flex size-11 items-center justify-center rounded-xl bg-tint text-accent">{f.icon}</span>
+            <h3 className="heading text-xl">{f.title}</h3>
+            <p className="text-subtle">{f.text}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+// ---- how it works ----------------------------------------------------------------------------
 
 const STEPS = [
   {
-    title: "O agente é testado",
-    text: "O time responsável roda os testes na própria máquina: qualidade das respostas e ataques de red team, sem e com proteções.",
+    title: "Test the agent",
+    text: "Your team runs the agent's tests where the agent runs (the kit works with a local Ollama model): a quality evaluation and red-team attacks, with and without guardrails.",
   },
   {
-    title: "O relatório é publicado",
-    text: "O kit monta o relatório (Markdown, HTML e JSON) com semáforo, números e ressalvas. O time o publica com um token que só publica.",
+    title: "Publish the report",
+    text: "The kit builds the report in Markdown, HTML and JSON and sends it with the agent's token.",
+    code: "aok check --publish",
   },
   {
-    title: "A liderança consulta no portal",
-    text: "Quem tem acesso à área lê as versões publicadas, vê a mais recente em destaque e baixa os arquivos.",
+    title: "Read it in the portal",
+    text: "People with access to the agent's area open the latest version, read the caveats and download the files.",
   },
 ];
 
 function HowItWorks() {
   return (
-    <Section id="como" tone="mint">
-      <Title as="h2" className="mb-12 text-4xl lg:text-5xl">
-        Como funciona
-      </Title>
-      <ol className="m-0 grid list-none grid-cols-1 gap-6 p-0 md:grid-cols-3">
-        {STEPS.map((s, i) => (
-          <li key={s.title} className="relative">
-            <Card shadow className="h-full">
-              <p className="display mb-4 text-6xl">{i + 1}</p>
-              <h3 className="display mb-2 text-xl">{s.title}</h3>
-              <p>{s.text}</p>
-            </Card>
-          </li>
-        ))}
-      </ol>
-    </Section>
-  );
-}
-
-// ---- bento -----------------------------------------------------------------------------------
-
-type Block = { span: string; tone: Tone; tag: string; title: string; text: string; extra?: "tree" };
-const BLOCKS: Block[] = [
-  {
-    span: "lg:col-span-7",
-    tone: "pink",
-    tag: "Organização",
-    title: "Organizado por área",
-    text: "Cada pessoa vê só as áreas que lhe cabem, e o acesso a uma área vale para as sub-áreas abaixo dela. Nunca para cima.",
-    extra: "tree",
-  },
-  {
-    span: "lg:col-span-5",
-    tone: "white",
-    tag: "Histórico",
-    title: "Versões por agente",
-    text: "Cada publicação vira uma versão numerada. A mais recente fica em destaque e as anteriores continuam disponíveis, sem edição.",
-  },
-  {
-    span: "lg:col-span-4",
-    tone: "mint",
-    tag: "Rastreio",
-    title: "Histórico de downloads",
-    text: "Cada download registra quem baixou, o formato e quando. Você vê o seu; administradores veem o da organização.",
-  },
-  {
-    span: "lg:col-span-4",
-    tone: "yellow",
-    tag: "Honestidade",
-    title: "Ressalvas sempre visíveis",
-    text: "O tamanho do teste e as limitações do método aparecem junto do semáforo, não escondidas no fim de um anexo.",
-  },
-  {
-    span: "lg:col-span-4",
-    tone: "white",
-    tag: "Acesso",
-    title: "Token que só publica",
-    text: "O token de um agente serve apenas para enviar relatórios daquele agente. Ele não consegue ler nada.",
-  },
-  {
-    span: "lg:col-span-12",
-    tone: "white",
-    tag: "Privacidade",
-    title: "Só agregados e hashes, nunca o log completo",
-    text: "O kit monta o relatório só com o resumo, as ressalvas e as impressões digitais (hashes) dos arquivos. O log completo de auditoria, os textos dos ataques e os critérios internos de avaliação não entram no relatório.",
-  },
-];
-
-function Bento() {
-  return (
-    <Section id="recursos">
-      <Title as="h2" className="mb-12 text-4xl lg:text-5xl">
-        O que o portal faz
-      </Title>
-      <div className="grid grid-cols-12 gap-6">
-        {BLOCKS.map((b) => (
-          <div key={b.title} className={cx("col-span-12", b.span)}>
-            <Card tone={b.tone} className="flex h-full flex-col items-start gap-4">
-              <Tag tone="white">{b.tag}</Tag>
-              <h3 className="display text-xl lg:text-2xl">{b.title}</h3>
-              <p className="max-w-3xl">{b.text}</p>
-              {b.extra === "tree" && (
-                <ul aria-label="Exemplo de hierarquia" className="m-0 mt-2 list-none bg-paper p-4 brutal text-sm font-semibold">
-                  <li>Área</li>
-                  <li className="ml-4">└ Sub-área</li>
-                  <li className="ml-8">└ Agente</li>
-                </ul>
+    <section id="how-it-works" className="border-y border-line bg-tint">
+      <div className="container-page py-24">
+        <h2 className="heading text-4xl lg:text-5xl">How it works</h2>
+        <ol className="m-0 mt-12 grid list-none grid-cols-1 gap-12 p-0 md:grid-cols-3">
+          {STEPS.map((s, i) => (
+            <li key={s.title} className="flex flex-col items-start gap-3">
+              <span className="flex size-10 items-center justify-center rounded-full bg-navy font-bold text-white">
+                {i + 1}
+              </span>
+              <h3 className="heading text-xl">{s.title}</h3>
+              <p className="text-subtle">{s.text}</p>
+              {s.code && (
+                <code className="rounded-lg bg-paper px-3 py-1 font-mono text-sm text-navy">{s.code}</code>
               )}
-            </Card>
-          </div>
-        ))}
+            </li>
+          ))}
+        </ol>
       </div>
-    </Section>
+    </section>
   );
 }
 
-// ---- o que o relatório não garante -----------------------------------------------------------
+// ---- what green does not mean ----------------------------------------------------------------
 
 function Limits() {
   return (
-    <Section id="limites" tone="yellow">
-      <div className="grid grid-cols-12 gap-x-6 gap-y-12">
-        <div className="col-span-12 lg:col-span-5">
-          <Title as="h2" className="text-4xl lg:text-5xl">
-            O que o relatório não garante
-          </Title>
+    <section id="limits" className="container-page py-24">
+      <div className="grid grid-cols-12 gap-x-0 lg:gap-x-12 gap-y-6">
+        <div className="col-span-12 lg:col-span-4">
+          <h2 className="heading text-4xl lg:text-5xl">What a green report does not mean</h2>
         </div>
-        <div className="col-span-12 lg:col-span-7">
-          <Card shadow className="flex flex-col gap-6">
-            <p className="text-2xl font-extrabold leading-snug">{LIMITS_TEXT}</p>
-            <p className="border-t-[3px] border-ink pt-6">{SELF_DECLARED_TEXT}</p>
-            <ul className="m-0 list-disc space-y-2 pl-6">
-              <li>Os números sempre vêm com o tamanho do teste e as limitações do método.</li>
-              <li>As regras do semáforo ainda são provisórias e estão escritas em cada relatório.</li>
-            </ul>
-          </Card>
+        <div className="col-span-12 flex flex-col gap-6 lg:col-span-8">
+          <p className="border-l-4 border-accent pl-6 text-2xl font-semibold leading-snug text-navy lg:text-3xl">
+            {LIMITS_TEXT}
+          </p>
+          <p className="pl-7 text-subtle">{SELF_DECLARED_TEXT}</p>
         </div>
       </div>
-    </Section>
+    </section>
   );
 }
 
 // ---- FAQ -------------------------------------------------------------------------------------
 
-const FAQ = [
+const FAQ: { q: string; a: ReactNode }[] = [
   {
-    q: "O que o semáforo significa?",
-    a: "É um resumo por regras provisórias, escritas em cada relatório. Vermelho: o gate de regressão disparou ou a auditoria informada é inválida. Amarelo: houve ataque bem-sucedido com proteções ligadas, falso positivo, queda não significativa ou falta de auditoria. Verde: nenhuma dessas condições ocorreu, e mesmo assim verde não significa seguro.",
+    q: `What is ${BRAND}?`,
+    a: `${BRAND} is a provisional, fictional name for the portal of agent-ops-kit, an open-source layer of observability, evaluation and security for AI agents. It stores the test reports that agent teams publish and shows them by area to the people who need to read them.`,
   },
   {
-    q: "O que vai para a plataforma?",
-    a: "O kit monta o pacote só com resumo, ressalvas e hashes; o log completo, os textos dos ataques e os critérios internos não entram no relatório. O servidor aceita apenas os três arquivos do relatório (Markdown, HTML e JSON) e confere os hashes.",
+    q: `Does ${BRAND} run or host my agent?`,
+    a: `No. Your agent is tested where it runs (the kit works with a local Ollama model). ${BRAND} only receives the report your team publishes and shows it.`,
   },
   {
-    q: "Quem vê o quê?",
-    a: "Cada pessoa vê as áreas a que tem acesso, incluindo as sub-áreas. O administrador da organização vê todas. O token de um agente só publica relatórios daquele agente e não lê nada.",
+    q: "What does the traffic light mean?",
+    a: "It is a summary by provisional rules that are written into each report. Red: the evaluation regression gate fired, or the reported audit chain is invalid. Yellow: an attack succeeded with guardrails on, a legitimate question was blocked, the evaluation mean dropped without significance, or no audit log was reported. Green: none of these happened. Green still does not mean safe.",
   },
   {
-    q: "O relatório é verificado?",
-    a: "Não. Ele é autodeclarado: gerado e publicado pelo time do agente. O portal recalcula os hashes dos arquivos recebidos e guarda cada versão sem edição, mas não repete os testes. Quem administra o servidor também poderia alterar os arquivos; o hash só ajuda quem guardou uma cópia fora do servidor.",
+    q: "What is sent to the platform, and what never is?",
+    a: "The three report files (Markdown, HTML and JSON), the declared traffic light and the files' hashes. The kit builds the report with only a summary, the caveats and hashes: the full audit log, the attack texts and the judge criteria are not part of it. The server accepts only the three files and checks their hashes; it does not filter what is inside them.",
   },
   {
-    q: "Posso baixar o relatório?",
-    a: "Pode, em Markdown, HTML ou JSON. Cada download fica registrado com quem baixou e quando; você vê o seu histórico e os administradores veem o da organização.",
+    q: "How does an agent publish a report?",
+    a: (
+      <>
+        An admin registers the agent and issues a token, shown once. The team puts it in an environment variable and
+        runs <code className="rounded bg-soft px-1.5 font-mono text-sm">aok check --publish</code> with the platform URL.
+        The token can only publish reports for that agent, and it can be revoked.
+      </>
+    ),
+  },
+  {
+    q: "Who can see which agents' reports?",
+    a: "People log in with email and password. An area viewer sees the agents of their area and its sub-areas, never the areas above. An organization admin sees everything. An area outside your reach simply looks like it does not exist.",
+  },
+  {
+    q: "Can I download reports, and is it logged?",
+    a: "Yes, as Markdown, HTML or JSON. Every download is logged with who, which format and when. You see your own history under My downloads; organization admins see everyone's, with emails.",
+  },
+  {
+    q: `Are reports verified by ${BRAND}?`,
+    a: `No. They are self-reported. ${BRAND} recalculates the hashes of the files it receives and keeps each version unedited through the API, but it does not rerun the tests. Whoever administers the server could still alter the files; a hash only helps someone who kept a copy elsewhere.`,
+  },
+  {
+    q: "Does it work with any agent or model?",
+    a: `Today the kit is built and tested around a reference RAG agent running on a local Ollama model, described in an agent.yaml file. ${BRAND} shows reports in the kit's format. Support for other frameworks or hosted models is not promised.`,
   },
 ];
 
 function Faq() {
   return (
-    <Section id="perguntas">
-      <div className="grid grid-cols-12 gap-x-6 gap-y-12">
+    <section id="faq" className="border-t border-line">
+      <div className="container-page grid grid-cols-12 gap-x-0 lg:gap-x-12 gap-y-12 py-24">
         <div className="col-span-12 lg:col-span-4">
-          <Title as="h2" className="text-4xl lg:text-5xl">
-            Perguntas
-          </Title>
+          <h2 className="heading text-4xl lg:text-5xl">Questions</h2>
         </div>
-        <div className="col-span-12 flex flex-col gap-4 lg:col-span-8">
+        <div className="col-span-12 lg:col-span-8">
           {FAQ.map((f) => (
-            <details key={f.q} className="faq brutal bg-paper">
-              <summary className="flex items-center justify-between gap-4 p-4 font-extrabold hover:bg-muted">
+            <details key={f.q} className="faq border-b border-line first:border-t">
+              <summary className="flex items-center justify-between gap-4 py-6 text-lg font-semibold text-navy hover:text-accent">
                 {f.q}
                 <Chevron />
               </summary>
-              <p className="border-t-[3px] border-ink p-4">{f.a}</p>
+              <p className="max-w-2xl pb-6 text-subtle">{f.a}</p>
             </details>
           ))}
         </div>
       </div>
-    </Section>
+    </section>
   );
 }
 
 function FinalCta() {
   return (
-    <Section tone="pink">
-      <div className="flex flex-col items-start gap-6">
-        <Title as="h2" className="max-w-3xl text-4xl lg:text-5xl">
-          Já tem acesso? Abra o portal.
-        </Title>
-        <p className="max-w-xl">Entre com o e-mail e a senha que a administração da sua organização criou.</p>
-        <LinkButton to="/entrar" variant="primary" size="lg">
-          Entrar
-        </LinkButton>
+    <section className="container-page py-24">
+      <div className="flex flex-col items-start gap-6 rounded-3xl bg-navy p-12 text-white lg:p-24">
+        <h2 className="max-w-3xl text-4xl font-extrabold leading-tight tracking-tight lg:text-5xl">
+          Ready to read your agents' reports?
+        </h2>
+        <p className="max-w-xl text-lg text-[#c7d7fe]">
+          Log in with the email and password your organization's admin created for you.
+        </p>
+        <div className="flex flex-wrap items-center gap-4">
+          <LinkButton to="/login" size="lg" className="!bg-white !text-navy hover:!bg-tint">
+            Log In
+          </LinkButton>
+          <SoonButton variant="secondary" size="lg" className="!border-[#4a63a6] !bg-transparent !text-white">
+            Sign Up
+          </SoonButton>
+        </div>
       </div>
-    </Section>
+    </section>
   );
 }
 
@@ -281,9 +364,12 @@ export function Landing() {
   return (
     <>
       <Hero />
+      <Features />
+      <BeforeAfter />
       <HowItWorks />
-      <Bento />
+      <Showcase />
       <Limits />
+      <Proof />
       <Faq />
       <FinalCta />
     </>

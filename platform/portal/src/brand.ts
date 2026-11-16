@@ -1,3 +1,4 @@
-// Nome provisório e fictício do produto. Trocar aqui muda o portal inteiro (e o <title>).
+// Provisional, fictional product name. Changing it here changes the whole portal (and the <title>).
 export const BRAND = "Farol";
-export const BRAND_TAGLINE = "Relatórios de teste de agentes de IA, com as ressalvas à vista.";
+export const BRAND_TAGLINE = "Test reports for AI agents, with the caveats in plain sight.";
+export const REPO_URL = "https://github.com/Athurgomes/Agent-Ops-Kit";

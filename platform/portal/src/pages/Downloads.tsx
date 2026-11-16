@@ -32,7 +32,7 @@ export function Downloads({ admin = false }: { admin?: boolean }) {
       setRows((prev) => (offset === 0 ? page : [...prev, ...page]));
       setMore(page.length === PAGE);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro.");
+      setError(e instanceof Error ? e.message : "Error.");
     } finally {
       setLoading(false);
     }
@@ -49,22 +49,22 @@ export function Downloads({ admin = false }: { admin?: boolean }) {
   return (
     <>
       <PageHeader
-        crumbs={[{ label: "Downloads" }, { label: admin ? "Todos os downloads" : "Meus downloads" }]}
-        title={admin ? "Todos os downloads" : "Meus downloads"}
+        crumbs={[{ label: "Downloads" }, { label: admin ? "All downloads" : "My downloads" }]}
+        title={admin ? "All downloads" : "My downloads"}
         lead={
           admin
-            ? "Todos os downloads da organização, com o e-mail de quem baixou. Este registro existe para rastreio e deve ser tratado com cuidado (LGPD). Datas no fuso do seu navegador."
-            : "Os relatórios que você baixou e quando. Só você e os administradores da organização veem esta lista. Datas no fuso do seu navegador."
+            ? "Every download in the organization, with the email of who downloaded it. This log exists for traceability and should be handled with care (personal data). Dates use your browser's time zone."
+            : "The reports you downloaded, and when. Only you and your organization's admins can see this list. Dates use your browser's time zone."
         }
       />
 
       <form
-        aria-label="Filtros"
-        className="brutal mb-6 grid grid-cols-1 gap-4 bg-muted p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-end"
+        aria-label="Filters"
+        className="mb-6 grid grid-cols-1 gap-4 rounded-2xl bg-soft p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-end"
         onSubmit={(e) => e.preventDefault()}
       >
         <Select
-          label="Área"
+          label="Area"
           id="f-area"
           value={area}
           onChange={(e) => {
@@ -72,7 +72,7 @@ export function Downloads({ admin = false }: { admin?: boolean }) {
             setAgent("");
           }}
         >
-          <option value="">Todas as áreas</option>
+          <option value="">All areas</option>
           {cat.areas.map((a) => (
             <option key={a.id} value={a.id}>
               {"— ".repeat(a.depth)}
@@ -80,8 +80,8 @@ export function Downloads({ admin = false }: { admin?: boolean }) {
             </option>
           ))}
         </Select>
-        <Select label="Agente" id="f-agent" value={agent} onChange={(e) => setAgent(e.target.value)}>
-          <option value="">Todos os agentes</option>
+        <Select label="Agent" id="f-agent" value={agent} onChange={(e) => setAgent(e.target.value)}>
+          <option value="">All agents</option>
           {agentOptions.map((a) => (
             <option key={a.id} value={a.id}>
               {a.name}
@@ -96,47 +96,47 @@ export function Downloads({ admin = false }: { admin?: boolean }) {
             setAgent("");
           }}
         >
-          Limpar filtros
+          Clear filters
         </Button>
       </form>
 
       {error && <ErrorBox>{error}</ErrorBox>}
       {loading && rows.length === 0 && <Loading />}
       {!loading && !error && rows.length === 0 && (
-        <EmptyState title={filtered ? "Nenhum download com esses filtros." : "Nenhum download ainda."}>
+        <EmptyState title={filtered ? "No downloads match these filters." : "No downloads yet."}>
           {filtered
-            ? "Tente limpar os filtros."
-            : "Quando um relatório for baixado, ele aparece aqui com a data e a hora."}
+            ? "Try clearing the filters."
+            : "When a report is downloaded, it shows up here with the date and time."}
         </EmptyState>
       )}
 
       {rows.length > 0 && (
-        <div className="brutal max-h-[70vh] overflow-auto">
+        <div className="card max-h-[70vh] overflow-auto">
           <table className="data-table min-w-[48rem]">
-            <caption className="sr-only">Histórico de downloads</caption>
+            <caption className="sr-only">Download history</caption>
             <thead>
               <tr>
-                {admin && <th scope="col">E-mail</th>}
-                <th scope="col">Agente</th>
-                <th scope="col">Área</th>
-                <th scope="col">Formato</th>
-                <th scope="col">Baixado em</th>
-                <th scope="col">Relatório gerado em</th>
+                {admin && <th scope="col">Email</th>}
+                <th scope="col">Agent</th>
+                <th scope="col">Area</th>
+                <th scope="col">Format</th>
+                <th scope="col">Downloaded at</th>
+                <th scope="col">Report generated at</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((d) => (
                 <tr key={d.id}>
                   {admin && <td className="whitespace-nowrap">{d.user_email}</td>}
-                  <td>
-                    <Link to={`/app/relatorios/${d.report_id}`} className="font-bold">
+                  <td className="min-w-[16rem]">
+                    <Link to={`/app/reports/${d.report_id}`} className="font-semibold text-navy">
                       {d.agent_name}
                     </Link>
-                    <span className="block text-sm">versão {d.seq}</span>
+                    <span className="block text-sm">version {d.seq}</span>
                   </td>
                   <td>{d.area_name}</td>
                   <td>
-                    <Tag tone="mint">{d.format.toUpperCase()}</Tag>
+                    <Tag>{d.format.toUpperCase()}</Tag>
                   </td>
                   <td className="whitespace-nowrap">{fmtDate(d.downloaded_at)}</td>
                   <td className="whitespace-nowrap">{fmtDate(d.generated_at)}</td>
@@ -149,7 +149,7 @@ export function Downloads({ admin = false }: { admin?: boolean }) {
       {more && (
         <div className="mt-6">
           <Button disabled={loading} onClick={() => load(rows.length)}>
-            {loading ? "Carregando…" : "Carregar mais"}
+            {loading ? "Loading…" : "Load more"}
           </Button>
         </div>
       )}

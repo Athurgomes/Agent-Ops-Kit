@@ -14,14 +14,14 @@ export default function App() {
     <Routes>
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Landing />} />
-        <Route path="/entrar" element={<Login />} />
+        <Route path="/login" element={<Login />} />
         <Route path="*" element={<NotFound />} />
       </Route>
       <Route path="/app" element={<AppShell />}>
         <Route index element={<Areas />} />
         <Route path="areas/:areaId" element={<Areas />} />
-        <Route path="areas/:areaId/agentes/:agentId" element={<AgentReports />} />
-        <Route path="relatorios/:reportId" element={<ReportView />} />
+        <Route path="areas/:areaId/agents/:agentId" element={<AgentReports />} />
+        <Route path="reports/:reportId" element={<ReportView />} />
         <Route path="downloads" element={<Downloads />} />
         <Route
           path="admin/downloads"

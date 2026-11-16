@@ -90,18 +90,18 @@ async function request(path: string, init: RequestInit = {}, handle401 = true): 
   try {
     res = await fetch(path, { credentials: "same-origin", ...init });
   } catch {
-    throw new ApiError(0, "Não foi possível falar com o servidor. Tente de novo em instantes.");
+    throw new ApiError(0, "Could not reach the server. Please try again in a moment.");
   }
   if (res.status === 401 && handle401) onUnauthorized();
   return res;
 }
 
 function failure(res: Response): ApiError {
-  let msg = "Algo deu errado. Tente de novo.";
-  if (res.status === 404) msg = "Não encontrado ou sem permissão de acesso.";
-  else if (res.status === 429) msg = "Muitas tentativas. Aguarde alguns minutos e tente de novo.";
-  else if (res.status === 401) msg = "Sessão expirada. Entre de novo.";
-  else if (res.status >= 500) msg = "Erro no servidor. Tente de novo em instantes.";
+  let msg = "Something went wrong. Please try again.";
+  if (res.status === 404) msg = "Not found, or you do not have access.";
+  else if (res.status === 429) msg = "Too many attempts. Wait a few minutes and try again.";
+  else if (res.status === 401) msg = "Your session expired. Please log in again.";
+  else if (res.status >= 500) msg = "Server error. Please try again in a moment.";
   return new ApiError(res.status, msg);
 }
 
@@ -129,7 +129,7 @@ export const api = {
       },
       false,
     );
-    if (res.status === 401) throw new ApiError(401, "E-mail ou senha inválidos.");
+    if (res.status === 401) throw new ApiError(401, "Invalid email or password.");
     if (!res.ok) throw failure(res);
     return (await res.json()) as Me;
   },

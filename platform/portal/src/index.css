@@ -1,44 +1,39 @@
 @import "tailwindcss";
 
-/* Tokens do tema. Para mudar a identidade visual, edite só este bloco.
-   Escala de espaçamento usada: 4 / 8 / 16 / 24 / 48 / 96 (classes 1, 2, 4, 6, 12, 24). */
+/* Design tokens. To change the visual identity, edit this block only. */
 :root {
-  --ink: #000000;
+  --ink: #0f172a; /* body text */
+  --navy: #0b1f4d; /* headings, primary button */
+  --navy-hover: #12306f;
+  --accent: #2563eb; /* medium blue accent */
+  --tint: #eff6ff; /* very light blue: section bands */
+  --tint-2: #dbeafe; /* light blue: highlights */
+  --subtle: #5b6579; /* secondary text */
+  --line: #e5e7eb; /* 1px borders and dividers */
+  --soft: #f8fafc; /* quiet backgrounds */
   --paper: #ffffff;
-  --muted: #f4f4f2;
-  --muted-2: #e4e4e0;
-  --pink: #f9d4f4;
-  --yellow: #ffe730;
-  --mint: #49ffcb;
-  --orange: #ff8a2a;
-  --danger: #ff5c4d;
-  --focus: #1d4ed8;
-  --border-width: 3px;
-  --radius: 0px;
-  --shadow-offset: 5px;
+  --focus: #2563eb;
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --shadow-hover: 0 2px 4px rgba(15, 23, 42, 0.06), 0 12px 32px rgba(15, 23, 42, 0.1);
   --container: 1200px;
   --header-h: 72px;
-  --sidebar-w: 288px;
-  --font-display: "Arial Black", "Segoe UI Black", Impact, system-ui, sans-serif;
-  --font-body: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
 @theme inline {
   --color-ink: var(--ink);
+  --color-navy: var(--navy);
+  --color-accent: var(--accent);
+  --color-tint: var(--tint);
+  --color-tint-2: var(--tint-2);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-soft: var(--soft);
   --color-paper: var(--paper);
-  --color-muted: var(--muted);
-  --color-muted-2: var(--muted-2);
-  --color-pink: var(--pink);
-  --color-yellow: var(--yellow);
-  --color-mint: var(--mint);
-  --color-orange: var(--orange);
-  --color-danger: var(--danger);
-  --font-display: var(--font-display);
   --font-sans: var(--font-body);
   --font-mono: var(--font-mono);
   --text-sm: 0.9375rem;
-  --radius-*: initial;
 }
 
 @layer base {
@@ -55,23 +50,27 @@
     min-height: 100vh;
     font-size: 1.0625rem; /* 17px */
     line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
   }
-  *,
-  *::before,
-  *::after {
-    border-radius: var(--radius);
+  h1,
+  h2,
+  h3,
+  p,
+  ul,
+  ol,
+  dl,
+  dd,
+  figure {
+    margin: 0;
   }
   :focus-visible {
-    outline: var(--border-width) solid var(--focus);
-    outline-offset: 2px;
+    outline: 2px solid var(--focus);
+    outline-offset: 3px;
+    border-radius: 8px;
   }
   a {
     color: inherit;
     text-underline-offset: 4px;
-    text-decoration-thickness: 2px;
-  }
-  p {
-    margin: 0;
   }
   @media (prefers-reduced-motion: reduce) {
     html {
@@ -91,111 +90,116 @@
     margin-inline: auto;
     padding-inline: 24px;
   }
-  .brutal {
-    border: var(--border-width) solid var(--ink);
-  }
-  .shadow-hard {
-    box-shadow: var(--shadow-offset) var(--shadow-offset) 0 0 var(--ink);
-  }
-  /* Só no display: caixa alta, peso máximo, entrelinha curta. */
-  .display {
-    font-family: var(--font-display);
-    font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: -0.02em;
-    line-height: 1.04;
+  .heading {
+    color: var(--navy);
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1.1;
     overflow-wrap: anywhere;
-    margin: 0;
   }
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+  }
+  .card-soft {
+    box-shadow: var(--shadow-soft);
+  }
+  .card-link {
+    transition: box-shadow 150ms, border-color 150ms;
+  }
+  .card-link:hover {
+    box-shadow: var(--shadow-hover);
+    border-color: #cbd5e1;
+  }
+  /* Buttons: pills */
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    border: var(--border-width) solid var(--ink);
-    padding: 12px 24px;
-    font-weight: 800;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 10px 20px;
+    font-weight: 600;
     line-height: 1.2;
-    color: var(--ink);
     text-decoration: none;
     cursor: pointer;
-    transition: transform 80ms, box-shadow 80ms, background-color 80ms;
+    transition: background-color 120ms, border-color 120ms, color 120ms;
   }
   .btn-sm {
     padding: 8px 16px;
     font-size: 0.9375rem;
   }
   .btn-lg {
-    padding: 16px 24px;
-    font-size: 1.125rem;
+    padding: 14px 28px;
+    font-size: 1.0625rem;
   }
   .btn-primary {
-    background: var(--orange);
-    box-shadow: var(--shadow-offset) var(--shadow-offset) 0 0 var(--ink);
+    background: var(--navy);
+    color: #fff;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--navy-hover);
   }
   .btn-secondary {
     background: var(--paper);
-  }
-  .btn-dark {
-    background: var(--ink);
-    color: var(--paper);
-  }
-  .btn-primary:hover:not(:disabled) {
-    transform: translate(-2px, -2px);
-    box-shadow: 7px 7px 0 0 var(--ink);
-  }
-  .btn-primary:active:not(:disabled) {
-    transform: translate(var(--shadow-offset), var(--shadow-offset));
-    box-shadow: none;
+    border-color: #cbd5e1;
+    color: var(--navy);
   }
   .btn-secondary:hover:not(:disabled) {
-    background: var(--yellow);
-  }
-  .btn-dark:hover:not(:disabled) {
-    background: #2b2b2b;
+    background: var(--tint);
+    border-color: var(--accent);
   }
   .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
-  /* Links de navegação: texto simples; ativo/hover com sublinhado grosso amarelo. */
+  /* Placeholder for features that are not ready yet: not clickable, default cursor. */
+  .soon {
+    cursor: default;
+    user-select: none;
+  }
+  .soon-badge {
+    border-radius: 999px;
+    background: var(--tint-2);
+    color: var(--navy);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 3px 7px;
+  }
   .navlink {
     display: inline-block;
     padding: 4px 0;
-    font-weight: 700;
+    color: var(--ink);
+    font-weight: 500;
     text-decoration: none;
-    box-shadow: inset 0 -4px 0 0 transparent;
-    transition: box-shadow 80ms;
+    border-bottom: 2px solid transparent;
   }
   .navlink:hover {
-    box-shadow: inset 0 -4px 0 0 var(--yellow);
+    color: var(--accent);
   }
-  .navlink[aria-current="page"],
   .navlink.active {
-    box-shadow: inset 0 -4px 0 0 var(--ink);
+    color: var(--navy);
+    border-bottom-color: var(--accent);
   }
   .side-item {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 16px;
-    font-weight: 700;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-weight: 500;
     text-decoration: none;
-    border-left: 6px solid transparent;
   }
   .side-item:hover {
-    background: var(--muted);
+    background: var(--soft);
   }
   .side-item.active {
-    background: var(--yellow);
-    border-left-color: var(--ink);
-  }
-  .card-link {
-    transition: transform 80ms, box-shadow 80ms;
-  }
-  .card-link:hover {
-    transform: translate(-2px, -2px);
-    box-shadow: 7px 7px 0 0 var(--ink);
+    background: var(--tint);
+    color: var(--navy);
+    font-weight: 700;
   }
   .data-table {
     width: 100%;
@@ -205,28 +209,30 @@
   }
   .data-table th,
   .data-table td {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--muted-2);
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
     vertical-align: top;
+  }
+  .data-table tbody tr:last-child th,
+  .data-table tbody tr:last-child td {
+    border-bottom: 0;
   }
   .data-table thead th {
     position: sticky;
     top: 0;
     z-index: 1;
-    background: var(--yellow);
-    border-bottom: var(--border-width) solid var(--ink);
-    font-weight: 800;
+    background: var(--soft);
+    color: var(--subtle);
+    font-size: 0.875rem;
+    font-weight: 600;
     white-space: nowrap;
   }
   .data-table tbody th {
-    background: var(--muted);
-    font-weight: 800;
-  }
-  .data-table tbody tr:nth-child(even) td {
-    background: #f8f8f6;
+    color: var(--navy);
+    font-weight: 600;
   }
   .data-table tbody tr:hover td {
-    background: #fff9c2;
+    background: var(--soft);
   }
   .faq summary {
     cursor: pointer;
