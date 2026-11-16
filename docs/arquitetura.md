@@ -113,6 +113,8 @@ flowchart LR
 | `docker-compose.yml` | Jaeger (all-in-one) |
 | `platform/aok_platform/` | API da plataforma: `app`, `auth` (senha, token, papéis), `sessions` (login, sessão, throttle), `portal` (leitura, download, histórico), `models` (inclui `admin_event`), `reports`, `db`, `seed_demo` |
 | `platform/aok_platform/ops.py` | rotas `/v1/ops/*` do operador (ADR-010): organizações com contagens, criar e desativar, criar admin e reset de senha, visão geral só de metadados, trilhas |
+| `platform/aok_platform/recovery.py`, `mailer.py` | recuperação de senha (ADR-012): rotas `/v1/auth/password/forgot` e `/reset` e `/v1/auth/capabilities`; token com hash SHA-256 na tabela `password_reset`; envio SMTP por stdlib. Só ativos com `AOK_SMTP_HOST` e `AOK_PUBLIC_URL` |
+| `platform/portal/src/pages/ForgotPassword.tsx`, `ResetPassword.tsx` | telas `/forgot-password` e `/reset-password` (token lido do fragmento e removido da URL) |
 | `platform/aok_platform/create_org.py` | `python -m aok_platform.create_org`: cria organização (slug, nome) |
 | `platform/aok_platform/create_operator.py` | `python -m aok_platform.create_operator`: cria operador com senha aleatória impressa uma vez; `--reset-password`, `--activate` |
 | `platform/aok_platform/db.py` (`ensure_schema`) | no startup, adiciona colunas e tabelas novas e preenche valores, de forma idempotente (não é Alembic) |
@@ -135,6 +137,7 @@ As decisões e suas limitações estão em [decisoes.md](decisoes.md):
 - ADR-009: administração do portal e trilha `admin_event`.
 - ADR-010: operador da plataforma (só metadados, desligado por padrão).
 - ADR-011: isolamento multi-organização.
+- ADR-012: recuperação de senha por e-mail (opcional, token de uso único com hash, limites em memória).
 
 Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 
@@ -143,7 +146,7 @@ Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 - Kafka (eventos do agente em tópico, consumidores de auditoria e métricas).
 - Adaptador para outro framework de agentes: só existe o loop do agente de referência.
 - Prometheus e Grafana: as métricas são calculadas em Python, não exportadas.
-- Na plataforma: SSO, Sign Up, recuperação de senha por e-mail, Alembic (migração formal), dark mode, PDF e paginação das listagens do admin. Trilha de login e de leitura também não existe (só download e escritas administrativas).
+- Na plataforma: SSO, Sign Up, recuperação por e-mail para operadores (a recuperação de senha por e-mail dos usuários das organizações existe, opcional: ADR-012), Alembic (migração formal), dark mode, PDF e paginação das listagens do admin. Trilha de login e de leitura também não existe (só download e escritas administrativas).
 - Deploy em nuvem.
 - Publicação em PyPI: o pacote se instala a partir do repositório.
 - Validação do gate do eval em um PR real que piore um prompt: até agora só foi simulado localmente (ver README).

@@ -187,7 +187,28 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O 409 de e-mail revela que o e-mail existe em alguma organização.
 - Com 1 organização inativa, a chave de bootstrap ainda opera nela sem o cabeçalho; com `X-Org-Slug` apontando para ela a resposta é 404.
 - Em bancos antigos, `ensure_schema` cria os índices únicos `uq_organization_slug` e `uq_agent_org_slug`, mas não cria as chaves estrangeiras nem o índice simples de `agent.org_id`.
-- Os testes usam SQLite por padrão; com `AOK_TEST_DATABASE_URL` a suíte de plataforma roda em Postgres (235 testes, verificado localmente e no CI).
+- Os testes usam SQLite por padrão; com `AOK_TEST_DATABASE_URL` a suíte de plataforma rodava em Postgres (235 testes na época, commit 4f3e5a7, verificado localmente e no CI; a recuperação de senha, ADR-012, acrescentou testes que só foram rodados em Postgres em parte).
 - O throttle de login é em memória.
 - Verificado no navegador, com banco temporário e `AOK_OPS_ENABLED=true`: operador criado pela CLI, login em `/ops`, 2 organizações, admin criado (senha exibida uma vez), admin entra no portal e vê só a própria organização, cadastra área, agente e token, publica um relatório real com `aok check --publish` e o vê no portal; o operador vê só metadados; desativar uma organização barra o admin dela e a outra segue intacta; reativar; reset de senha; sessões de operador e de usuário não se misturam; `/ops` é um 404 comum com o console desligado.
 - Não exercitados: erro de slug de organização duplicado na interface, leitor de tela e contraste, outros navegadores.
+
+## ADR-012: recuperação de senha por e-mail
+
+**Contexto.** Usuários das organizações só tinham reset de senha feito por um admin. Extensão fora do plano original, opcional.
+
+**Decisão.**
+- Recurso opcional: só existe com `AOK_SMTP_HOST` e `AOK_PUBLIC_URL`. Sem eles, `/v1/auth/password/forgot` e `/reset` respondem 404, `/v1/auth/capabilities` devolve `password_reset: false` e o "Forgot password?" do login fica como placeholder.
+- Envio por SMTP da biblioteca padrão, configurável: STARTTLS por padrão, timeout e contexto TLS padrão. SMTPS (porta 465) não é suportado.
+- O link é montado só a partir de `AOK_PUBLIC_URL`, nunca de `Host` ou `X-Forwarded-Host`. O token vai no fragmento (`#token=`), que não chega a logs de servidor nem ao `Referer`; o front o remove da URL.
+- Token: `token_urlsafe(32)`, só o hash SHA-256 no banco (`password_reset`), uso único (UPDATE condicional atômico), validade de 30 min; um novo pedido invalida os anteriores.
+- `/forgot` responde sempre 202 com o mesmo corpo, e a consulta e o envio rodam em background (anti-enumeração). Limites em memória: 3 pedidos por e-mail e 10 por IP por hora.
+- `/reset`: erro 400 genérico para qualquer token inválido, 429 após 10 tentativas inválidas por IP por hora, senha com 12+ caracteres. Sucesso revoga todas as sessões do usuário, não faz login automático, envia e-mail de aviso e grava `user.password_reset` em `admin_event`, sem segredos.
+- Operadores seguem com reset só pela CLI. Um `org_admin` sem SMTP configurado depende do operador.
+
+**Consequências e limitações.**
+- Os limites são em memória, por processo: reiniciam no deploy e não somam entre workers.
+- Atrás de proxy, o IP visto é o do proxy (`X-Forwarded-For` não é confiado). O bloqueio de 10 tentativas inválidas pode então atingir quem compartilha o IP, inclusive com token válido (risco de negação de serviço). Melhoria futura: limitar só as tentativas e deixar o token válido passar, e ler o IP real de um proxy confiável.
+- Entregabilidade (SPF, DKIM) não verificada.
+- E-mail ausente ou com mais de 254 caracteres responde 422, não 202.
+- Verificado: suíte completa 596 passed e 1 skipped; os testes de recuperação e o de banco legado passaram em postgres:16 efêmero local (20 passed); 8 `/reset` simultâneos por token em Postgres local deram exatamente 1 sucesso por token (verificação manual, fora do repositório). No navegador (Edge) com servidor SMTP local real (Mailpit): link real no login com o recurso ativo e placeholder "Soon" com ele desligado; UI idêntica para e-mail existente e inexistente (e-mail só para o existente); e-mail com link `#token` sem a senha; fragmento removido da URL; senha curta recusada; senha nova funciona e a antiga falha; sessão anterior revogada; link reusado inválido; novo pedido invalida o anterior; aviso de troca recebido; 4º pedido seguido sem e-mail.
+- Não exercitados: envio por provedor SMTP real (STARTTLS, entregabilidade), 429 do reset na interface, leitor de tela, contraste e outros navegadores. O CI ainda não rodou para estes commits.
