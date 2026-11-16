@@ -3,6 +3,12 @@ import { RequireAuth } from "./auth";
 import { AppShell, PublicLayout } from "./Layout";
 import { AgentReports } from "./pages/AgentReports";
 import { Areas } from "./pages/Areas";
+import { OpsRoot, RequireOps } from "./opsAuth";
+import { OpsActivity } from "./pages/ops/OpsActivity";
+import { OpsLayout } from "./pages/ops/OpsLayout";
+import { OpsLogin } from "./pages/ops/OpsLogin";
+import { OpsOrganizations } from "./pages/ops/OpsOrganizations";
+import { OpsOrgDetail } from "./pages/ops/OpsOrgDetail";
 import { AdminActivity } from "./pages/admin/AdminActivity";
 import { AdminAgentDetail } from "./pages/admin/AdminAgentDetail";
 import { AdminAgents } from "./pages/admin/AdminAgents";
@@ -23,6 +29,17 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      {/* Operator console: not linked from anywhere; looks like an unknown page when the server has it off. */}
+      <Route path="/ops" element={<OpsRoot />}>
+        <Route index element={<Navigate to="/ops/organizations" replace />} />
+        <Route path="login" element={<OpsLogin />} />
+        <Route element={<RequireOps><OpsLayout /></RequireOps>}>
+          <Route path="organizations" element={<OpsOrganizations />} />
+          <Route path="organizations/:orgId" element={<OpsOrgDetail />} />
+          <Route path="activity" element={<OpsActivity />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/ops/organizations" replace />} />
+      </Route>
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Landing />} />
         <Route path="*" element={<NotFound />} />

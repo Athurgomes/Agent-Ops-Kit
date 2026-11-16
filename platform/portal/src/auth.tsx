@@ -21,6 +21,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setUnauthorizedHandler(() => setMe(null)); // 401 em qualquer chamada limpa o estado
+    if (window.location.pathname.startsWith("/ops")) {
+      setLoading(false); // o console do operador tem sessão própria: o portal não consulta /v1/auth/me lá
+      return;
+    }
     api
       .me()
       .then(setMe)

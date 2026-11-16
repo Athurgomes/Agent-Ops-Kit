@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useParams } from "react-router-dom";
 import type { AreaNode } from "./api";
 import { areaPath, CatalogProvider, RequireAuth, useAuth, useCatalog } from "./auth";
@@ -24,7 +25,7 @@ function PublicNavItems({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function PublicLayout() {
+export function PublicLayout({ children }: { children?: ReactNode } = {}) {
   const { me } = useAuth();
   const [open, setOpen] = useState(false);
   const loc = useLocation();
@@ -76,7 +77,7 @@ export function PublicLayout() {
         )}
       </header>
       <main id="content" className="flex-1">
-        <Outlet />
+        {children ?? <Outlet />}
       </main>
       <Footer />
     </div>

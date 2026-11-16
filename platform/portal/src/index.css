@@ -202,6 +202,11 @@
     border-left-color: var(--accent);
     font-weight: 800;
   }
+  /* sr-only cells inside wide tables must be clipped by the scroll box, not stretch the page */
+  .overflow-x-auto,
+  .overflow-auto {
+    position: relative;
+  }
   .data-table {
     width: 100%;
     border-collapse: collapse;

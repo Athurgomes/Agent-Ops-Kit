@@ -5,7 +5,7 @@ import { Button, EmptyState, ErrorBox, Loading, PageHeader, useAsync } from "../
 
 const PAGE = 50;
 
-const ACTIONS: Record<string, string> = {
+export const ACTIONS: Record<string, string> = {
   "area.create": "Created area",
   "area.update": "Edited area",
   "agent.create": "Registered agent",
@@ -22,7 +22,7 @@ const ACTIONS: Record<string, string> = {
   "membership.create": "Granted access",
   "membership.delete": "Revoked access",
 };
-const TARGETS: Record<string, string> = {
+export const TARGETS: Record<string, string> = {
   area: "Area",
   agent: "Agent",
   agent_token: "Token",
