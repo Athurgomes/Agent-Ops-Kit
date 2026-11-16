@@ -66,7 +66,7 @@ aok check --publish https://sua-plataforma --agent-id meu-agente   # ou platform
 ```
 
 - Só agregados e hashes sobem; o log de auditoria não. O relatório é autodeclarado: a plataforma não reexecuta o teste (ADR-007).
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit c3ca947 (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado; os testes automatizados usam SQLite.
+- `docker compose` (API e postgres:16) verificado localmente com o código até o commit 937a286 (build, subida, healthcheck, portal em `/`, login por curl, `aok check --publish`, relatório no portal, download, reinício da API com persistência em volume nomeado, `down -v`); o run de CI do commit 4f3e5a7 terminou com sucesso nos três jobs (test, portal e postgres, este com service container postgres:16 rodando a suíte de plataforma); Postgres real verificado localmente (postgres:16 efêmero em Docker: 235 testes de plataforma passaram, incluindo a migração de um banco legado pelo `ensure_schema`) e no CI. Não verificados: carga e desempenho em Postgres, `seed_demo` dentro do container do compose (a imagem não leva os resultados gravados do repositório); dívidas: em bancos SQLite antigos a restrição UNIQUE(slug) global continua e o Alembic não existe; os testes automatizados usam SQLite por padrão e, com `AOK_TEST_DATABASE_URL`, a suíte de plataforma (235 testes) roda em Postgres.
 
 ### Plataforma (fase 3: portal)
 
@@ -86,10 +86,10 @@ uvicorn aok_platform.app:create_app --factory   # http://127.0.0.1:8000
 - Cada pessoa vê só as áreas do seu perfil (com sub-áreas); área fora do alcance responde 404. O download grava em `download_log`.
 - O seed cria dados de demonstração com agentes fictícios; o conteúdo dos relatórios vem do exemplo do repositório.
 - Verificado com o design atual: capturas de tela (Edge headless) a 1440 e 390 px de todas as telas (landing, login, áreas, agente, detalhe do relatório, downloads, admin), inspecionadas. O fluxo funcional (login de admin, áreas, logout) foi exercitado no navegador na versão anterior da interface e não foi reexecutado após o redesenho (a lógica de autenticação não mudou; só a rota de login passou a `/login`).
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit c3ca947 (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado.
+- `docker compose` (API e postgres:16) verificado localmente com o código até o commit 937a286 (build, subida, healthcheck, portal em `/`, login por curl, `aok check --publish`, relatório no portal, download, reinício da API com persistência em volume nomeado, `down -v`); o run de CI do commit 4f3e5a7 terminou com sucesso nos três jobs (test, portal e postgres, este com service container postgres:16 rodando a suíte de plataforma); Postgres real verificado localmente (postgres:16 efêmero em Docker: 235 testes de plataforma passaram, incluindo a migração de um banco legado pelo `ensure_schema`) e no CI. Não verificados: carga e desempenho em Postgres, `seed_demo` dentro do container do compose (a imagem não leva os resultados gravados do repositório); dívidas: em bancos SQLite antigos a restrição UNIQUE(slug) global continua e o Alembic não existe.
 - Limitações: throttle de login em memória (reinicia no deploy, não vale com vários workers e permite travar a conta de outra pessoa por 5 min); CSRF só por SameSite; tabelas sem migração.
 - Não existe: SSO, dark mode, PDF, Sign Up e recuperação de senha (multiempresa e operador: ver a seção seguinte).
-- `python -m pytest -q` (árvore atual): 577 passed.
+- `python -m pytest -q` (árvore atual): 577 passed, 1 skipped (o skip é o teste de banco legado, que só roda com `AOK_TEST_DATABASE_URL`; a suíte de plataforma em Postgres tem 235 testes).
 
 ### Plataforma: administração
 
@@ -114,7 +114,7 @@ python -m aok_platform.create_operator --email ops@example.com       # imprime a
 
 - Com 2 ou mais organizações, a chave de bootstrap exige o cabeçalho `X-Org-Slug`. Pelo console, o operador cria o primeiro admin (senha exibida uma vez).
 - O operador vê só metadados: organizações, contagens, agentes, versões, semáforo, datas e trilhas. Não vê conteúdo de relatório, ressalvas, arquivos, tokens nem hashes, e não baixa nada. Quem opera o banco ou o servidor continua podendo ler tudo.
-- Verificado no navegador, com banco temporário: fluxo completo com 2 organizações, publicação real com `aok check --publish`, desativar e reativar organização, reset de senha, sessões separadas. Não exercitados: slug de organização duplicado na interface, Postgres real, leitor de tela e contraste, outros navegadores.
+- Verificado no navegador, com banco temporário: fluxo completo com 2 organizações, publicação real com `aok check --publish`, desativar e reativar organização, reset de senha, sessões separadas. Não exercitados: slug de organização duplicado na interface, leitor de tela e contraste, outros navegadores.
 - Limitações: e-mail único globalmente; em bancos SQLite antigos o slug de agente segue global até recriar a tabela (o 409 pode revelar que o slug existe em outra organização); sem Alembic; throttle em memória.
 
 ### Com o modelo (usa o Ollama)

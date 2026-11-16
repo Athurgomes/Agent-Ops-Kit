@@ -99,7 +99,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O relatório é autodeclarado: a plataforma confere o esquema, o tamanho e o sha256 dos arquivos, mas não reexecuta eval nem red team. Quem publica pode enviar números que não vieram de uma execução real.
 - A imutabilidade das versões vale só pela API: quem opera o banco ou o disco pode alterar ou apagar.
 - A chave de bootstrap é única e compartilhada entre admins; não há login, papéis nem SSO na fase 2; login e papéis chegam na ADR-008.
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit c3ca947 (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado; os testes automatizados usam SQLite.
+- `docker compose` (API e postgres:16) verificado localmente com o código até o commit 937a286 (build, subida, healthcheck, portal em `/`, login por curl, `aok check --publish`, relatório no portal, download, reinício da API com persistência em volume nomeado, `down -v`); o run de CI do commit 4f3e5a7 terminou com sucesso nos três jobs (test, portal e postgres, este com service container postgres:16 rodando a suíte de plataforma); Postgres real verificado localmente (postgres:16 efêmero em Docker: 235 testes de plataforma passaram, incluindo a migração de um banco legado pelo `ensure_schema`) e no CI. Não verificados: carga e desempenho em Postgres, `seed_demo` dentro do container do compose (a imagem não leva os resultados gravados do repositório); dívidas: em bancos SQLite antigos a restrição UNIQUE(slug) global continua e o Alembic não existe; os testes automatizados usam SQLite por padrão e, com `AOK_TEST_DATABASE_URL`, a suíte de plataforma (235 testes) roda em Postgres.
 - Alternativa descartada: enviar o log de auditoria (expõe conteúdo das interações).
 
 ## ADR-008: portal e login de usuários (fase 3)
@@ -122,7 +122,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Dívida: sem Alembic, mudança de coluna não é aplicada em banco existente; adotar migração antes disso.
 - A trilha cobre só o download (as escritas administrativas passaram a ter trilha no ADR-009); não há registro de login nem de leitura.
 - Não há SSO, multiempresa, dark mode nem PDF (superado em parte pelos ADR-010 e ADR-011).
-- `docker build` verificado localmente (a imagem sobe e serve o portal e a API), antes do redesenho do visual e das telas de administração e não reverificado depois; o run de CI do commit c3ca947 (push no main, com as telas de administração) terminou com sucesso nos jobs test e portal; para os commits posteriores o CI ainda não foi verificado; Postgres real não verificado.
+- `docker compose` (API e postgres:16) verificado localmente com o código até o commit 937a286 (build, subida, healthcheck, portal em `/`, login por curl, `aok check --publish`, relatório no portal, download, reinício da API com persistência em volume nomeado, `down -v`); o run de CI do commit 4f3e5a7 terminou com sucesso nos três jobs (test, portal e postgres, este com service container postgres:16 rodando a suíte de plataforma); Postgres real verificado localmente (postgres:16 efêmero em Docker: 235 testes de plataforma passaram, incluindo a migração de um banco legado pelo `ensure_schema`) e no CI. Não verificados: carga e desempenho em Postgres, `seed_demo` dentro do container do compose (a imagem não leva os resultados gravados do repositório); dívidas: em bancos SQLite antigos a restrição UNIQUE(slug) global continua e o Alembic não existe.
 
 ## ADR-009: administração do portal e trilha de eventos
 
@@ -146,7 +146,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Visão multiempresa e de operador: ver ADR-010 e ADR-011.
 - Verificado no navegador, com banco temporário: criar área e sub-área, registrar agente, emitir token (aparece uma vez), publicar um relatório real com `aok check --publish`, ver o relatório no portal, revogar o token e a publicação seguinte falhar com 401, criar usuário viewer com acesso só à área, desativar o usuário e o login falhar, ver os eventos.
 - Não exercitados na interface: redefinir senha, editar ou reativar agente, conceder ou revogar acesso depois da criação.
-- Postgres real não verificado. `docker build` foi verificado antes do redesenho do portal e não foi reverificado após as telas de administração. O run de CI do commit c3ca947 (push no main) terminou com sucesso nos jobs test e portal; os commits posteriores não foram verificados no CI.
+- Postgres real verificado localmente (postgres:16 efêmero em Docker) e no CI (job postgres, run do commit 4f3e5a7): a suíte de plataforma (235 testes) passou, incluindo a migração de um banco legado. `docker compose` verificado localmente com o código até 937a286. Não verificados: carga e desempenho em Postgres, `seed_demo` dentro do container do compose, Alembic (dívida), UNIQUE(slug) global em bancos SQLite antigos (dívida).
 
 ## ADR-010: operador da plataforma (visão multiempresa, só metadados)
 
@@ -187,7 +187,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O 409 de e-mail revela que o e-mail existe em alguma organização.
 - Com 1 organização inativa, a chave de bootstrap ainda opera nela sem o cabeçalho; com `X-Org-Slug` apontando para ela a resposta é 404.
 - Em bancos antigos, `ensure_schema` cria os índices únicos `uq_organization_slug` e `uq_agent_org_slug`, mas não cria as chaves estrangeiras nem o índice simples de `agent.org_id`.
-- Postgres real não verificado; os testes usam SQLite.
+- Os testes usam SQLite por padrão; com `AOK_TEST_DATABASE_URL` a suíte de plataforma roda em Postgres (235 testes, verificado localmente e no CI).
 - O throttle de login é em memória.
 - Verificado no navegador, com banco temporário e `AOK_OPS_ENABLED=true`: operador criado pela CLI, login em `/ops`, 2 organizações, admin criado (senha exibida uma vez), admin entra no portal e vê só a própria organização, cadastra área, agente e token, publica um relatório real com `aok check --publish` e o vê no portal; o operador vê só metadados; desativar uma organização barra o admin dela e a outra segue intacta; reativar; reset de senha; sessões de operador e de usuário não se misturam; `/ops` é um 404 comum com o console desligado.
-- Não exercitados: erro de slug de organização duplicado na interface, Postgres real, leitor de tela e contraste, outros navegadores.
+- Não exercitados: erro de slug de organização duplicado na interface, leitor de tela e contraste, outros navegadores.
