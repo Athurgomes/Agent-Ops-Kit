@@ -156,11 +156,17 @@ bootstrap não tem relação com ele. Criação só por linha de comando:
 ```bash
 python -m aok_platform.create_operator --email ops@example.com          # imprime a senha UMA vez
 python -m aok_platform.create_operator --email ops@example.com --reset-password
+python -m aok_platform.create_operator --email ops@example.com --reset-password --activate   # reativa um operador inativo
 ```
+
+`--reset-password` **não** reativa um operador inativo (mais seguro): a senha nova fica gravada, mas o login
+continua barrado até rodar de novo com `--activate` (que só vale junto com `--reset-password`).
 
 Rotas (todas com sessão de operador; escritas vão para `operator_event`): `POST /v1/ops/auth/login|logout`,
 `GET /v1/ops/auth/me`, `GET|POST /v1/ops/organizations`, `GET|PATCH /v1/ops/organizations/{id}` (sem DELETE),
 `POST /v1/ops/organizations/{id}/admins` e `.../admins/{user_id}/reset-password` (a senha gerada volta
 uma única vez), `GET /v1/ops/organizations/{id}/events` e `GET /v1/ops/events`. O operador só vê
 metadados: nenhuma rota devolve conteúdo de relatório, download, token, hash ou senha (ADR-010).
+As respostas que trazem a senha gerada (criar admin e reset) saem com `Cache-Control: no-store` e `Pragma: no-cache`.
+No portal, o console fica em `/ops/*` (sem link em lugar nenhum); com o servidor sem `AOK_OPS_ENABLED`, `/ops/*` aparece como página inexistente (inclusive o título da aba, que só muda quando o console existe).
 
