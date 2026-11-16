@@ -171,7 +171,7 @@ def test_token_nao_le(env):
     h = {"Authorization": f"Bearer {token}"}
     _post(client, token, _package())
     for path in ("/v1/reports", "/v1/reports/1", "/v1/agents/1/reports", "/v1/reports/1/download"):
-        assert client.get(path, headers=h).status_code in (404, 405)
+        assert client.get(path, headers=h).status_code in (401, 405)  # fase 3: leitura exige sessão
     # e as rotas admin recusam o token do agente
     assert client.post("/v1/admin/areas", json={"name": "x"}, headers=h).status_code == 401
 
