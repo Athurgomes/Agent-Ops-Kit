@@ -129,6 +129,20 @@ Aviso: p-valor não é prova de causalidade, e n pequeno limita o poder do teste
 
 Aviso: a baseline gravada (evals/answers/v1.jsonl) é de outra execução. A execução com guardrails usa o prompt v1 acrescido da linha do canary e da nota de conteúdo não confiável, e uma resposta bloqueada é pontuada como a mensagem de recusa.
 
+## D. Validação do gate em PR
+
+Dois PRs de teste, fechados sem mesclar (https://github.com/Athurgomes/Agent-Ops-Kit/pull/1 e /pull/2). O gate usa respostas gravadas.
+
+| PR / commit | Mudança | eval/gate | ci/test |
+|---|---|---|---|
+| #1 | neutra em `src/` | passou (16 s) | não verificado |
+| #2, 1º commit | prompt v2 degradado de propósito (no máximo 3 palavras, sem citar números, prazos ou valores), SEM regravar respostas | falhou em 15 s, código 2: manifesto desatualizado (`prompt_sha256`) | falhou, mesmo motivo (`tests/test_manifest.py`) |
+| #2, 2º commit | respostas do v2 regravadas (Ollama llama3.1:8b, semente 42) | falhou, código 1, regressão | passou |
+
+Regressão no 2º commit do #2 (run https://github.com/Athurgomes/Agent-Ops-Kit/actions/runs/43493012402): média v1 0.7067, v2 0.5267, diferença -0.1800, IC 95% [-0.3000; -0.0533], p 0.0110, n 50 pares, 10000 reamostragens.
+
+Ressalvas: uma execução. Na regravação, 49 de 50 respostas do v1 saíram idênticas (não determinismo), por isso o v1 de main foi mantido como referência. O p-valor é Monte Carlo. O prompt foi degradado de propósito: é um teste de mecanismo do gate, não uma medida de qualidade.
+
 ## C. Limitações
 
 As limitações de segurança estão na seção "Limitações e leitura honesta" abaixo. Gerais: tudo foi medido com um único modelo de 8B, uma execução por configuração e n pequeno; os intervalos de confiança são largos e os resultados não generalizam para outros modelos, prompts ou dados.
