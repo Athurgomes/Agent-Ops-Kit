@@ -507,6 +507,7 @@ def test_detalhe_aplica_limit_em_sql_e_busca_o_ultimo_relatorio_a_parte(ops, tmp
     for q in report_sql:
         rest = re.sub(r"JSON_EXTRACT\(report_version\.summary_json,", "", q)
         rest = re.sub(r"report_version\.summary_json\s*->>", "", rest)
+        rest = re.sub(r"%\(summary_json_\d+\)s", "", rest)  # nome do parâmetro de bind do ->> (Postgres)
         assert "summary_json" not in rest, q
     d3 = c.get(f"/v1/ops/organizations/{oid}?limit=3").json()
     assert [r["seq"] for r in d3["reports"]] == [3, 2, 1]
