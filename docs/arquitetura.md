@@ -149,4 +149,5 @@ Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 - Na plataforma: SSO, Sign Up, recuperação por e-mail para operadores (a recuperação de senha por e-mail dos usuários das organizações existe, opcional: ADR-012), Alembic (migração formal), dark mode, PDF e paginação das listagens do admin. Trilha de login e de leitura também não existe (só download e escritas administrativas).
 - Deploy em nuvem.
 - Publicação em PyPI: o pacote se instala a partir do repositório.
-- Validação do gate do eval em um PR real que piore um prompt: até agora só foi simulado localmente (ver README).
+- Validação do gate como medida de qualidade: ele foi exercitado em 2 PRs de teste (ver a seção D de [resultados.md](resultados.md)), que provam o mecanismo, não a qualidade.
+- Relatório verificado pela plataforma: o relatório é autodeclarado e a plataforma não reexecuta eval nem red team (ADR-007).

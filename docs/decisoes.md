@@ -21,7 +21,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O manifesto cobre prompt, dataset e modelo. Não cobre o corpus (`examples/rag_agent/corpus`), as ferramentas nem o `src/`; mudar isso exige regravar por disciplina do autor, não por trava.
 - Quem edita o JSONL à mão não é barrado: o manifesto detecta respostas velhas, não adulteradas. A proteção contra isso é a revisão do PR (o diff do JSONL aparece nele).
 - O gate só falha com piora estatisticamente distinguível (p < 0.05). Com 50 casos o poder é limitado: no relatório `evals/results/v1_vs_v2.md`, a diferença média na métrica determinística foi -0.0933 (v2 menos v1), IC 95% [-0.1933, +0.0067] e p-valor 0.0929, ou seja, o gate não falharia para v2 vs v1.
-- Não validado em PR real no GitHub ainda; o workflow foi checado com `actionlint` e o mesmo comando foi rodado localmente.
+- Exercitado em 2 PRs de teste no GitHub, fechados sem mesclar (#1 e #2; ver a seção D de [resultados.md](resultados.md)): o gate falhou por manifesto desatualizado e, com as respostas regravadas, por regressão. É um teste de mecanismo, com uma execução por PR. O workflow também foi checado com `actionlint`.
 
 ## ADR-002: teste de permutação pareado e bootstrap com semente fixa
 
