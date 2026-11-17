@@ -120,7 +120,7 @@ flowchart LR
 | `platform/aok_platform/db.py` (`ensure_schema`) | no startup, adiciona colunas e tabelas novas e preenche valores, de forma idempotente (não é Alembic) |
 | `platform/portal/src/pages/ops/` | console do operador em `/ops/*` (sem link no site; 404 comum com `AOK_OPS_ENABLED` desligado) |
 | `platform/portal/` | front-end React, Vite, TypeScript e Tailwind, servido pela API |
-| `platform/docker-compose.yml` | API e Postgres (`docker compose` verificado localmente até o commit 937a286; Postgres real verificado localmente e no CI (run do commit 0b196eb, três jobs com sucesso); não verificados: carga em Postgres, `seed_demo` dentro do container, Alembic (dívida)) |
+| `platform/docker-compose.yml` | API e Postgres. Estado das verificações (com datas e o que não foi reconfirmado): ADR-007 em [decisoes.md](decisoes.md) |
 
 ## Decisões
 
