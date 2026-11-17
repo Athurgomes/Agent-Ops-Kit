@@ -16,3 +16,4 @@ node_modules/
 platform/portal/dist/
 *.tsbuildinfo
 .demo*/
+video-linkedin/
