@@ -80,6 +80,8 @@ python -m aok_platform.seed_demo        # imprime as senhas uma única vez
 uvicorn aok_platform.app:create_app --factory   # http://127.0.0.1:8000
 ```
 
+Para subir tudo com um comando (dados de demonstração, operador e organização `beta`; compila o portal se faltar; só em 127.0.0.1; as senhas aparecem uma vez no terminal; Ctrl+C encerra), use `python scripts/demo_plataforma.py [--porta 8000] [--publicar] [--reset] [--dados PASTA]`. Sem `--dados`, usa `.demo/`, ignorada pelo git.
+
 - Telas: landing pública, login (`/login`), áreas > agentes > relatórios > detalhe (`/app/...`; baixar MD, HTML e JSON), "My downloads" e, para `org_admin`, "All downloads". Visual em preto e branco, com azul só em botões de impacto, links e foco.
 - A interface é toda em inglês; o conteúdo dos relatórios vindo do backend e os nomes do seed seguem em português (limitação conhecida).
 - Na landing, a nota do fundador é rascunho e a fala de usuário é placeholder, não depoimento real. Sign Up, Pricing, redes sociais e links de rodapé são placeholders "Soon", não clicáveis.
@@ -237,6 +239,7 @@ redteam/             ataques, perguntas benignas, resultados gravados
 platform/            plataforma (API de recebimento de relatórios)
 docs/                arquitetura, decisões (ADRs), resultados
 scripts/demo.sh      demo reproduzível (respostas gravadas)
+scripts/demo_plataforma.py   sobe a plataforma de demonstração com um comando
 evidencias/          capturas de tela reais (terminal, Jaeger, GitHub, portal), com índice
 tests/               testes (sem Ollama e sem Docker)
 .github/workflows/   ci.yml e eval.yml
