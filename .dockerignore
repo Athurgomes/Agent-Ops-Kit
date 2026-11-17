@@ -11,3 +11,6 @@ chroma
 .venv
 **/node_modules
 platform/portal/dist
+.ruff_cache
+**/*.egg-info
+.demo*

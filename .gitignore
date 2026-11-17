@@ -17,3 +17,14 @@ platform/portal/dist/
 *.tsbuildinfo
 .demo*/
 video-linkedin/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+*.db-wal
+*.db-shm
+*.db-journal
+*.log
+*.bak
+*.orig
+*.tmp
