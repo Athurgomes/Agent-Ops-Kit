@@ -40,7 +40,7 @@ Os guardrails também atuam na allowlist de tools (antes de cada chamada) e marc
 - **Avaliação**: dataset de 50 casos, checagens determinísticas, juiz opcional (mesmo modelo de 8B), A/B pareado (permutação e bootstrap, semente fixa) e gate de CI que reavalia respostas gravadas conferindo um manifesto.
 - **Red team**: ataques em arquivos do repositório (`redteam/`), critérios de sucesso por categoria, ASR com intervalo de Wilson e medição de falsos positivos em perguntas legítimas.
 - **Relatório** (`aok report build`, `aok check --publish`): resultados gravados (eval e red team, mais o resultado da verificação da auditoria, se houver) viram um pacote (`relatorio.md/html/json`, `pacote.json`) que `--publish` copia para uma pasta local versionada, `<pasta>/<agent-id>/<timestamp UTC>/`, com `index.json` listando as versões. Não roda modelo e o log de auditoria não entra no pacote (ADR-006).
-- **Plataforma** (`platform/`, fases 2 e 3): serviço FastAPI que recebe o pacote por `POST /v1/reports` e, para pessoas com sessão, serve a leitura e o portal; ver abaixo, ADR-007 e ADR-008.
+- **Plataforma** (`platform/`): serviço FastAPI que recebe o pacote por `POST /v1/reports` e, para pessoas com sessão, serve a leitura e o portal. Entregue em fases: API (ADR-007), portal (ADR-008), administração (ADR-009), operador e várias organizações (ADR-010 e ADR-011) e recuperação de senha opcional (ADR-012); ver abaixo.
 - **Template** (`aok new`): gera um agente já instrumentado a partir de `src/agent_ops_kit/templates/agent/`.
 
 ## Plataforma (`platform/`)
@@ -88,7 +88,7 @@ flowchart LR
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `src/agent_ops_kit/cli.py` | CLI `aok`: `new`, `eval`, `redteam`, `audit` |
+| `src/agent_ops_kit/cli.py` | CLI `aok`: `new`, `eval`, `redteam`, `audit`, `report`, `check` |
 | `src/agent_ops_kit/config.py` | leitura e validação do `agent.yaml` |
 | `src/agent_ops_kit/tracing.py` | setup do OpenTelemetry e helpers de span |
 | `src/agent_ops_kit/audit.py` | log JSONL com hash encadeado, `verify`, `anchor` |
@@ -109,7 +109,9 @@ flowchart LR
 | `src/agent_ops_kit/report/` | pacote de relatório: `build` (agrega resultados gravados), `render` (md/html/json), `publish` (pasta local versionada) |
 | `src/agent_ops_kit/templates/agent/` | template do `aok new` |
 | `examples/rag_agent/` | agente de referência (agent, tools, indexer, corpus fictício) |
-| `.github/workflows/` | `ci.yml` (ruff e pytest) e `eval.yml` (gate com respostas gravadas) |
+| `.github/workflows/` | `ci.yml` (jobs `test`: ruff e pytest; `portal`: build do front-end; `postgres`: suíte de plataforma em Postgres 16) e `eval.yml` (gate com respostas gravadas) |
+| `scripts/demo.sh` | demo do kit com respostas gravadas e log de auditoria fictício, sem modelo |
+| `scripts/demo_plataforma.py` | sobe a plataforma de demonstração com um comando (SQLite, só em 127.0.0.1; seed, operador e organização `beta`; `--publicar`, `--reset`, `--dados`) |
 | `docker-compose.yml` | Jaeger (all-in-one) |
 | `platform/aok_platform/` | API da plataforma: `app`, `auth` (senha, token, papéis), `sessions` (login, sessão, throttle), `portal` (leitura, download, histórico), `models` (inclui `admin_event`), `reports`, `db`, `seed_demo` |
 | `platform/aok_platform/ops.py` | rotas `/v1/ops/*` do operador (ADR-010): organizações com contagens, criar e desativar, criar admin e reset de senha, visão geral só de metadados, trilhas |

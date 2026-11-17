@@ -90,7 +90,7 @@ Para subir tudo com um comando (dados de demonstração, operador e organizaçã
 - Verificado com o design atual: capturas de tela (Edge headless) a 1440 e 390 px de todas as telas (landing, login, áreas, agente, detalhe do relatório, downloads, admin), inspecionadas. O fluxo funcional (login de admin, áreas, logout) foi exercitado no navegador na versão anterior da interface e não foi reexecutado após o redesenho (a lógica de autenticação não mudou; só a rota de login passou a `/login`).
 - Limitações: throttle de login em memória (reinicia no deploy, não vale com vários workers e permite travar a conta de outra pessoa por 5 min); CSRF só por SameSite; tabelas sem migração.
 - Não existe: SSO, dark mode, PDF e Sign Up (multiempresa e operador: ver a seção seguinte; recuperação de senha: ver "Plataforma: recuperação de senha").
-- `python -m pytest -q` (árvore atual): 596 passed, 1 skipped (o skip é o teste de banco legado, que só roda com `AOK_TEST_DATABASE_URL`; a suíte de plataforma tem 254 testes; a suíte de plataforma completa (254 testes) rodou em Postgres no CI até 0b196eb; localmente, depois da recuperação de senha, só os 20 de recuperação e banco legado foram rodados em Postgres).
+- Testes: ver a seção "Estado e testes" abaixo.
 
 ### Plataforma: administração
 
@@ -146,6 +146,12 @@ Na primeira execução o corpus fictício é indexado em `chroma/`. Só uma perg
 Capturas reais de um trace (lista e detalhe dos spans) estão em [evidencias/02-trace-jaeger/](evidencias/02-trace-jaeger/).
 
 Para desligar o tracing: `AOK_TRACING=off`.
+
+## Estado e testes
+
+Conferido em 17/11/2026 no commit `0c8c6b8`: `python -m pytest -q` deu 615 passed e 2 skipped (cerca de 100 s); `python -m ruff check` passou. Os 2 skips são ambientais: um teste do demo que precisa criar link simbólico (sem privilégio no Windows) e o teste de banco legado, que só roda com `AOK_TEST_DATABASE_URL` apontando para um Postgres. Os testes não usam Ollama nem Docker. Dos 615, 254 são da suíte de plataforma (`tests/test_platform_*.py`); com `AOK_TEST_DATABASE_URL` ela roda em Postgres (ver [platform/README.md](platform/README.md)).
+
+Workflows (`.github/workflows/`): `ci.yml` (jobs `test`, `portal` e `postgres`) e `eval.yml` (gate de prompts com respostas gravadas). O último run de CI conferido é o #20, do commit `88dc3fc`, com os três jobs verdes ([evidencias/03-ci-github/](evidencias/03-ci-github/)); o CI do `HEAD` atual não foi reconfirmado.
 
 ## Resultados medidos
 
@@ -227,21 +233,23 @@ Nada disto existe ainda:
 - Execução em AWS/Bedrock.
 - Publicar o pacote (hoje só instala a partir do repositório).
 - Gravar um GIF da CLI.
+- Na plataforma: Alembic (migração formal), SSO, paginação das listagens do admin e limites de tentativa compartilhados entre processos.
 
 ## Estrutura do repositório
 
 ```
-src/agent_ops_kit/   pacote: cli, tracing, audit, metrics, guardrails/, eval/, redteam/, templates/
+src/agent_ops_kit/   pacote: cli (new, eval, redteam, audit, report, check), tracing, audit, metrics,
+                     guardrails/, eval/, redteam/, report/, templates/
 examples/rag_agent/  agente de referência e corpus fictício
 evals/               dataset, prompts v1/v2, respostas gravadas, manifesto, relatórios
 redteam/             ataques, perguntas benignas, resultados gravados
-platform/            plataforma (API de recebimento de relatórios)
+platform/            plataforma: aok_platform/ (API FastAPI), portal/ (React), Dockerfile, docker-compose.yml
 docs/                arquitetura, decisões (ADRs), resultados
-scripts/demo.sh      demo reproduzível (respostas gravadas)
+scripts/demo.sh      demo reproduzível do kit (respostas gravadas)
 scripts/demo_plataforma.py   sobe a plataforma de demonstração com um comando
 evidencias/          capturas de tela reais (terminal, Jaeger, GitHub, portal), com índice
 tests/               testes (sem Ollama e sem Docker)
-.github/workflows/   ci.yml e eval.yml
+.github/workflows/   ci.yml (test, portal, postgres) e eval.yml (gate)
 docker-compose.yml   Jaeger
 ```
 
