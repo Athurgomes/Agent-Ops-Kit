@@ -1,19 +1,22 @@
 """Sobe a plataforma de demonstração com um comando (somente stdlib; Windows e Linux).
 
-    python scripts/demo_plataforma.py [--porta 8000] [--publicar] [--reset]
+    python scripts/demo_plataforma.py [--porta 8000] [--publicar] [--reset] [--dados PASTA]
 
 Prepara o banco SQLite e os arquivos em .demo/ (ignorado pelo git), cria os dados de demonstração,
 um operador e a organização "beta", e inicia a API (com o portal) só em 127.0.0.1. Nenhuma senha,
 token ou chave é gravada em arquivo: as senhas aparecem uma vez no terminal. Ctrl+C encerra.
+A trava <pasta>/demo.lock (só pid, porta e hora) impede duas instâncias na mesma pasta.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import secrets
 import shutil
+import signal
 import socket
 import sqlite3
 import subprocess
@@ -21,10 +24,14 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEMO = ROOT / ".demo"
+DEFAULT_DEMO = ROOT / ".demo"
+LOCK = "demo.lock"
+MARCADOR = ".aok-demo"  # prova de que a pasta é de demonstração (conteúdo fixo, sem segredo)
+PERMITIDOS = {MARCADOR, "demo.db", "demo.db-wal", "demo.db-shm", "demo.db-journal", LOCK, "aok_data", "pacote"}
 PORTAL = ROOT / "platform" / "portal"
 HOST = "127.0.0.1"
 AGENT_SLUG = "assistente-politicas"
@@ -43,11 +50,11 @@ def die(msg: str, code: int = 1) -> None:
     raise SystemExit(code)
 
 
-def base_env() -> dict[str, str]:
+def base_env(demo: Path) -> dict[str, str]:
     """Ambiente herdado, sem nenhuma variável AOK_* do usuário, mais as da demonstração."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("AOK_")}
-    env["AOK_DATABASE_URL"] = "sqlite:///" + (DEMO / "demo.db").resolve().as_posix()
-    env["AOK_DATA_DIR"] = str((DEMO / "aok_data").resolve())
+    env["AOK_DATABASE_URL"] = "sqlite:///" + (demo / "demo.db").resolve().as_posix()
+    env["AOK_DATA_DIR"] = str((demo / "aok_data").resolve())
     env["AOK_COOKIE_SECURE"] = "false"
     env["AOK_OPS_ENABLED"] = "true"
     return env
@@ -65,9 +72,9 @@ def run_step(titulo: str, cmd: list[str], env: dict[str, str]) -> None:
     die(f"{titulo} falhou (código {res.returncode}). {err[-600:]}", 1)
 
 
-def ja_existe(tabela: str, coluna: str, valor: str) -> bool:
-    """Consulta direta ao SQLite de .demo/ (independe do texto de saída dos comandos)."""
-    db = DEMO / "demo.db"
+def ja_existe(demo: Path, tabela: str, coluna: str, valor: str) -> bool:
+    """Consulta direta ao SQLite da demonstração (independe do texto de saída dos comandos)."""
+    db = demo / "demo.db"
     if not db.is_file():
         return False
     con = sqlite3.connect(db)
@@ -78,6 +85,135 @@ def ja_existe(tabela: str, coluna: str, valor: str) -> bool:
         return False
     finally:
         con.close()
+
+
+def pid_vivo(pid: int) -> bool:
+    """True se o processo existe (checagem sem efeito colateral; Windows via OpenProcess)."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ctypes.get_last_error() == 5  # acesso negado: o processo existe
+        try:
+            code = wintypes.DWORD()
+            return bool(k32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259
+        finally:
+            k32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def ler_trava(demo: Path) -> dict | None:
+    try:
+        data = json.loads((demo / LOCK).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) and isinstance(data.get("pid"), int) else None
+    except (OSError, ValueError):
+        return None
+
+
+def checar_instancia(demo: Path) -> None:
+    """Recusa (código 1) se há instância viva na pasta; remove a trava velha (pid morto)."""
+    trava = demo / LOCK
+    if not trava.exists():
+        return
+    info = ler_trava(demo)
+    if info is not None and pid_vivo(info["pid"]):
+        die(
+            f"já existe uma demonstração em execução (pid {info['pid']}, porta {info.get('porta')}) "
+            "usando esta pasta; pare-a (Ctrl+C no terminal dela) ou use --dados outra-pasta"
+        )
+    trava.unlink(missing_ok=True)
+    log("aviso: trava velha removida (a instância anterior não está mais rodando)")
+
+
+def gravar_trava(demo: Path, porta: int) -> None:
+    """Cria a trava de forma exclusiva. Conteúdo: só pid, porta e hora (nenhum segredo)."""
+    corpo = {"pid": os.getpid(), "porta": porta, "inicio": datetime.now(UTC).isoformat(timespec="seconds")}
+    try:
+        fd = os.open(demo / LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        die("outra demonstração acabou de assumir esta pasta; use --dados outra-pasta")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(corpo, f)
+
+
+def remover_trava(demo: Path) -> None:
+    info = ler_trava(demo)
+    if info is not None and info["pid"] == os.getpid():
+        (demo / LOCK).unlink(missing_ok=True)
+
+
+def e_link(p: Path) -> bool:
+    """Symlink ou junção/ponto de reanálise (Windows), sem depender do Python 3.12+."""
+    if p.is_symlink():
+        return True
+    if os.name == "nt" and p.exists():
+        return bool(getattr(os.lstat(p), "st_file_attributes", 0) & 0x400)  # REPARSE_POINT
+    return False
+
+
+def validar_pasta(demo: Path) -> None:
+    """Só aceita pasta inexistente, vazia ou comprovadamente da demonstração (nada fora da lista)."""
+    if not demo.exists():
+        return
+    if not demo.is_dir():
+        die(f"{demo} existe mas é um arquivo, não uma pasta; escolha outro caminho com --dados")
+    itens = {i.name for i in demo.iterdir()}
+    if not itens:
+        return
+    estranho = sorted(itens - PERMITIDOS)
+    if estranho:
+        die(f"a pasta {demo} contém {estranho[0]!r}, que não é da demonstração; nada foi alterado. "
+            "Use uma pasta própria com --dados")
+    if not (itens & {MARCADOR, "demo.db", LOCK}):
+        die(f"a pasta {demo} não tem sinal de ser de uma demonstração ({MARCADOR} ou demo.db); "
+            "nada foi alterado. Use uma pasta própria com --dados")
+
+
+def resetar(demo: Path) -> None:
+    """Reset atômico: renomeia a pasta inteira e só então apaga. Falha de rename não apaga nada."""
+    if not demo.exists():
+        return
+    if e_link(demo):
+        die("a pasta de dados é um link simbólico ou junção; recusei o --reset (nada foi apagado)")
+    real = demo.resolve()
+    if real == ROOT or real in ROOT.parents or real.parent == real:
+        die("pasta de dados inválida para --reset; nada foi apagado")
+    validar_pasta(demo)
+    destino = demo.with_name(f"{demo.name}.apagando-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}")
+    try:
+        os.replace(demo, destino)
+    except OSError as exc:
+        die(f"pasta em uso ({exc.__class__.__name__}); nada foi apagado. Pare a outra instância ou use --dados")
+    shutil.rmtree(destino, ignore_errors=True)
+    if destino.exists():
+        log(f"aviso: não consegui apagar tudo; sobrou {destino} (apague à mão)")
+    else:
+        log(f"pasta {demo.name} apagada (--reset)")
+
+
+def aviso_gitignore(demo: Path) -> None:
+    """Pasta dentro do repositório e fora do padrão .demo* precisa estar no .gitignore."""
+    try:
+        rel = demo.resolve().relative_to(ROOT)
+    except ValueError:
+        return
+    if not (len(rel.parts) == 1 and rel.parts[0].startswith(".demo")):
+        log(f"aviso: {rel.as_posix()} está dentro do repositório; inclua-a no .gitignore para não versionar os dados.")
 
 
 def porta_ocupada(porta: int) -> bool:
@@ -130,7 +266,7 @@ def chamar(url: str, metodo: str, chave: str, corpo: dict | None = None) -> dict
         return json.loads(r.read().decode("utf-8"))
 
 
-def publicar(base: str, chave: str, env: dict[str, str]) -> None:
+def publicar(base: str, chave: str, env: dict[str, str], demo: Path) -> None:
     log(f"\n== Publicando um relatório do agente {AGENT_SLUG}")
     try:
         agentes = chamar(f"{base}/v1/admin/agents", "GET", chave)
@@ -143,7 +279,7 @@ def publicar(base: str, chave: str, env: dict[str, str]) -> None:
         sys.executable, "-m", "agent_ops_kit.cli", "check",
         "--config", "examples/rag_agent/agent.yaml",
         "--publish", base, "--agent-id", AGENT_SLUG,
-        "--out", str(DEMO / "pacote"),
+        "--out", str(demo / "pacote"),
     ]
     res = subprocess.run(
         cmd, cwd=ROOT, env={**env, "AOK_PLATFORM_TOKEN": token},
@@ -156,52 +292,63 @@ def publicar(base: str, chave: str, env: dict[str, str]) -> None:
     log("\n".join(saida) or "publicado")
 
 
+def _sigterm(_signo, _frame) -> None:
+    raise KeyboardInterrupt
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Sobe a plataforma de demonstração (local, sem Docker).")
     ap.add_argument("--porta", type=int, default=8000, help="porta em 127.0.0.1 (padrão 8000)")
     ap.add_argument("--publicar", action="store_true", help="emite um token e publica um relatório pelo kit")
-    ap.add_argument("--reset", action="store_true", help="apaga a pasta .demo/ antes de começar")
+    ap.add_argument("--reset", action="store_true", help="apaga a pasta de dados antes de começar")
+    ap.add_argument("--dados", default=None, metavar="PASTA",
+                    help="pasta de dados da demonstração (padrão: .demo na raiz do repositório)")
     args = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
     if not 1 <= args.porta <= 65535:
         die("porta inválida")
+    demo = Path(os.path.abspath(args.dados)) if args.dados else DEFAULT_DEMO  # sem resolver links
+    aviso_gitignore(demo)
+    checar_instancia(demo)  # antes de resetar ou subir: nunca mexe na pasta de uma instância viva
     if porta_ocupada(args.porta):
         die(f"a porta {args.porta} já está em uso; escolha outra com --porta")
-
-    if args.reset and DEMO.exists():
-        if DEMO.resolve().parent != ROOT:
-            die("pasta de dados inesperada; nada foi apagado")
-        shutil.rmtree(DEMO)
-        log("pasta .demo/ apagada (--reset)")
-    (DEMO / "aok_data").mkdir(parents=True, exist_ok=True)
-
-    log("aviso: AOK_COOKIE_SECURE=false só porque o acesso é http local; nunca use isso em produção.")
-    garantir_portal()
-    env = base_env()
-    py = sys.executable
-    run_step("Dados de demonstração", [py, "-m", "aok_platform.seed_demo"], env)
-    if ja_existe("platform_operator", "email", OPS_EMAIL):
-        log(f"\n== Operador da plataforma: {OPS_EMAIL} já existe (mantido)")
-    else:
-        run_step("Operador da plataforma", [py, "-m", "aok_platform.create_operator", "--email", OPS_EMAIL], env)
-    if ja_existe("organization", "slug", "beta"):
-        log("\n== Organização beta: já existe (mantida)")
-    else:
-        run_step("Organização beta", [py, "-m", "aok_platform.create_org", "--slug", "beta", "--name", "Beta"], env)
-
-    chave = secrets.token_urlsafe(32)  # só em memória, nunca impressa
-    base = f"http://{HOST}:{args.porta}"
-    log(f"\n== Iniciando a API em {base} (somente loopback)")
-    proc = subprocess.Popen(
-        [py, "-m", "uvicorn", "aok_platform.app:create_app", "--factory",
-         "--host", HOST, "--port", str(args.porta), "--log-level", "warning"],
-        cwd=ROOT, env={**env, "AOK_ADMIN_BOOTSTRAP_KEY": chave},
-    )
+    validar_pasta(demo)
+    if args.reset:
+        resetar(demo)
+    demo.mkdir(parents=True, exist_ok=True)
+    (demo / MARCADOR).write_text("pasta de dados da demonstração do agent-ops-kit", encoding="utf-8")
+    (demo / "aok_data").mkdir(exist_ok=True)
+    gravar_trava(demo, args.porta)
+    proc: subprocess.Popen | None = None
     try:
+        with contextlib.suppress(ValueError, OSError):  # só no thread principal
+            signal.signal(signal.SIGTERM, _sigterm)
+        log("aviso: AOK_COOKIE_SECURE=false só porque o acesso é http local; nunca use isso em produção.")
+        garantir_portal()
+        env = base_env(demo)
+        py = sys.executable
+        run_step("Dados de demonstração", [py, "-m", "aok_platform.seed_demo"], env)
+        if ja_existe(demo, "platform_operator", "email", OPS_EMAIL):
+            log(f"\n== Operador da plataforma: {OPS_EMAIL} já existe (mantido)")
+        else:
+            run_step("Operador da plataforma", [py, "-m", "aok_platform.create_operator", "--email", OPS_EMAIL], env)
+        if ja_existe(demo, "organization", "slug", "beta"):
+            log("\n== Organização beta: já existe (mantida)")
+        else:
+            run_step("Organização beta", [py, "-m", "aok_platform.create_org", "--slug", "beta", "--name", "Beta"], env)
+
+        chave = secrets.token_urlsafe(32)  # só em memória, nunca impressa
+        base = f"http://{HOST}:{args.porta}"
+        log(f"\n== Iniciando a API em {base} (somente loopback)")
+        proc = subprocess.Popen(
+            [py, "-m", "uvicorn", "aok_platform.app:create_app", "--factory",
+             "--host", HOST, "--port", str(args.porta), "--log-level", "warning"],
+            cwd=ROOT, env={**env, "AOK_ADMIN_BOOTSTRAP_KEY": chave},
+        )
         esperar_api(proc, base)
         if args.publicar:
-            publicar(base, chave, env)
+            publicar(base, chave, env, demo)
         log(f"\n== Pronto\nPortal:             {base}\nConsole do operador: {base}/ops/login")
         log("Logins (as senhas foram mostradas acima, uma única vez; rode com --reset para gerar outras):")
         for email in [*LOGINS, f"{OPS_EMAIL} (operador, em /ops/login)"]:
@@ -218,13 +365,14 @@ def main(argv: list[str] | None = None) -> int:
         log("\nEncerrando...")
         return 0
     finally:
-        if proc.poll() is None:
+        if proc is not None and proc.poll() is None:
             proc.terminate()
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
+        remover_trava(demo)
 
 
 if __name__ == "__main__":

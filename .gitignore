@@ -15,4 +15,4 @@ aok_data/
 node_modules/
 platform/portal/dist/
 *.tsbuildinfo
-.demo/
+.demo*/
