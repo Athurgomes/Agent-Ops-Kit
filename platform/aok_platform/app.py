@@ -10,9 +10,9 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exception_handlers import http_exception_handler
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -657,6 +657,21 @@ def default_portal_dir() -> Path:
     return Path(env) if env else Path(__file__).resolve().parent.parent / "portal" / "dist"
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    """Parse boolean environment variable; return default when unset, empty, or invalid."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    val = raw.strip().lower()
+    if not val:
+        return default
+    if val in {"1", "true", "yes", "on"}:
+        return True
+    if val in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def mount_portal(app: FastAPI, dist: Path) -> None:
     """Serve o portal (SPA) em `/` via o 404 do roteador; só se `dist/index.html` existir.
 
@@ -669,7 +684,12 @@ def mount_portal(app: FastAPI, dist: Path) -> None:
 
     async def portal(request: Request, exc: StarletteHTTPException):
         path = request.url.path.lstrip("/")
-        if request.method not in ("GET", "HEAD") or path == "v1" or path.startswith("v1/"):
+        if (
+            request.method not in ("GET", "HEAD")
+            or path == "v1"
+            or path.startswith("v1/")
+            or path.rstrip("/") in ("docs", "redoc", "openapi.json")
+        ):
             return await http_exception_handler(request, exc)
         target = (base / path).resolve()
         if path and target.is_relative_to(base) and target.is_file():
@@ -693,10 +713,48 @@ def create_app(database_url: str | None = None, data_dir: str | Path | None = No
     engine = make_engine(database_url)
     init_db(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
-    app = FastAPI(title="agent-ops-kit platform", version="0.1.0")
+    docs_enabled = _env_bool("AOK_DOCS_ENABLED", True)
+    app = FastAPI(
+        title="agent-ops-kit platform",
+        version="0.1.0",
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
+    )
     app.state.engine = engine
     app.state.session_factory = factory
     data = Path(data_dir or os.environ.get("AOK_DATA_DIR") or "./aok_data")
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        if _env_bool("AOK_HSTS_ENABLED", False):
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
+        return response
+
+    @app.get("/v1/health")
+    def health():
+        try:
+            with app.state.session_factory() as s:
+                s.execute(text("SELECT 1"))
+            data.mkdir(parents=True, exist_ok=True)
+        except Exception:  # noqa: BLE001 - healthcheck must never leak DB or I/O internals
+            return JSONResponse(
+                {"status": "unavailable"},
+                status_code=503,
+                headers={"Cache-Control": "no-store"},
+            )
+        return JSONResponse(
+            {"status": "ok"},
+            status_code=200,
+            headers={"Cache-Control": "no-store"},
+        )
+
     get_session = session_dependency(factory)
     current_user, current_org_admin, require_admin = make_dependencies(get_session)
     app.state.throttle = LoginThrottle()

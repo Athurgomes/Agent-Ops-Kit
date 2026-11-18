@@ -14,12 +14,15 @@ services:
       AOK_ADMIN_BOOTSTRAP_KEY: ${AOK_ADMIN_BOOTSTRAP_KEY:?defina AOK_ADMIN_BOOTSTRAP_KEY}
       AOK_DATA_DIR: /data
       AOK_COOKIE_SECURE: ${AOK_COOKIE_SECURE:-true}
+      AOK_DOCS_ENABLED: ${AOK_DOCS_ENABLED:-true}
+      AOK_HSTS_ENABLED: ${AOK_HSTS_ENABLED:-false}
+      AOK_TRUSTED_PROXIES: ${AOK_TRUSTED_PROXIES:-}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - aok_data:/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=3)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/health', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 6

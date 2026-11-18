@@ -10,7 +10,9 @@ em memória, por processo, como o do login. O operador da plataforma não usa es
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import os
 import threading
 import time
 from datetime import timedelta
@@ -145,9 +147,58 @@ def _notify_changed(email: str) -> None:
     )
 
 
-def _ip(request: Request) -> str:
-    # Atrás de proxy este é o IP do proxy (não confiamos em X-Forwarded-For sem configuração): ver README.
-    return request.client.host if request.client else "unknown"
+def _trusted_networks() -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    raw = os.environ.get("AOK_TRUSTED_PROXIES", "")
+    nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for entry in raw.split(","):
+        item = entry.strip()
+        if not item:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            log.warning("ignoring invalid AOK_TRUSTED_PROXIES entry: %r", item)
+    return tuple(nets)
+
+
+def _parse_ip(raw: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    try:
+        return ipaddress.ip_address(raw.strip())
+    except ValueError:
+        return None
+
+
+def _is_trusted(
+    addr: ipaddress.IPv4Address | ipaddress.IPv6Address,
+    nets: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...],
+) -> bool:
+    return any(addr in net for net in nets)
+
+
+def client_ip(request: Request) -> str:
+    """Resolve client IP, trusting X-Forwarded-For only when peer is in AOK_TRUSTED_PROXIES."""
+    peer = request.client.host if request.client else "unknown"
+    nets = _trusted_networks()
+    if not nets:
+        return peer
+    peer_ip = _parse_ip(peer)
+    if peer_ip is None or not _is_trusted(peer_ip, nets):
+        return peer
+    getlist = getattr(request.headers, "getlist", None)
+    if callable(getlist):
+        xff_parts = getlist("x-forwarded-for")
+    else:
+        val = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+        xff_parts = [val] if val else []
+    if not xff_parts:
+        return peer
+    ips = [ip for part in xff_parts for raw in part.split(",") if (ip := _parse_ip(raw)) is not None]
+    if not ips:
+        return peer
+    for ip in reversed(ips):
+        if not _is_trusted(ip, nets):
+            return str(ip)
+    return str(ips[0])
 
 
 def build_recovery_router(get_session, factory: sessionmaker[Session], limiters: dict[str, HourlyLimiter]) -> APIRouter:
@@ -163,7 +214,7 @@ def build_recovery_router(get_session, factory: sessionmaker[Session], limiters:
             raise HTTPException(404, "not found")
         email = body.email.strip().lower()
         by_email = limiters["email"].hit(email)  # os dois contadores sempre andam: comportamento idêntico
-        by_ip = limiters["ip"].hit(_ip(request))
+        by_ip = limiters["ip"].hit(client_ip(request))
         return JSONResponse(
             GENERIC, status_code=202, background=BackgroundTask(_process_forgot, factory, email, by_email and by_ip)
         )
@@ -172,7 +223,7 @@ def build_recovery_router(get_session, factory: sessionmaker[Session], limiters:
     def reset(body: ResetIn, request: Request, s: Session = Depends(get_session)):
         if not mailer.recovery_enabled():
             raise HTTPException(404, "not found")
-        ip = _ip(request)
+        ip = client_ip(request)
         if limiters["fail"].exceeded(ip):
             raise HTTPException(429, "too many attempts; try again later")
 
