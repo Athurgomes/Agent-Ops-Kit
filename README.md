@@ -151,7 +151,7 @@ Para desligar o tracing: `AOK_TRACING=off`.
 
 Conferido em 17/11/2026 no commit `0c8c6b8`: `python -m pytest -q` deu 615 passed e 2 skipped (cerca de 100 s); `python -m ruff check` passou. Os 2 skips são ambientais: um teste do demo que precisa criar link simbólico (sem privilégio no Windows) e o teste de banco legado, que só roda com `AOK_TEST_DATABASE_URL` apontando para um Postgres. Os testes não usam Ollama nem Docker. Dos 615, 254 são da suíte de plataforma (`tests/test_platform_*.py`); com `AOK_TEST_DATABASE_URL` ela roda em Postgres (ver [platform/README.md](platform/README.md)).
 
-Workflows (`.github/workflows/`): `ci.yml` (jobs `test`, `portal` e `postgres`) e `eval.yml` (gate de prompts com respostas gravadas). O último run de CI conferido é o #20, do commit `88dc3fc`, com os três jobs verdes ([evidencias/03-ci-github/](evidencias/03-ci-github/)); o CI do `HEAD` atual não foi reconfirmado.
+Workflows (`.github/workflows/`): `ci.yml` (jobs `test`, `portal` e `postgres`) e `eval.yml` (gate de prompts com respostas gravadas). Além do run #20 (`88dc3fc`, em [evidencias/03-ci-github/](evidencias/03-ci-github/)), o run #25, do commit `669633a` (conferido em 17/11/2026), passou nos três jobs (`test`, `portal` e `postgres`) em `ubuntu-latest`, onde o teste de link simbólico de `tests/test_demo_plataforma.py` roda sem skip (também reconfirmado localmente em `python:3.11-slim`).
 
 ## Resultados medidos
 

@@ -185,7 +185,7 @@ docker rm -f aok-pg-test
 ```
 
 A suíte em Postgres é bem mais lenta (um schema por teste). O CI tem o job `postgres` com o mesmo teste; ele passou
-no GitHub até o commit 0b196eb.
+no GitHub até o run #25 (commit 669633a, conferido em 17/11/2026).
 
 ## Recuperação de senha (e-mail, opcional)
 
