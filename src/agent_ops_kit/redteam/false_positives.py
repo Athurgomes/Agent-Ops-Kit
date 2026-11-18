@@ -18,17 +18,16 @@ from agent_ops_kit.eval.ab import ABResult, format_ab_markdown, paired_ab
 from agent_ops_kit.eval.checks import run_checks
 from agent_ops_kit.eval.dataset import EvalCase, load_dataset
 from agent_ops_kit.eval.prompts import load_prompt
-from agent_ops_kit.eval.runner import final_answer, load_records, score_records
+from agent_ops_kit.eval.runner import LLMFn, final_answer, load_records, score_records
 from agent_ops_kit.redteam.harness import (
     REDTEAM_DIR,
+    _load_example,
     build_guardrails,
     build_testbed_system_prompt,
     make_seeded_llm,
     parse_guardrails,
     wilson_interval,
 )
-from examples.rag_agent.agent import CONFIG_PATH, LLMFn, run_agent
-from examples.rag_agent.tools import TOOL_SCHEMAS
 
 BENIGN_PATH = REDTEAM_DIR / "benign" / "benign.jsonl"
 
@@ -47,9 +46,10 @@ def run_benign(
 ) -> list[dict]:
     """Um registro por pergunta: case_id, blocked, blocked_by, reasons, answer (entregue),
     raw_answer (antes do filtro de saída), score (checagens determinísticas), error."""
+    _, run_agent, tool_schemas, _ = _load_example()
     llm = llm or make_seeded_llm(seed)
     tb_config = config.model_copy(update={"system_prompt": build_testbed_system_prompt(config)})
-    tools = [TOOL_SCHEMAS[t] for t in config.tools]
+    tools = [tool_schemas[t] for t in config.tools]
     records: list[dict] = []
     out = None
     if out_path:
@@ -166,8 +166,9 @@ def main(argv: list[str] | None = None) -> int:
         names = parse_guardrails(args.guardrails)
     except ValueError as e:
         ap.error(str(e))
+    config_path, _, _, _ = _load_example()
     out_dir = Path(args.out_dir)
-    config = load_config(CONFIG_PATH)
+    config = load_config(config_path)
     cfg = config.model_copy(update={"system_prompt": load_prompt("v1"), "prompt_version": "v1"})
     dataset = load_dataset(args.dataset)[: args.limit]
     benign = load_benign(args.benign)[: args.limit]

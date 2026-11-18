@@ -20,9 +20,9 @@ dependencies = [
 aok = "agent_ops_kit.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "httpx"]
 rag = ["chromadb", "ollama"]
-platform = ["fastapi", "uvicorn", "sqlalchemy>=2", "psycopg[binary]", "httpx"]
+platform = ["fastapi", "uvicorn", "sqlalchemy>=2", "psycopg[binary]"]
 
 [tool.setuptools.packages.find]
 where = ["src", "platform"]

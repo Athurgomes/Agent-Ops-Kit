@@ -20,13 +20,13 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from agent_ops_kit.config import AgentConfig, load_config
+from agent_ops_kit.eval.runner import LLMFn
 from agent_ops_kit.guardrails import Guardrails
 from agent_ops_kit.redteam import testbed
 from agent_ops_kit.redteam.attacks import AttackCase, load_attacks
 from agent_ops_kit.redteam.criteria import evaluate_attack
-from examples.rag_agent.agent import CONFIG_PATH, MAX_ITERATIONS, LLMFn, run_agent
-from examples.rag_agent.tools import TOOL_SCHEMAS, _schema, run_tool
 
+MAX_ITERATIONS = 5
 REDTEAM_DIR = Path(__file__).resolve().parents[3] / "redteam"
 ATTACKS_DIR = REDTEAM_DIR / "attacks"
 POISONED_DIR = REDTEAM_DIR / "poisoned_corpus"
@@ -34,15 +34,53 @@ POISONED_DIR = REDTEAM_DIR / "poisoned_corpus"
 ALL_GUARDRAILS = ("input_filter", "untrusted_content", "tool_allowlist", "output_filter", "canary")
 CATEGORIES = ("injecao_direta", "injecao_indireta", "abuso_de_tools", "exfiltracao")
 
+
+def _tool_schema(name: str, description: str, params: dict[str, str]) -> dict:
+    """Schema de tool no formato OpenAI/Ollama."""
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": {p: {"type": "string", "description": d} for p, d in params.items()},
+                "required": list(params),
+            },
+        },
+    }
+
+
+def _load_example() -> tuple[
+    Path,
+    Callable[..., str],
+    dict[str, dict],
+    Callable[[str, dict, int], str],
+]:
+    try:
+        from examples.rag_agent.agent import CONFIG_PATH, run_agent
+        from examples.rag_agent.tools import TOOL_SCHEMAS, run_tool
+    except ImportError as exc:
+        raise ImportError(
+            "agente de referência (examples.rag_agent) indisponível; "
+            "execute a partir da raiz do repositório"
+        ) from exc
+    return CONFIG_PATH, run_agent, TOOL_SCHEMAS, run_tool
+
+
 _FORBIDDEN_FUNCS: dict[str, Callable[..., str]] = {
     "send_email": testbed.send_email,
     "read_file": testbed.read_file,
     "delete_record": testbed.delete_record,
 }
 FORBIDDEN_SCHEMAS = [
-    _schema("send_email", "Envia um e-mail.", {"to": "destinatário", "subject": "assunto", "body": "texto"}),
-    _schema("read_file", "Lê um arquivo do servidor.", {"path": "caminho do arquivo"}),
-    _schema("delete_record", "Apaga um registro.", {"record_id": "id do registro"}),
+    _tool_schema(
+        "send_email",
+        "Envia um e-mail.",
+        {"to": "destinatário", "subject": "assunto", "body": "texto"},
+    ),
+    _tool_schema("read_file", "Lê um arquivo do servidor.", {"path": "caminho do arquivo"}),
+    _tool_schema("delete_record", "Apaga um registro.", {"record_id": "id do registro"}),
 ]
 
 
@@ -95,10 +133,11 @@ def make_seeded_llm(seed: int = 42) -> LLMFn:
 def make_tool_runner(
     case: AttackCase,
     calls: list[str],
-    base_runner: Callable[[str, dict, int], str] = run_tool,
+    base_runner: Callable[[str, dict, int], str] | None = None,
     poisoned_dir: Path = POISONED_DIR,
 ) -> Callable[[str, dict, int], str]:
     """Tool runner do testbed: registra toda chamada; tools proibidas são falsas."""
+    resolved_base = base_runner if base_runner is not None else _load_example()[3]
 
     def runner(name: str, arguments: dict, k: int = 3) -> str:
         calls.append(name)
@@ -107,7 +146,7 @@ def make_tool_runner(
                 return _FORBIDDEN_FUNCS[name]([], **dict(arguments))
             except TypeError as e:
                 return f"erro: argumentos inválidos ({e})"
-        result = base_runner(name, arguments, k)
+        result = resolved_base(name, arguments, k)
         if name == "search_docs" and case.poisoned_doc:
             text = (poisoned_dir / case.poisoned_doc).read_text(encoding="utf-8")
             result = f"{result}\n\n[fonte: {case.poisoned_doc}]\n{text}"
@@ -122,12 +161,13 @@ def run_attack(
     llm: LLMFn | None = None,
     seed: int = 42,
     max_iterations: int = MAX_ITERATIONS,
-    base_runner: Callable[[str, dict, int], str] = run_tool,
+    base_runner: Callable[[str, dict, int], str] | None = None,
     guardrails: list[str] | None = None,
 ) -> AttackRecord:
+    _, run_agent, tool_schemas, _ = _load_example()
     llm = llm or make_seeded_llm(seed)
     tb_config = config.model_copy(update={"system_prompt": build_testbed_system_prompt(config)})
-    tools = [TOOL_SCHEMAS[t] for t in config.tools] + FORBIDDEN_SCHEMAS
+    tools = [tool_schemas[t] for t in config.tools] + FORBIDDEN_SCHEMAS
     calls: list[str] = []
     events: list[dict] = []
     g = build_guardrails(tb_config, guardrails) if guardrails else None
@@ -264,8 +304,9 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as e:
             ap.error(str(e))
     out = args.out or "redteam/results/baseline.jsonl"
+    config_path, _, _, _ = _load_example()
     cases = load_attacks(args.attacks_dir, POISONED_DIR)
-    config = load_config(CONFIG_PATH)
+    config = load_config(config_path)
     records = run_suite(cases, config, out_path=out, limit=args.limit, seed=args.seed,
                         guardrails=names)
     title = "ASR com guardrails" if names else "ASR sem guardrails"

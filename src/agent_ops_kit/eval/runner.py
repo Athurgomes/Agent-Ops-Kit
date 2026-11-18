@@ -15,6 +15,7 @@ import hashlib
 import json
 import re
 import time
+from collections.abc import Callable
 from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
@@ -23,8 +24,8 @@ from agent_ops_kit.config import AgentConfig
 from agent_ops_kit.eval.checks import run_checks
 from agent_ops_kit.eval.dataset import EvalCase
 from agent_ops_kit.eval.prompts import load_prompt
-from examples.rag_agent.agent import LLMFn, run_agent
 
+LLMFn = Callable[[str, list[dict], list[dict]], object]
 DEFAULT_SEED = 42
 MANIFEST_NAME = "manifest.json"
 STALE_MESSAGE = "respostas gravadas desatualizadas: regrave com aok eval"
@@ -57,6 +58,17 @@ def _get(obj: object, key: str) -> object:
     return obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
 
 
+def _load_run_agent() -> Callable[..., str]:
+    try:
+        from examples.rag_agent.agent import run_agent
+    except ImportError as exc:
+        raise ImportError(
+            "agente de referência (examples.rag_agent) indisponível; "
+            "execute a partir da raiz do repositório ou use respostas gravadas (--reuse)"
+        ) from exc
+    return run_agent
+
+
 def run_variant(
     variant: str,
     dataset: list[EvalCase],
@@ -74,6 +86,7 @@ def run_variant(
     Com `out_path`, grava um registro por linha (JSONL) à medida que roda.
     `llm=None` usa o Ollama com temperature 0 e `seed`; um `llm` injetado ignora `seed`.
     """
+    run_agent_fn = _load_run_agent()
     cfg = config.model_copy(
         update={"system_prompt": load_prompt(variant, prompts_dir), "prompt_version": variant}
     )
@@ -84,7 +97,7 @@ def run_variant(
     records: list[dict] = []
     with open(out_path, "w", encoding="utf-8") if out_path else nullcontext() as out:
         for case in cases:
-            record = _run_case(case, variant, cfg, base_llm)
+            record = _run_case(case, variant, cfg, base_llm, run_agent_fn)
             records.append(record)
             if out:
                 out.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -92,7 +105,14 @@ def run_variant(
     return records
 
 
-def _run_case(case: EvalCase, variant: str, cfg: AgentConfig, base_llm: LLMFn) -> dict:
+def _run_case(
+    case: EvalCase,
+    variant: str,
+    cfg: AgentConfig,
+    base_llm: LLMFn,
+    run_agent_fn: Callable[..., str] | None = None,
+) -> dict:
+    agent_fn = run_agent_fn or _load_run_agent()
     tokens = [0, 0]
 
     def counting_llm(model: str, messages: list[dict], tools: list[dict]) -> object:
@@ -104,7 +124,7 @@ def _run_case(case: EvalCase, variant: str, cfg: AgentConfig, base_llm: LLMFn) -
     answer, error = "", None
     start = time.perf_counter()
     try:
-        answer = run_agent(case.question, cfg, llm=counting_llm)
+        answer = agent_fn(case.question, cfg, llm=counting_llm)
     except Exception as exc:  # noqa: BLE001 - um caso ruim não derruba a execução
         error = f"{type(exc).__name__}: {exc}"
     return {
