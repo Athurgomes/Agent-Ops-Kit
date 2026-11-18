@@ -124,7 +124,7 @@ Opcional (ADR-012). Fica ativa só com `AOK_SMTP_HOST` e `AOK_PUBLIC_URL` defini
 
 - O usuário pede em `/forgot-password` e vê a mesma resposta para e-mail existente ou não; só o existente recebe o e-mail, com link `#token` válido por 30 min e de uso único.
 - Em `/reset-password` define a senha nova (12+ caracteres). Todas as sessões são revogadas, não há login automático e chega um aviso de troca.
-- Verificado no navegador (Edge) com servidor SMTP local (Mailpit), e em postgres:16 local (20 testes de recuperação e banco legado passaram). Não exercitados: provedor SMTP real (STARTTLS, entregabilidade), 429 do reset na interface, leitor de tela, contraste e outros navegadores. O CI do commit 0b196eb passou (test, portal e postgres).
+- Verificado no navegador (Edge) com servidor SMTP local (Mailpit), e em `postgres:16` local em 17/11/2026 (suíte completa de plataforma: `254 passed, 0 skipped` em 266.37s (0:04:26), commit `79f1d01`, incluindo recuperação de senha e banco legado; ver ADR-007 em [docs/decisoes.md](docs/decisoes.md)). Não exercitados: provedor SMTP real (STARTTLS, entregabilidade), 429 do reset na interface, leitor de tela, contraste e outros navegadores. O CI do commit 0b196eb passou (test, portal e postgres).
 - Limitações: limites de pedidos em memória (por processo, reiniciam no deploy); atrás de proxy o IP visto é o do proxy, então o bloqueio por tentativas inválidas pode atingir quem compartilha o IP, mesmo com token válido; operadores seguem com reset só pela CLI.
 
 ### Com o modelo (usa o Ollama)

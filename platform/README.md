@@ -184,8 +184,10 @@ python -m pytest tests/test_platform_*.py -q      # inclui test_platform_pg_lega
 docker rm -f aok-pg-test
 ```
 
-A suíte em Postgres é bem mais lenta (um schema por teste). O CI tem o job `postgres` com o mesmo teste; ele passou
-no GitHub até o run #25 (commit 669633a, conferido em 17/11/2026).
+A suíte em Postgres é bem mais lenta (um schema por teste): localmente em `postgres:16` efêmero, em 17/11/2026 (commit
+`79f1d01`), a suíte completa passou com `254 passed, 0 skipped` em 266.37s (0:04:26) (incluindo `test_platform_pg_legacy.py`).
+O CI também tem o job `postgres` com o mesmo teste; ele passou no GitHub até o run #25 (commit 669633a, conferido em
+17/11/2026).
 
 ## Recuperação de senha (e-mail, opcional)
 
