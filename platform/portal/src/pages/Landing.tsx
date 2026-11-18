@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { BRAND } from "../brand";
+import { BRAND, BRAND_TAGLINE } from "../brand";
 import { LIMITS_TEXT, SELF_DECLARED_TEXT } from "../format";
 import { LinkButton, SoonButton } from "../ui";
 import { BeforeAfter, Proof, Showcase } from "./LandingSections";
@@ -72,7 +72,7 @@ function Hero() {
   return (
     <div className="container-page grid grid-cols-12 items-end gap-x-0 gap-y-12 py-24 lg:gap-x-12">
       <div className="col-span-12 flex flex-col items-start gap-8 lg:col-span-7">
-        <p className="text-sm font-extrabold">Reports for AI agents</p>
+        <p className="text-sm font-extrabold">{BRAND_TAGLINE}</p>
         <h1 className="heading text-5xl sm:text-6xl lg:text-7xl">
           See what your AI agents were tested for. Read what was left out.
         </h1>
