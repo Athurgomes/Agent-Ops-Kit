@@ -8,9 +8,9 @@ import { fmtDateLong, fmtNum, fmtPct, fmtSigned, LIMITS_TEXT, RULE_TEXT, SELF_DE
 import { Box, Button, ErrorBox, Loading, PageHeader, SemaforoBadge, useAsync } from "../ui";
 
 const FORMATS: { f: Format; label: string }[] = [
-  { f: "md", label: "Download MD" },
-  { f: "html", label: "Download HTML" },
-  { f: "json", label: "Download JSON" },
+  { f: "html", label: "Download HTML (ABNT / Print PDF)" },
+  { f: "md", label: "Download Markdown" },
+  { f: "json", label: "Download JSON (Evidence)" },
 ];
 
 function DownloadButtons({ r }: { r: ReportDetail }) {
@@ -31,10 +31,13 @@ function DownloadButtons({ r }: { r: ReportDetail }) {
   return (
     <div className="flex flex-col gap-3">
       {FORMATS.map(({ f, label }) => (
-        <Button key={f} variant={f === "md" ? "primary" : "secondary"} disabled={busy !== null} onClick={() => go(f)}>
+        <Button key={f} variant={f === "html" ? "primary" : "secondary"} disabled={busy !== null} onClick={() => go(f)}>
           {busy === f ? "Downloading…" : label}
         </Button>
       ))}
+      <p className="text-sm text-subtle">
+        Open the HTML report in your browser and use Print / Save as PDF for an A4 document formatted under ABNT NBR 10719.
+      </p>
       <div role="status" aria-live="polite">
         {msg && (msg.ok ? <p className="text-sm text-subtle">{msg.text}</p> : <ErrorBox>{msg.text}</ErrorBox>)}
       </div>

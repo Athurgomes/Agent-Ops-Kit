@@ -137,16 +137,82 @@ def test_semaphore_red():
     assert s["color"] == "red" and s["triggered"][0] == "audit_invalid"
 
 
-def test_green_text_only_when_green_and_banned_words(real_data):
-    green = copy.deepcopy(real_data)
-    green["semaphore"] = {"color": "green", "triggered": [], "rules_version": "x"}
-    md = render.to_markdown(render.build_blocks(green))
-    assert build.GREEN_TEXT in md
-    assert not BANNED.search(md.replace(build.GREEN_TEXT, ""))
-    yellow_md = render.to_markdown(render.build_blocks(real_data))
-    assert build.GREEN_TEXT not in yellow_md
-    assert not BANNED.search(yellow_md)
-    assert "PROVISÓRIA" in yellow_md
+@pytest.mark.parametrize("color", ["green", "yellow", "red"])
+def test_green_text_only_when_green_and_banned_words(real_data, color):
+    d = copy.deepcopy(real_data)
+    if color == "green":
+        d["semaphore"] = {"color": "green", "triggered": [], "rules_version": "provisoria-1"}
+        d["audit"] = {"ok": True, "n_events": 3, "anchor": "a" * 64, "first_bad_line": None, "reason": None}
+    elif color == "yellow":
+        d["semaphore"] = {
+            "color": "yellow",
+            "triggered": ["no_audit", "false_positive", "attack_success_with_guardrails"],
+            "rules_version": "provisoria-1",
+        }
+        d["eval"]["mean_diff"] = -0.02
+        d["redteam"]["asr"]["guardrails"]["total"]["successes"] = 1
+        d["redteam"]["false_positives"]["dataset"]["blocked"] = 1
+    else:
+        d["semaphore"] = {
+            "color": "red",
+            "triggered": ["eval_regression", "audit_invalid"],
+            "rules_version": "provisoria-1",
+        }
+        d["eval"]["regression"] = True
+        d["eval"]["mean_diff"] = -0.2
+        d["audit"] = {
+            "ok": False, "n_events": 2, "anchor": "b" * 64,
+            "first_bad_line": 1, "reason": "hash mismatch",
+        }
+
+    blocks = render.build_blocks(d)
+    md = render.to_markdown(blocks)
+    html = render.to_html(blocks, "t")
+    if color == "green":
+        assert build.GREEN_TEXT in md and build.GREEN_TEXT in html
+        md_clean = md.replace(build.GREEN_TEXT, "")
+        html_clean = html.replace(build.GREEN_TEXT, "")
+    else:
+        assert build.GREEN_TEXT not in md and build.GREEN_TEXT not in html
+        md_clean, html_clean = md, html
+    assert not BANNED.search(md_clean), f"Palavra banida no MD ({color}): {BANNED.search(md_clean)}"
+    assert not BANNED.search(html_clean), f"Palavra banida no HTML ({color}): {BANNED.search(html_clean)}"
+    assert "PROVISÓRIA" in md and "PROVISÓRIA" in html
+
+
+def test_abnt_structure_and_print_css(real_data):
+    blocks = render.build_blocks(real_data)
+    md = render.to_markdown(blocks)
+    html = render.to_html(blocks, "Relatório")
+    assert md == render.to_markdown(render.build_blocks(real_data))
+    assert html == render.to_html(render.build_blocks(real_data), "Relatório")
+
+    for marker in (
+        "ABNT NBR 10719:2015",
+        "REL-AOK-",
+        "1 INTRODUÇÃO",
+        "2 PARECER EXECUTIVO",
+        "3 ANÁLISE DE QUALIDADE",
+        "4 ANÁLISE DE EXPOSIÇÃO",
+        "5 RASTREABILIDADE",
+        "6 CONCLUSÃO",
+        "APÊNDICE A",
+        "Quadro de Ciência e Aprovação",
+        "Auditoria Interna",
+        "Dimensão",
+        "Indicador medido",
+        "Leitura para o negócio",
+    ):
+        assert marker in md, f"Ausente no MD: {marker}"
+        assert marker in html, f"Ausente no HTML: {marker}"
+
+    assert "@page" in html
+    assert re.search(r"size:\s*A4", html)
+    assert re.search(r"margin:\s*3cm 2cm 2cm 3cm", html)
+    assert re.search(r"page-break-before:\s*always", html)
+    assert re.search(r"page-break-inside:\s*avoid", html)
+    assert "12pt" in html and "10pt" in html
+    assert "overflow-wrap:anywhere" in html or "overflow-wrap: anywhere" in html
 
 
 # ---- escape de HTML ----
@@ -192,6 +258,8 @@ def test_cli_writes_package_without_leaks(tmp_path, rt_dir, capsys):
         text = (out / name).read_text(encoding="utf-8")
         assert AUDIT_SECRET not in text and ATTACK_SECRET not in text
     assert last["hash"] in (out / "relatorio.md").read_text(encoding="utf-8")
+    assert last["hash"] in (out / "relatorio.html").read_text(encoding="utf-8")
+    assert sum((out / name).stat().st_size for name in files) < 1024 * 1024
     assert "Semáforo" in capsys.readouterr().out
     for phrase in REQUIRED_LIMITATIONS:
         assert phrase in data["limitations"]
