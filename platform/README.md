@@ -10,8 +10,8 @@ cp platform/env.example platform/.env      # preencha os dois valores; o .env n�
 docker compose -f platform/docker-compose.yml --env-file platform/.env up --build
 ```
 
-A API fica em `http://127.0.0.1:8000` (docs interativas em `/docs`). Os arquivos dos
-relatórios ficam no volume `aok_data` (`AOK_DATA_DIR`, padrão `./aok_data` fora do Docker).
+A API fica em `http://127.0.0.1:8000` (docs interativas em `/docs` quando `AOK_DOCS_ENABLED` não está em `false`; probe de saúde em `GET /v1/health`). Os arquivos dos
+relatórios ficam no volume `aok_data` (`AOK_DATA_DIR`, padrão `./aok_data` fora do Docker e `/data` no Docker Compose).
 Sem Docker: `pip install -e ".[platform]"` e `uvicorn aok_platform.app:create_app --factory`
 (usa SQLite local se `AOK_DATABASE_URL` não estiver definida).
 
@@ -63,8 +63,9 @@ Use HTTPS na frente da API fora de testes locais: o token trafega no cabeçalho.
 Código em `platform/portal/` (React + Vite + TypeScript + Tailwind, sem biblioteca de UI). Interface
 em inglês; o nome "Farol" é provisório e fictício e vive só em `platform/portal/src/brand.ts`.
 A interface está toda em inglês (landing, login, área logada). Páginas: landing pública, login,
-areas > agents > reports > report detail (baixar MD/HTML/JSON), "My downloads" e, para `org_admin`,
-"All downloads".
+areas > agents > reports > report detail (`Download HTML (ABNT / Print PDF)`, `Download Markdown` e
+`Download JSON (Evidence)`, com impressão A4 ou salvamento em PDF pelo navegador no padrão
+ABNT NBR 10719), "My downloads" e, para `org_admin`, "All downloads".
 Para `org_admin`: Administration (áreas, agentes, usuários, atividade) e All downloads.
 
 Limitação conhecida: o conteúdo dos relatórios vindo do backend (ressalvas, textos do resumo) continua
@@ -200,7 +201,7 @@ respondem 404 e `GET /v1/auth/capabilities` devolve `{"password_reset": false}` 
 | `AOK_SMTP_USER`, `AOK_SMTP_PASSWORD` | credenciais, opcionais |
 | `AOK_SMTP_STARTTLS` (true) | `false` só para SMTP local sem TLS |
 | `AOK_SMTP_FROM` | remetente (padrão `no-reply@<host>`) |
-| `AOK_PUBLIC_URL` | base do link do e-mail (ex.: `https://farol.suaempresa.com`). **Nunca** vem do cabeçalho Host/X-Forwarded (evita host header poisoning) |
+| `AOK_PUBLIC_URL` | base do link do e-mail (ex.: `https://farol.example.com`). **Nunca** vem do cabeçalho Host/X-Forwarded (evita host header poisoning) |
 
 - `POST /v1/auth/password/forgot {email}`: responde **sempre 202**, com o mesmo corpo, exista ou não o e-mail,
   esteja o usuário ou a organização ativos ou não. A consulta, o token e o envio rodam depois da resposta. Só
@@ -217,6 +218,39 @@ respondem 404 e `GET /v1/auth/capabilities` devolve `{"password_reset": false}` 
 - Token: `token_urlsafe(32)`, só o hash SHA-256 na tabela `password_reset` (sem IP), uso único, 30 min; um novo
   pedido invalida os anteriores.
 - Limitações: os limites são por processo (reiniciam no deploy e não somam entre vários workers); atrás de
-  proxy o IP visto é o do proxy (não se confia em `X-Forwarded-For`). O operador da plataforma não usa este
-  fluxo (a senha dele só se redefine pela linha de comando).
+  proxy reverso sem `AOK_TRUSTED_PROXIES` configurado, o IP visto é o do proxy (com a variável definida,
+  usa o primeiro IP fora dos proxies confiáveis em `X-Forwarded-For`, da direita para a esquerda). O
+  operador da plataforma não usa este fluxo (a senha dele só se redefine pela linha de comando).
+
+## Operação online (produção)
+
+Para operar a plataforma publicada online em instância única:
+
+1. **Publicação no CI do agente**: o pipeline do time do agente gera o pacote e envia apenas agregados,
+   hashes e relatórios via `aok check --publish https://...` com `AOK_PLATFORM_TOKEN` em segredo de
+   ambiente (o log completo de auditoria nunca sobe).
+2. **Container único atrás de proxy reverso HTTPS**: suba a imagem de [platform/Dockerfile](Dockerfile)
+   (API FastAPI + portal React compilado) atrás de proxy reverso com terminação TLS/HTTPS, ligada a um
+   Postgres externo/gerenciado (`AOK_DATABASE_URL`) e a um volume persistente montado em `AOK_DATA_DIR`
+   (`/data` no container).
+3. **Configuração recomendada no ambiente** (ver [platform/env.example](env.example) e
+   [platform/docker-compose.yml](docker-compose.yml)):
+   - `AOK_COOKIE_SECURE=true` (padrão; exige HTTPS para o cookie de sessão);
+   - `AOK_DOCS_ENABLED=false` (desativa `/docs`, `/redoc` e `/openapi.json`, inclusive no fallback SPA);
+   - `AOK_HSTS_ENABLED=true` (envia `Strict-Transport-Security: max-age=31536000; includeSubDomains`;
+     use apenas com HTTPS obrigatório — `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` e
+     `Referrer-Policy: no-referrer` já vão em todas as respostas);
+   - `AOK_TRUSTED_PROXIES=<IPs/CIDRs do proxy>` (lista separada por vírgula dos proxies confiáveis para
+     extrair o IP real em `X-Forwarded-For` na recuperação de senha);
+   - Remova `AOK_ADMIN_BOOTSTRAP_KEY` após criar o primeiro `org_admin` (ou usar `AOK_OPS_ENABLED=true` +
+     CLI `create_operator`).
+4. **Healthcheck**: configure o proxy/orquestrador em `GET /v1/health`, que valida `SELECT 1` no Postgres
+   e o acesso a `AOK_DATA_DIR` (`200 {"status": "ok"}` ou `503 {"status": "unavailable"}`, com
+   `Cache-Control: no-store`). O serviço `api` em `platform/docker-compose.yml` já usa esse endpoint.
+
+Ressalva: a plataforma está preparada para **instância única** (1 worker/processo). Escalar para múltiplas
+réplicas ou vários workers ainda exige migrações formais com **Alembic** (em vez de `ensure_schema` no
+startup) e um **store compartilhado** fora da memória do processo para os limitadores de tentativas
+(`LoginThrottle` e `HourlyLimiter`). Detalhes das decisões e limites estão no ADR-014 em
+[docs/decisoes.md](../docs/decisoes.md).
 

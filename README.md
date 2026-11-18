@@ -52,6 +52,7 @@ aok check --publish reports/publicados --agent-id meu-agente   # opcional: --aud
 Saída real de ambos neste repositório: `Pacote gravado em reports/pacote/ (relatorio.md, relatorio.html, relatorio.json)` e `Semáforo (regras provisórias): AMARELO`; o `--publish` acrescentou `Publicado em reports/publicados/meu-agente/<timestamp UTC> (semáforo: yellow)`.
 
 - Não roda modelo: lê os resultados gravados (eval e red team).
+- `relatorio.md` e `relatorio.html` seguem estrutura técnico-executiva baseada na **ABNT NBR 10719:2015** e **NBR 6024:2012** (identificação documental, resumo executivo, leitura em linguagem de negócios, encaminhamentos, quadro de ciência para auditoria e Apêndice A com evidências técnicas e SHA-256), com CSS estático A4 (`3cm 2cm 2cm 3cm`) pronto para impressão ou salvamento em PDF pelo navegador (ADR-013 em [docs/decisoes.md](docs/decisoes.md)).
 - O `--publish` grava `relatorio.md`, `relatorio.html`, `relatorio.json` e `pacote.json` em `<pasta>/<agent-id>/<timestamp UTC>/` e atualiza `index.json` com as versões, mais recente primeiro. Cada publicação cria uma versão nova; nada é sobrescrito (por convenção, não é imutabilidade técnica).
 - O log de auditoria nunca entra no pacote: com `--audit`, só entram o resultado da verificação da cadeia e a âncora.
 - O semáforo usa regras provisórias, e verde não significa seguro.
@@ -82,14 +83,14 @@ uvicorn aok_platform.app:create_app --factory   # http://127.0.0.1:8000
 
 Para subir tudo com um comando (dados de demonstração, operador e organização `beta`; compila o portal se faltar; só em 127.0.0.1; as senhas aparecem uma vez no terminal; Ctrl+C encerra), use `python scripts/demo_plataforma.py [--porta 8000] [--publicar] [--reset] [--dados PASTA]`. Sem `--dados`, usa `.demo/`, ignorada pelo git.
 
-- Telas: landing pública, login (`/login`), áreas > agentes > relatórios > detalhe (`/app/...`; baixar MD, HTML e JSON), "My downloads" e, para `org_admin`, "All downloads". Visual em preto e branco, com azul só em botões de impacto, links e foco.
+- Telas: landing pública, login (`/login`), áreas > agentes > relatórios > detalhe (`/app/...`; botões `Download HTML (ABNT / Print PDF)`, `Download Markdown` e `Download JSON (Evidence)`), "My downloads" e, para `org_admin`, "All downloads". Visual em preto e branco, com azul só em botões de impacto, links e foco.
 - A interface é toda em inglês; o conteúdo dos relatórios vindo do backend e os nomes do seed seguem em português (limitação conhecida).
 - Na landing, a nota do fundador é rascunho e a fala de usuário é placeholder, não depoimento real. Sign Up, Pricing, redes sociais e links de rodapé são placeholders "Soon", não clicáveis.
 - Cada pessoa vê só as áreas do seu perfil (com sub-áreas); área fora do alcance responde 404. O download grava em `download_log`.
 - O seed cria dados de demonstração com agentes fictícios; o conteúdo dos relatórios vem do exemplo do repositório.
 - Verificado com o design atual: capturas de tela (Edge headless) a 1440 e 390 px de todas as telas (landing, login, áreas, agente, detalhe do relatório, downloads, admin), inspecionadas. O fluxo funcional (login de admin, áreas, logout) foi exercitado no navegador na versão anterior da interface e não foi reexecutado após o redesenho (a lógica de autenticação não mudou; só a rota de login passou a `/login`).
 - Limitações: throttle de login em memória (reinicia no deploy, não vale com vários workers e permite travar a conta de outra pessoa por 5 min); CSRF só por SameSite; tabelas sem migração.
-- Não existe: SSO, dark mode, PDF e Sign Up (multiempresa e operador: ver a seção seguinte; recuperação de senha: ver "Plataforma: recuperação de senha").
+- Não existe: SSO, dark mode, geração direta de binário PDF no servidor (o `relatorio.html` já sai formatado em A4 pela ABNT NBR 10719 para impressão/PDF pelo navegador) e Sign Up (multiempresa e operador: ver a seção seguinte; recuperação de senha: ver "Plataforma: recuperação de senha").
 - Testes: ver a seção "Estado e testes" abaixo.
 
 ### Plataforma: administração
@@ -120,12 +121,21 @@ python -m aok_platform.create_operator --email ops@example.com       # imprime a
 
 ### Plataforma: recuperação de senha
 
-Opcional (ADR-012). Fica ativa só com `AOK_SMTP_HOST` e `AOK_PUBLIC_URL` definidos (também `AOK_SMTP_PORT`, `AOK_SMTP_USER`, `AOK_SMTP_PASSWORD`, `AOK_SMTP_STARTTLS`, `AOK_SMTP_FROM`; detalhes em `platform/README.md`). Sem elas, as rotas respondem 404 e o "Forgot password?" do login aparece como "Soon".
+Opcional (ADR-012). Fica ativa só com `AOK_SMTP_HOST` e `AOK_PUBLIC_URL` definidos (também `AOK_SMTP_PORT`, `AOK_SMTP_USER`, `AOK_SMTP_PASSWORD`, `AOK_SMTP_STARTTLS`, `AOK_SMTP_FROM`; detalhes em [platform/README.md](platform/README.md)). Sem elas, as rotas respondem 404 e o "Forgot password?" do login aparece como "Soon".
 
 - O usuário pede em `/forgot-password` e vê a mesma resposta para e-mail existente ou não; só o existente recebe o e-mail, com link `#token` válido por 30 min e de uso único.
 - Em `/reset-password` define a senha nova (12+ caracteres). Todas as sessões são revogadas, não há login automático e chega um aviso de troca.
 - Verificado no navegador (Edge) com servidor SMTP local (Mailpit), e em `postgres:16` local em 17/11/2026 (suíte completa de plataforma: `254 passed, 0 skipped` em 266.37s (0:04:26), commit `79f1d01`, incluindo recuperação de senha e banco legado; ver ADR-007 em [docs/decisoes.md](docs/decisoes.md)). Não exercitados: provedor SMTP real (STARTTLS, entregabilidade), 429 do reset na interface, leitor de tela, contraste e outros navegadores. O CI do commit 0b196eb passou (test, portal e postgres).
-- Limitações: limites de pedidos em memória (por processo, reiniciam no deploy); atrás de proxy o IP visto é o do proxy, então o bloqueio por tentativas inválidas pode atingir quem compartilha o IP, mesmo com token válido; operadores seguem com reset só pela CLI.
+- Limitações: limites de pedidos em memória (por processo, reiniciam no deploy); atrás de proxy reverso, é preciso configurar `AOK_TRUSTED_PROXIES` com os IPs/CIDRs confiáveis (sem essa variável, o IP visto é o do proxy e o bloqueio por tentativas inválidas pode atingir quem compartilha o IP); operadores seguem com reset só pela CLI.
+
+### Plataforma: operação online
+
+A plataforma está preparada para operação online em **instância única** atrás de proxy reverso HTTPS, com o pipeline de CI do agente publicando por `aok check --publish https://...` (passo a passo em [platform/README.md](platform/README.md) e ADR-014 em [docs/decisoes.md](docs/decisoes.md)):
+
+- `GET /v1/health` verifica o banco (`SELECT 1`) e o acesso a `AOK_DATA_DIR` (`200` ou `503`, `Cache-Control: no-store`), usado também no `healthcheck` de `platform/docker-compose.yml`.
+- `AOK_DOCS_ENABLED=false` desliga `/docs`, `/redoc` e `/openapi.json` (inclusive no fallback SPA), e o middleware HTTP aplica `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` e `Strict-Transport-Security` opcional (`AOK_HSTS_ENABLED=true`).
+- `AOK_TRUSTED_PROXIES` habilita leitura controlada (direita para esquerda) de `X-Forwarded-For` na recuperação de senha atrás de proxies confiáveis.
+- Limitação conhecida: preparado para instância única; múltiplas réplicas ou vários workers ainda exigem Alembic (migração formal) e store compartilhado fora da memória do processo para os limitadores de tentativas.
 
 ### Com o modelo (usa o Ollama)
 
@@ -149,7 +159,7 @@ Para desligar o tracing: `AOK_TRACING=off`.
 
 ## Estado e testes
 
-Conferido em 17/11/2026 no commit `0c8c6b8`: `python -m pytest -q` deu 615 passed e 2 skipped (cerca de 100 s); `python -m ruff check` passou. Os 2 skips são ambientais: um teste do demo que precisa criar link simbólico (sem privilégio no Windows) e o teste de banco legado, que só roda com `AOK_TEST_DATABASE_URL` apontando para um Postgres. Os testes não usam Ollama nem Docker. Dos 615, 254 são da suíte de plataforma (`tests/test_platform_*.py`); com `AOK_TEST_DATABASE_URL` ela roda em Postgres (ver [platform/README.md](platform/README.md)).
+Conferido em 18/11/2026 sobre o código do commit `fd5c698`: `python -m pytest -q` deu `635 passed, 2 skipped` (105.17s); `python -m ruff check .` passou (`All checks passed!`). Os 2 skips são ambientais: um teste do demo que precisa criar link simbólico (sem privilégio no Windows) e o teste de banco legado, que só roda com `AOK_TEST_DATABASE_URL` apontando para um Postgres. Os testes não usam Ollama nem Docker. Dos 635 que passam localmente em SQLite, 261 são da suíte de plataforma (`tests/test_platform_*.py`, de um total de 262 incluindo o teste de banco legado); com `AOK_TEST_DATABASE_URL` a suíte de plataforma roda em Postgres (ver [platform/README.md](platform/README.md)).
 
 Workflows (`.github/workflows/`): `ci.yml` (jobs `test`, `portal` e `postgres`) e `eval.yml` (gate de prompts com respostas gravadas). Além do run #20 (`88dc3fc`, em [evidencias/03-ci-github/](evidencias/03-ci-github/)), o run #25, do commit `669633a` (conferido em 17/11/2026), passou nos três jobs (`test`, `portal` e `postgres`) em `ubuntu-latest`, onde o teste de link simbólico de `tests/test_demo_plataforma.py` roda sem skip (também reconfirmado localmente em `python:3.11-slim`).
 

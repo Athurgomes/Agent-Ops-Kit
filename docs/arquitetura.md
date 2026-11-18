@@ -39,8 +39,8 @@ Os guardrails também atuam na allowlist de tools (antes de cada chamada) e marc
 - **Guardrails**: filtro de entrada (heurísticas PT/EN, mais classificador opcional fail-open), allowlist de tools, marcação de conteúdo não confiável, canary no prompt do sistema e filtro de saída. São heurísticas, contornáveis.
 - **Avaliação**: dataset de 50 casos, checagens determinísticas, juiz opcional (mesmo modelo de 8B), A/B pareado (permutação e bootstrap, semente fixa) e gate de CI que reavalia respostas gravadas conferindo um manifesto.
 - **Red team**: ataques em arquivos do repositório (`redteam/`), critérios de sucesso por categoria, ASR com intervalo de Wilson e medição de falsos positivos em perguntas legítimas.
-- **Relatório** (`aok report build`, `aok check --publish`): resultados gravados (eval e red team, mais o resultado da verificação da auditoria, se houver) viram um pacote (`relatorio.md/html/json`, `pacote.json`) que `--publish` copia para uma pasta local versionada, `<pasta>/<agent-id>/<timestamp UTC>/`, com `index.json` listando as versões. Não roda modelo e o log de auditoria não entra no pacote (ADR-006).
-- **Plataforma** (`platform/`): serviço FastAPI que recebe o pacote por `POST /v1/reports` e, para pessoas com sessão, serve a leitura e o portal. Entregue em fases: API (ADR-007), portal (ADR-008), administração (ADR-009), operador e várias organizações (ADR-010 e ADR-011) e recuperação de senha opcional (ADR-012); ver abaixo.
+- **Relatório** (`aok report build`, `aok check --publish`): resultados gravados (eval e red team, mais o resultado da verificação da auditoria, se houver) viram um pacote determinístico (`relatorio.md`, `relatorio.html`, `relatorio.json` e `pacote.json`) que `--publish` copia para uma pasta local versionada (`<pasta>/<agent-id>/<timestamp UTC>/`, com `index.json` listando as versões) ou envia à plataforma (`https://...`). `relatorio.md` e `relatorio.html` seguem estrutura técnico-executiva baseada na ABNT NBR 10719:2015 e NBR 6024:2012 (identificação documental, resumo executivo, leitura de negócios, encaminhamentos, quadro de ciência para auditoria e Apêndice A com evidências técnicas e SHA-256), com CSS estático A4 (`3cm 2cm 2cm 3cm`) pronto para impressão ou salvamento em PDF pelo navegador. Não roda modelo e o log de auditoria não entra no pacote (ADR-006 e ADR-013).
+- **Plataforma** (`platform/`): serviço FastAPI que recebe o pacote por `POST /v1/reports` e, para pessoas com sessão, serve a leitura e o portal. Entregue em fases: API (ADR-007), portal (ADR-008), administração (ADR-009), operador e várias organizações (ADR-010 e ADR-011), recuperação de senha opcional (ADR-012) e prontidão para operação online em instância única (ADR-014); ver abaixo.
 - **Template** (`aok new`): gera um agente já instrumentado a partir de `src/agent_ops_kit/templates/agent/`.
 
 ## Plataforma (`platform/`)
@@ -62,7 +62,7 @@ Fase 3 (ADR-008), fluxos:
 
 - **Login**: `POST /v1/auth/login` (e-mail e senha, scrypt) cria uma sessão e devolve o cookie `aok_session` (HttpOnly, SameSite=Strict). O throttle por e-mail é em memória.
 - **Leitura**: o portal chama `/v1/areas`, `/v1/areas/{id}/agents`, `/v1/agents/{id}/reports` e `/v1/reports/{id}`. O alcance vem da `membership`: `area_viewer` vê a área e as sub-áreas (CTE recursiva), `org_admin` vê tudo, o resto responde 404. O token de agente não lê.
-- **Telas do portal** (interface em inglês; conteúdo dos relatórios vindo do backend em português): `/` (landing), `/login`, `/app` e `/app/areas/:areaId` (áreas), `/app/areas/:areaId/agents/:agentId` (relatórios do agente), `/app/reports/:reportId` (detalhe e download), `/app/downloads` e, só `org_admin`, `/app/admin/downloads`. Sign Up, Pricing, redes sociais e links de rodapé são placeholders "Soon", não clicáveis.
+- **Telas do portal** (interface em inglês; conteúdo dos relatórios vindo do backend em português): `/` (landing), `/login`, `/app` e `/app/areas/:areaId` (áreas), `/app/areas/:areaId/agents/:agentId` (relatórios do agente), `/app/reports/:reportId` (detalhe e download: `Download HTML (ABNT / Print PDF)`, `Download Markdown`, `Download JSON (Evidence)`), `/app/downloads` e, só `org_admin`, `/app/admin/downloads`. Sign Up, Pricing, redes sociais e links de rodapé são placeholders "Soon", não clicáveis.
 - **Administração** (ADR-009, só `org_admin`): telas `/app/admin/areas`, `agents`, `agents/:id` (tokens), `users` e `activity`. Rotas novas: `GET /v1/admin/areas`, `/agents`, `/agents/{id}/tokens`, `/users`, `/memberships` e `/events`. Leituras e escritas ficam na organização de quem chama (alvo de outra organização: 404). Bloqueios 409: não desativar a própria conta nem revogar o próprio `org_admin`; nunca o último `org_admin` ativo (vale também para a chave de bootstrap, que usa a primeira organização).
 - **Trilha `admin_event`**: toda escrita administrativa grava quando, quem, ação e alvo, sem segredos, na mesma transação. Imutável pela API (e pelo ORM); quem opera o banco pode alterar. `GET /v1/admin/events` só aceita sessão de `org_admin`, com `limit` e `offset`. As demais listagens do admin não têm paginação.
 - **Download com log**: `GET /v1/reports/{id}/download?format=md|html|json` confere o alcance, grava uma linha em `download_log` (baixado em, relatório gerado em) e devolve o arquivo. `/v1/me/downloads` mostra os do próprio usuário; `/v1/admin/downloads` (`org_admin` por sessão) mostra todos.
@@ -83,6 +83,17 @@ flowchart LR
   API --> DB
   API --> FS[(AOK_DATA_DIR/org_id/slug/sha256)]
 ```
+
+### Fluxo e implantação online (ADR-014)
+
+Em produção (instância única), o pipeline de CI do agente executa `aok check --publish https://...` enviando apenas o pacote (`relatorio.json`, `relatorio.md`, `relatorio.html` e `pacote.json`) por HTTPS para a API. A plataforma roda em container único (API FastAPI + portal React compilado) atrás de proxy reverso HTTPS, conectada a um Postgres externo/gerenciado e com disco persistente em `AOK_DATA_DIR`:
+
+- `GET /v1/health` verifica o banco (`SELECT 1`) e o acesso a `AOK_DATA_DIR` (`200` ou `503`, `Cache-Control: no-store`).
+- `AOK_DOCS_ENABLED=false` desliga `/docs`, `/redoc` e `/openapi.json` (inclusive no fallback da SPA).
+- O middleware HTTP adiciona `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` e `Referrer-Policy: no-referrer`, além de `Strict-Transport-Security` com `AOK_HSTS_ENABLED=true`.
+- `AOK_TRUSTED_PROXIES` define os IPs/CIDRs de proxies confiáveis para extrair o IP do cliente (varredura direita-esquerda em `X-Forwarded-For`) na recuperação de senha.
+
+Configuração completa e limites (instância única; múltiplas réplicas ainda exigem Alembic e store compartilhado para os limitadores em memória): ver [platform/README.md](../platform/README.md) e o ADR-014 em [decisoes.md](decisoes.md).
 
 ## Módulos
 
@@ -106,16 +117,16 @@ flowchart LR
 | `src/agent_ops_kit/redteam/testbed.py` | constantes do testbed (tools proibidas falsas, dados fictícios) |
 | `src/agent_ops_kit/redteam/false_positives.py` | taxa de falsos positivos |
 | `src/agent_ops_kit/redteam/report.py` | relatório (ASR, Wilson, atribuição por estágio) |
-| `src/agent_ops_kit/report/` | pacote de relatório: `build` (agrega resultados gravados), `render` (md/html/json), `publish` (pasta local versionada) |
+| `src/agent_ops_kit/report/` | pacote de relatório: `build` (agrega resultados gravados), `render` (md/html determinístico em estrutura ABNT NBR 10719 pronta para impressão A4/PDF), `publish` (pasta local versionada) |
 | `src/agent_ops_kit/templates/agent/` | template do `aok new` |
 | `examples/rag_agent/` | agente de referência (agent, tools, indexer, corpus fictício) |
-| `.github/workflows/` | `ci.yml` (jobs `test`: ruff e pytest; `portal`: build do front-end; `postgres`: suíte de plataforma em Postgres 16) e `eval.yml` (gate com respostas gravadas) |
+| `.github/workflows/` | `ci.yml` (jobs `test`: ruff check e pytest; `portal`: build do front-end; `postgres`: suíte de plataforma em Postgres 16) e `eval.yml` (gate com respostas gravadas) |
 | `scripts/demo.sh` | demo do kit com respostas gravadas e log de auditoria fictício, sem modelo |
 | `scripts/demo_plataforma.py` | sobe a plataforma de demonstração com um comando (SQLite, só em 127.0.0.1; seed, operador e organização `beta`; `--publicar`, `--reset`, `--dados`) |
 | `docker-compose.yml` | Jaeger (all-in-one) |
-| `platform/aok_platform/` | API da plataforma: `app`, `auth` (senha, token, papéis), `sessions` (login, sessão, throttle), `portal` (leitura, download, histórico), `models` (inclui `admin_event`), `reports`, `db`, `seed_demo` |
+| `platform/aok_platform/` | API da plataforma: `app` (inclui `/v1/health`, `AOK_DOCS_ENABLED` e headers HTTP), `auth` (senha, token, papéis), `sessions` (login, sessão, throttle), `portal` (leitura, download, histórico), `models` (inclui `admin_event`), `reports`, `db`, `seed_demo` |
 | `platform/aok_platform/ops.py` | rotas `/v1/ops/*` do operador (ADR-010): organizações com contagens, criar e desativar, criar admin e reset de senha, visão geral só de metadados, trilhas |
-| `platform/aok_platform/recovery.py`, `mailer.py` | recuperação de senha (ADR-012): rotas `/v1/auth/password/forgot` e `/reset` e `/v1/auth/capabilities`; token com hash SHA-256 na tabela `password_reset`; envio SMTP por stdlib. Só ativos com `AOK_SMTP_HOST` e `AOK_PUBLIC_URL` |
+| `platform/aok_platform/recovery.py`, `mailer.py` | recuperação de senha (ADR-012) e `client_ip` com `AOK_TRUSTED_PROXIES`: rotas `/v1/auth/password/forgot`, `/reset` e `/v1/auth/capabilities`; token com hash SHA-256 na tabela `password_reset`; envio SMTP por stdlib. Só ativos com `AOK_SMTP_HOST` e `AOK_PUBLIC_URL` |
 | `platform/portal/src/pages/ForgotPassword.tsx`, `ResetPassword.tsx` | telas `/forgot-password` e `/reset-password` (token lido do fragmento e removido da URL) |
 | `platform/aok_platform/create_org.py` | `python -m aok_platform.create_org`: cria organização (slug, nome) |
 | `platform/aok_platform/create_operator.py` | `python -m aok_platform.create_operator`: cria operador com senha aleatória impressa uma vez; `--reset-password`, `--activate` |
@@ -140,6 +151,8 @@ As decisões e suas limitações estão em [decisoes.md](decisoes.md):
 - ADR-010: operador da plataforma (só metadados, desligado por padrão).
 - ADR-011: isolamento multi-organização.
 - ADR-012: recuperação de senha por e-mail (opcional, token de uso único com hash, limites em memória).
+- ADR-013: relatório técnico-executivo em linguagem de negócios e estrutura ABNT NBR 10719 (determinístico, CSS A4 para impressão/PDF pelo navegador).
+- ADR-014: prontidão para operação online em instância única (`GET /v1/health`, `AOK_DOCS_ENABLED`, `AOK_HSTS_ENABLED`, `AOK_TRUSTED_PROXIES`) e simplicidade de manutenção (D1, D2, D3, D5).
 
 Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 
@@ -148,8 +161,8 @@ Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 - Kafka (eventos do agente em tópico, consumidores de auditoria e métricas).
 - Adaptador para outro framework de agentes: só existe o loop do agente de referência.
 - Prometheus e Grafana: as métricas são calculadas em Python, não exportadas.
-- Na plataforma: SSO, Sign Up, recuperação por e-mail para operadores (a recuperação de senha por e-mail dos usuários das organizações existe, opcional: ADR-012), Alembic (migração formal), dark mode, PDF e paginação das listagens do admin. Trilha de login e de leitura também não existe (só download e escritas administrativas).
-- Deploy em nuvem.
+- Na plataforma: SSO, Sign Up, recuperação por e-mail para operadores (a recuperação de senha por e-mail dos usuários das organizações existe, opcional: ADR-012), Alembic (migração formal), store compartilhado para os limitadores de tentativa (necessário para múltiplas réplicas), dark mode, geração direta de binário PDF no servidor (o HTML já sai no formato A4 ABNT NBR 10719 para impressão/PDF pelo navegador) e paginação das listagens do admin. Trilha de login e de leitura também não existe (só download e escritas administrativas).
+- Provisionamento automatizado de deploy em nuvem (existe container/compose pronto para operação online em instância única atrás de proxy reverso HTTPS, sem scripts de infraestrutura gerenciada).
 - Publicação em PyPI: o pacote se instala a partir do repositório.
 - Validação do gate como medida de qualidade: ele foi exercitado em 2 PRs de teste (ver a seção D de [resultados.md](resultados.md)), que provam o mecanismo, não a qualidade.
 - Relatório verificado pela plataforma: o relatório é autodeclarado e a plataforma não reexecuta eval nem red team (ADR-007).

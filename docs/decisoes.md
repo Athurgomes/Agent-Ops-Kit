@@ -192,7 +192,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O 409 de e-mail revela que o e-mail existe em alguma organização.
 - Com 1 organização inativa, a chave de bootstrap ainda opera nela sem o cabeçalho; com `X-Org-Slug` apontando para ela a resposta é 404.
 - Em bancos antigos, `ensure_schema` cria os índices únicos `uq_organization_slug` e `uq_agent_org_slug`, mas não cria as chaves estrangeiras nem o índice simples de `agent.org_id`.
-- Os testes usam SQLite por padrão; com `AOK_TEST_DATABASE_URL` a suíte de plataforma rodava em Postgres (235 testes na época, commit 4f3e5a7, verificado localmente e no CI; a recuperação de senha, ADR-012, acrescentou testes; os testes novos da ADR-012 rodaram em Postgres no CI do commit 0b196eb (job postgres, suíte de plataforma completa)).
+- Verificações gerais de Postgres e CI: ver ADR-007.
 - O throttle de login é em memória.
 - Verificado no navegador, com banco temporário e `AOK_OPS_ENABLED=true`: operador criado pela CLI, login em `/ops`, 2 organizações, admin criado (senha exibida uma vez), admin entra no portal e vê só a própria organização, cadastra área, agente e token, publica um relatório real com `aok check --publish` e o vê no portal; o operador vê só metadados; desativar uma organização barra o admin dela e a outra segue intacta; reativar; reset de senha; sessões de operador e de usuário não se misturam; `/ops` é um 404 comum com o console desligado.
 - Não exercitados: erro de slug de organização duplicado na interface, leitor de tela e contraste, outros navegadores.
@@ -212,8 +212,47 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 
 **Consequências e limitações.**
 - Os limites são em memória, por processo: reiniciam no deploy e não somam entre workers.
-- Atrás de proxy, o IP visto é o do proxy (`X-Forwarded-For` não é confiado). O bloqueio de 10 tentativas inválidas pode então atingir quem compartilha o IP, inclusive com token válido (risco de negação de serviço). Melhoria futura: limitar só as tentativas e deixar o token válido passar, e ler o IP real de um proxy confiável.
+- Sem `AOK_TRUSTED_PROXIES` configurado (ver ADR-014), atrás de proxy o IP visto é o do proxy (`X-Forwarded-For` não é confiado). O bloqueio de 10 tentativas inválidas pode então atingir quem compartilha o IP, inclusive com token válido (risco de negação de serviço). Melhoria futura: limitar só as tentativas inválidas e deixar o token válido passar.
 - Entregabilidade (SPF, DKIM) não verificada.
 - E-mail ausente ou com mais de 254 caracteres responde 422, não 202.
-- Verificado (na época do ADR; a contagem atual está no README, seção "Estado e testes"): suíte completa 596 passed e 1 skipped; os testes de recuperação e o de banco legado passaram em postgres:16 efêmero local (20 passed); 8 `/reset` simultâneos por token em Postgres local deram exatamente 1 sucesso por token (verificação manual, fora do repositório). No navegador (Edge) com servidor SMTP local real (Mailpit): link real no login com o recurso ativo e placeholder "Soon" com ele desligado; UI idêntica para e-mail existente e inexistente (e-mail só para o existente); e-mail com link `#token` sem a senha; fragmento removido da URL; senha curta recusada; senha nova funciona e a antiga falha; sessão anterior revogada; link reusado inválido; novo pedido invalida o anterior; aviso de troca recebido; 4º pedido seguido sem e-mail.
-- Não exercitados: envio por provedor SMTP real (STARTTLS, entregabilidade), 429 do reset na interface, leitor de tela, contraste e outros navegadores. O CI do commit 0b196eb passou (test, portal e postgres).
+- Verificado especificamente neste fluxo: 8 `/reset` simultâneos por token em Postgres local deram exatamente 1 sucesso por token (verificação manual, fora do repositório); no navegador (Edge) com servidor SMTP local real (Mailpit): link real no login com o recurso ativo e placeholder "Soon" com ele desligado; UI idêntica para e-mail existente e inexistente (e-mail só para o existente); e-mail com link `#token` sem a senha; fragmento removido da URL; senha curta recusada; senha nova funciona e a antiga falha; sessão anterior revogada; link reusado inválido; novo pedido invalida o anterior; aviso de troca recebido; 4º pedido seguido sem e-mail.
+- Não exercitados: envio por provedor SMTP real (STARTTLS, entregabilidade), 429 do reset na interface, leitor de tela, contraste e outros navegadores. Verificações gerais de Postgres, CI e contagem atual de testes: ver ADR-007 e a seção "Estado e testes" do [README](../README.md).
+
+## ADR-013: relatório técnico-executivo em linguagem de negócios e estrutura ABNT NBR 10719
+
+**Contexto.** A partir do ADR-006, `aok report build` e `aok check --publish` produziam relatórios focados em métricas técnicas, com leitura pouco direta para áreas de negócio e sem padronização formal para registro de ciência em auditoria ou impressão A4 em PDF.
+
+**Decisão.**
+- Padronizar `src/agent_ops_kit/report/render.py` de forma determinística (sem redação livre por LLM), gerando `relatorio.md` e `relatorio.html` a partir dos mesmos blocos (`build_blocks`).
+- Organizar o documento segundo a **ABNT NBR 10719:2015** e a numeração progressiva da **ABNT NBR 6024:2012**:
+  - Pré-textuais e controle documental: código determinístico do documento (`REL-AOK-...`), data/hora de emissão, agente, versão de prompt, modelo, semente, versão de esquema/regras e resultado consolidado; resumo executivo e sumário executivo das seções.
+  - Seções 1 a 6 em linguagem de negócios: `1 INTRODUÇÃO E ESCOPO DA AVALIAÇÃO`, `2 PARECER EXECUTIVO PARA NEGÓCIOS E GOVERNANÇA` (semáforo e leitura gerencial), `3 ANÁLISE DE QUALIDADE FUNCIONAL E CONTINUIDADE DO SERVIÇO`, `4 ANÁLISE DE EXPOSIÇÃO A RISCOS OPERACIONAIS E CONTROLES DE PROTEÇÃO`, `5 RASTREABILIDADE, PRIVACIDADE E LIMITAÇÕES METODOLÓGICAS` e `6 CONCLUSÃO, ENCAMINHAMENTOS E QUADRO DE CIÊNCIA PARA AUDITORIA` (encaminhamentos objetivos conforme o semáforo e tabela de ciência/aprovação para Responsável Técnico, Gestor da Área de Negócio e Auditoria Interna / Riscos e Conformidade).
+  - `APÊNDICE A — EVIDÊNCIAS TÉCNICAS E CRIPTOGRÁFICAS PARA AUDITORIA` (A.1 a A.6): tabelas completas do A/B, ASR por categoria com IC 95% de Wilson, falsos positivos, manifesto das respostas, hashes SHA-256 das entradas e verificação da cadeia de auditoria.
+- Paginação A4 em CSS estático (sem JavaScript, CSP `default-src 'none'; style-src 'unsafe-inline'`): `@page{size:A4;margin:3cm 2cm 2cm 3cm}` e regras `@media print` com quebra de página no Apêndice A, permitindo gerar PDF diretamente pelo navegador ("Imprimir / Salvar como PDF"). No portal (`platform/portal/src/pages/ReportView.tsx`), o botão principal passa a exibir `Download HTML (ABNT / Print PDF)`.
+- Alternativa descartada: geração de texto livre por LLM, pois introduziria custo, variabilidade não reproduzível, risco de alucinação sobre números medidos e dependência de modelo na etapa de relatório.
+
+**Consequências e limitações.**
+- Preserva reprodutibilidade bit a bit (o mesmo `relatorio.json` gera exatamente o mesmo Markdown e HTML), custo zero e dispensa dependências pesadas de geração de PDF no servidor (como Chromium ou WeasyPrint).
+- A geração do arquivo `.pdf` depende da ação de impressão do navegador do leitor; a API não entrega binário PDF diretamente.
+- Os limiares do semáforo seguem provisórios (verde não significa agente imune a falhas), os textos internos permanecem em português mesmo com a interface do portal em inglês e a estrutura ABNT NBR 10719 não substitui parecer jurídico, regulatório nem auditoria externa independente.
+
+## ADR-014: prontidão para operação online e simplicidade de manutenção
+
+**Contexto.** Para operar a plataforma (`platform/`) online atrás de proxy reverso HTTPS e manter o pacote instalável fora da raiz do repositório, era necessário eliminar dependências de importação com `examples/`, ajustar dependências de desenvolvimento, expor endpoint de saúde, permitir desligar documentação interativa, aplicar cabeçalhos HTTP defensivos e suportar leitura controlada de `X-Forwarded-For`, sem tornar o CI ou a manutenção mais complexos.
+
+**Decisão.**
+- **D1 — Desacoplamento de `examples/`**: os imports de `examples.rag_agent` em `src/agent_ops_kit/eval/runner.py`, `src/agent_ops_kit/redteam/harness.py` e `src/agent_ops_kit/redteam/false_positives.py` passaram para carga sob demanda dentro das funções de execução ao vivo (`_load_run_agent`, `_load_example`), com mensagem explícita de `ImportError` quando `examples.rag_agent` não está disponível. Os fluxos offline (`aok eval --reuse`, `aok redteam report`, `aok report`, `aok audit`) funcionam sem a pasta `examples/` (`tests/test_packaging_isolation.py`).
+- **D2 — `httpx` movido para o extra `dev`**: `httpx` saiu do extra `[project.optional-dependencies].platform` em `pyproject.toml` e passou para `[project.optional-dependencies].dev`, pois no repositório é usado apenas pelo `TestClient` nos testes da plataforma.
+- **D3 — Tagline na landing do portal**: `platform/portal/src/pages/Landing.tsx` passou a exibir `BRAND_TAGLINE` na seção principal da landing (`"Test reports for AI agents, with the caveats in plain sight."`).
+- **D5 — Manter apenas `ruff check` no CI**: `.github/workflows/ci.yml` mantém apenas `python -m ruff check .`, em vez de adotar `ruff format --check` e reformatar 49 arquivos existentes, priorizando diffs limpos, histórico legível e manutenção simples.
+- **Prontidão online da plataforma (`platform/aok_platform/app.py`, `recovery.py`, `platform/docker-compose.yml`, `platform/env.example`)**:
+  - `GET /v1/health`: executa `SELECT 1` no banco e verifica acesso/criação de `AOK_DATA_DIR`, devolvendo `200 {"status": "ok"}` ou `503 {"status": "unavailable"}` com `Cache-Control: no-store` e sem expor detalhes internos; usado no `healthcheck` do serviço `api` em `platform/docker-compose.yml`.
+  - `AOK_DOCS_ENABLED` (padrão `true`): quando `false`, desliga `/docs`, `/redoc` e `/openapi.json` no FastAPI e também no fallback SPA em `mount_portal` (passam a responder 404).
+  - Cabeçalhos HTTP de segurança via middleware em `app.py`: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` e `Referrer-Policy: no-referrer` em todas as respostas, mais `Strict-Transport-Security: max-age=31536000; includeSubDomains` quando `AOK_HSTS_ENABLED=true` (padrão `false`, para ativar somente atrás de HTTPS obrigatório).
+  - `AOK_TRUSTED_PROXIES` em `recovery.py` (`client_ip`): lista opcional de IPs/CIDRs confiáveis separados por vírgula. Sem configuração (padrão), ignora `X-Forwarded-For` e usa o IP do par conectado; quando o par conectado pertence a uma rede confiável, varre `X-Forwarded-For` da direita para a esquerda e utiliza o primeiro IP fora da lista confiável nos limites horários por IP da recuperação de senha.
+
+**Consequências e limitações.**
+- A plataforma está pronta para rodar online em **instância única** (um worker/processo atrás de proxy reverso HTTPS, com Postgres gerenciado/externo e disco persistente para `AOK_DATA_DIR`).
+- Para múltiplas réplicas ou vários workers em alta disponibilidade, continuam como próximos passos: adoção formal do **Alembic** para migrações (em vez de `ensure_schema` no startup) e armazenamento compartilhado fora da memória do processo para os limitadores de tentativas (`LoginThrottle` e `HourlyLimiter`).
+- `AOK_TRUSTED_PROXIES` exige a lista exata dos proxies da infraestrutura (entradas inválidas são ignoradas com registro em log); sem ela, os limites por IP da recuperação de senha continuam vendo o IP do proxy.
+- Os novos mecanismos foram validados por testes automatizados em SQLite/`TestClient` (`tests/test_packaging_isolation.py` e `tests/test_platform_online_readiness.py`); não houve teste de carga nem validação em nuvem de produção.
