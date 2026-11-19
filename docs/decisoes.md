@@ -217,6 +217,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - E-mail ausente ou com mais de 254 caracteres responde 422, não 202.
 - Verificado especificamente neste fluxo: 8 `/reset` simultâneos por token em Postgres local deram exatamente 1 sucesso por token (verificação manual, fora do repositório); no navegador (Edge) com servidor SMTP local real (Mailpit): link real no login com o recurso ativo e placeholder "Soon" com ele desligado; UI idêntica para e-mail existente e inexistente (e-mail só para o existente); e-mail com link `#token` sem a senha; fragmento removido da URL; senha curta recusada; senha nova funciona e a antiga falha; sessão anterior revogada; link reusado inválido; novo pedido invalida o anterior; aviso de troca recebido; 4º pedido seguido sem e-mail.
 - Não exercitados: envio por provedor SMTP real (STARTTLS, entregabilidade), 429 do reset na interface, leitor de tela, contraste e outros navegadores. Verificações gerais de Postgres, CI e contagem atual de testes: ver ADR-007 e a seção "Estado e testes" do [README](../README.md).
+- **Atualização (ADR-017).** Os contadores de `/forgot` e `/reset` foram movidos da memória para a tabela compartilhada `rate_limit_entry` (chave em SHA-256), e `POST /v1/auth/password/reset` passou a validar e consumir o token antes de aplicar o bloqueio por IP — eliminando o risco de negação de serviço sobre tokens válidos sob IP compartilhado/NAT.
 
 ## ADR-013: relatório técnico-executivo em linguagem de negócios e estrutura ABNT NBR 10719
 
@@ -256,6 +257,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Para múltiplas réplicas ou vários workers em alta disponibilidade, continuam como próximos passos: adoção formal do **Alembic** para migrações (em vez de `ensure_schema` no startup) e armazenamento compartilhado fora da memória do processo para os limitadores de tentativas (`LoginThrottle` e `HourlyLimiter`).
 - `AOK_TRUSTED_PROXIES` exige a lista exata dos proxies da infraestrutura (entradas inválidas são ignoradas com registro em log); sem ela, os limites por IP da recuperação de senha continuam vendo o IP do proxy.
 - Os novos mecanismos foram validados por testes automatizados em SQLite/`TestClient` (`tests/test_packaging_isolation.py` e `tests/test_platform_online_readiness.py`); não houve teste de carga nem validação em nuvem de produção.
+- **Atualização (ADR-016 e ADR-017).** As pendências para múltiplas réplicas foram implementadas nos ADRs seguintes: migrações formais com Alembic (ADR-016) e store compartilhado no banco para `LoginThrottle` e `HourlyLimiter` (ADR-017).
 
 ## ADR-015: portal oficial "Farol." em pt-BR, direção visual de diário de bordo e semáforo acessível
 
@@ -286,4 +288,19 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 **Consequências e limitações.**
 - Bancos existentes criados antes do Alembic recebem a revisão inicial no primeiro `upgrade` sem perda de dados, e o SQLite legado passa a suportar o mesmo `slug` de agente em organizações diferentes.
 - Com `AOK_AUTO_MIGRATE=false` sobre banco não migrado, `init_db` recusa o startup com erro explícito sem alterar o banco.
-- A adoção do Alembic resolve o versionamento e a serialização de DDL, mas escalar para múltiplas réplicas ou vários workers ainda depende de um armazenamento compartilhado fora da memória do processo para os limitadores de tentativas (`LoginThrottle` e `HourlyLimiter`), que continuam sendo o próximo passo para multi-réplica.
+- A adoção do Alembic resolve o versionamento e a serialização de DDL, mas escalar para múltiplas réplicas ou vários workers ainda depende de um armazenamento compartilhado fora da memória do processo para os limitadores de tentativas (`LoginThrottle` e `HourlyLimiter`), que continuam sendo o próximo passo para multi-réplica (resolvido no ADR-017).
+
+## ADR-017: store compartilhado de rate limiting no banco e endurecimento do reset de senha
+
+**Contexto.** Conforme registrado nos ADRs 012, 014 e 016, `LoginThrottle` e `HourlyLimiter` mantinham contagens apenas na memória de cada processo — reiniciando em deploys e não somando entre múltiplos workers ou réplicas. Além disso, `POST /v1/auth/password/reset` checava o limite de falhas por IP antes de validar o token, o que podia bloquear um usuário legítimo com token válido atrás de IP compartilhado/NAT após 10 tentativas inválidas de terceiros (ADR-012).
+
+**Decisão.**
+- **Tabela `rate_limit_entry` (migração Alembic `0002_rate_limit_entry`)**: chave primária composta `(bucket, key_hash)` separando os escopos (`"login"`, `"ops_login"`, `"forgot_email"`, `"forgot_ip"`, `"reset_fail"`), com `count`, `window_start`, `locked_until` e `expires_at` indexado (`ix_rate_limit_entry_expires_at`). A coluna `key_hash` armazena sempre o digest SHA-256 hex (64 caracteres) do e-mail ou IP — nunca o dado bruto em texto puro.
+- **`LoginThrottle` e `HourlyLimiter` compartilhados (`platform/aok_platform/rate_limit.py`)**: reexportados por `sessions.py` e `recovery.py` para compatibilidade; usam `clock=time.time` em segundos, aceitam `factory` e `bucket` (mantendo fallback em memória quando `factory is None`) e tratam concorrência em Postgres (`SELECT ... FOR UPDATE` + retry de `IntegrityError` na corrida de inserção) e SQLite (`BEGIN IMMEDIATE` + retry com backoff para `IntegrityError` e `OperationalError` de trava, além de serialização em memória para `:memory:` com `StaticPool`). Entradas vencidas (`expires_at < now`) são podadas periodicamente por bucket.
+- **Endurecimento de `POST /v1/auth/password/reset` (`recovery.py`)**: o endpoint consulta e consome atomicamente o token válido primeiro (`used_at is None`, `expires_at > now`, usuário e organização ativos), retornando `204` mesmo que o IP já tenha atingido 10 tentativas inválidas. Apenas tentativas inválidas (incluindo reuso posterior de token consumido) consultam e incrementam o limitador `fail`, retornando `429` após o limite ou `400` genérico enquanto dentro do limite.
+- **Alternativa descartada**: adicionar Redis ou serviço externo de cache, que aumentaria custo operacional e complexidade de infraestrutura sem necessidade no estágio atual.
+
+**Consequências e limitações.**
+- Limites de login, operador e recuperação de senha passam a persistir entre reinícios e a somar entre múltiplos workers ou réplicas ligados ao mesmo banco, sem dependências externas novas.
+- Cada tentativa autenticada/recuperação executa consultas curtas na tabela `rate_limit_entry`; se a escala futura exigir menor carga no banco transacional, a interface de `LoginThrottle`/`HourlyLimiter` permite trocar o backend de armazenamento de forma isolada.
+- Verificado em SQLite (multi-instância em arquivo compartilhado, isolamento de buckets, privacidade dos hashes, concorrência com threads, poda automática e fallback em memória) e migração incremental Alembic `0001 -> 0002` com `compare_metadata` sem divergências.

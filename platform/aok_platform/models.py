@@ -8,6 +8,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -206,6 +207,18 @@ class OperatorEvent(Base):
     target_org_id: Mapped[int | None] = mapped_column(ForeignKey("organization.id"), nullable=True)
     target_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class RateLimitEntry(Base):
+    """Estado compartilhado de limitadores de tentativas; a chave é sempre hash SHA-256."""
+
+    __tablename__ = "rate_limit_entry"
+    bucket: Mapped[str] = mapped_column(String(40), primary_key=True)
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    window_start: Mapped[float] = mapped_column(Float)
+    locked_until: Mapped[float] = mapped_column(Float, default=0.0)
+    expires_at: Mapped[float] = mapped_column(Float, index=True)
 
 
 def _immutable(*_args) -> None:

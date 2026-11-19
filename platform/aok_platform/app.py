@@ -757,19 +757,19 @@ def create_app(database_url: str | None = None, data_dir: str | Path | None = No
 
     get_session = session_dependency(factory)
     current_user, current_org_admin, require_admin = make_dependencies(get_session)
-    app.state.throttle = LoginThrottle()
+    app.state.throttle = LoginThrottle(factory=factory, bucket="login")
     app.include_router(build_admin_router(get_session, require_admin, current_org_admin))
     app.include_router(build_reports_router(get_session, data))
     app.include_router(build_auth_router(get_session, current_user, app.state.throttle))
     app.state.recovery_limiters = {
-        "email": HourlyLimiter(FORGOT_PER_EMAIL),
-        "ip": HourlyLimiter(FORGOT_PER_IP),
-        "fail": HourlyLimiter(RESET_FAILS_PER_IP),
+        "email": HourlyLimiter(FORGOT_PER_EMAIL, factory=factory, bucket="forgot_email"),
+        "ip": HourlyLimiter(FORGOT_PER_IP, factory=factory, bucket="forgot_ip"),
+        "fail": HourlyLimiter(RESET_FAILS_PER_IP, factory=factory, bucket="reset_fail"),
     }
     app.include_router(build_recovery_router(get_session, factory, app.state.recovery_limiters))
     app.include_router(build_portal_router(get_session, current_user, current_org_admin, data))
     if ops_enabled():  # desligado por padrão: sem a variável, /v1/ops/* nem existe (404)
-        app.state.ops_throttle = LoginThrottle()
+        app.state.ops_throttle = LoginThrottle(factory=factory, bucket="ops_login")
         app.include_router(build_ops_router(get_session, app.state.ops_throttle))
     mount_portal(app, default_portal_dir())
     return app

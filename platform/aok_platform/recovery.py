@@ -5,7 +5,7 @@ Só existe com AOK_SMTP_HOST e AOK_PUBLIC_URL definidos; sem isso forgot/reset r
 202 com o mesmo corpo (exista ou não o e-mail, usuário ou organização ativos ou não) e faz todo o
 trabalho (consulta, token, e-mail) DEPOIS de responder, em segundo plano. Token: token_urlsafe(32), só o
 hash SHA-256 no banco, uso único, 30 min, no FRAGMENTO do link (não vai para logs nem Referer). Limites
-em memória, por processo, como o do login. O operador da plataforma não usa este fluxo.
+compartilhados no banco (`rate_limit_entry`), com chave sempre em SHA-256. O operador da plataforma não usa este fluxo.
 """
 
 from __future__ import annotations
@@ -13,8 +13,6 @@ from __future__ import annotations
 import ipaddress
 import logging
 import os
-import threading
-import time
 from datetime import timedelta
 from html import escape
 
@@ -28,45 +26,16 @@ from starlette.background import BackgroundTask
 from . import mailer
 from .auth import MIN_PASSWORD, hash_password, hash_token, new_token, org_is_active
 from .models import AdminEvent, PasswordReset, User, UserSession, utcnow
+from .rate_limit import HourlyLimiter
 
 log = logging.getLogger("aok_platform.recovery")
 
 TOKEN_TTL = timedelta(minutes=30)
-HOUR = 3600
 FORGOT_PER_EMAIL = 3
 FORGOT_PER_IP = 10
 RESET_FAILS_PER_IP = 10
 GENERIC = {"status": "accepted", "detail": "If the email belongs to an active account, a reset link has been sent."}
 INVALID = "invalid or expired token"
-
-
-class HourlyLimiter:
-    """Contador por chave numa janela fixa de 1 hora, em memória (por processo)."""
-
-    def __init__(self, maximum: int, window: float = HOUR, clock=time.monotonic):
-        self.maximum, self.window, self.clock = maximum, window, clock
-        self._state: dict[str, list[float]] = {}  # chave -> [início da janela, contagem]
-        self._lock = threading.Lock()
-
-    def _entry(self, key: str) -> list[float]:
-        now = self.clock()
-        if len(self._state) > 10_000:  # poda simples das janelas vencidas
-            self._state = {k: v for k, v in self._state.items() if now - v[0] < self.window}
-        st = self._state.get(key)
-        if st is None or now - st[0] >= self.window:
-            st = self._state[key] = [now, 0]
-        return st
-
-    def hit(self, key: str) -> bool:
-        """Conta mais um pedido; True se ainda está dentro do limite."""
-        with self._lock:
-            st = self._entry(key)
-            st[1] += 1
-            return st[1] <= self.maximum
-
-    def exceeded(self, key: str) -> bool:
-        with self._lock:
-            return self._entry(key)[1] >= self.maximum
 
 
 class ForgotIn(BaseModel):
@@ -224,11 +193,10 @@ def build_recovery_router(get_session, factory: sessionmaker[Session], limiters:
         if not mailer.recovery_enabled():
             raise HTTPException(404, "not found")
         ip = client_ip(request)
-        if limiters["fail"].exceeded(ip):
-            raise HTTPException(429, "too many attempts; try again later")
 
         def invalid():
-            limiters["fail"].hit(ip)
+            if limiters["fail"].exceeded(ip) or not limiters["fail"].hit(ip):
+                return HTTPException(429, "too many attempts; try again later")
             return HTTPException(400, INVALID)  # mesma resposta para qualquer motivo
 
         now = utcnow()

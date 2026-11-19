@@ -255,9 +255,12 @@ def test_tentativas_invalidas_de_reset_sao_limitadas(rec):
     _forgot(c, "ana@x.com")
     good = _token(mails)
     for _ in range(10):
-        assert c.post("/v1/auth/password/reset", json={"token": "errado-errado-errado", "new_password": NEW}).status_code == 400
-    r = c.post("/v1/auth/password/reset", json={"token": good, "new_password": NEW})  # até o token certo
-    assert r.status_code == 429
+        assert c.post("/v1/auth/password/reset", json={"token": "errado-errado", "new_password": NEW}).status_code == 400
+    assert c.post("/v1/auth/password/reset", json={"token": "errado-errado", "new_password": NEW}).status_code == 429
+    # Token válido do mesmo IP continua passando (evita DoS em NAT/IP compartilhado).
+    assert c.post("/v1/auth/password/reset", json={"token": good, "new_password": NEW}).status_code == 204
+    # Reuso posterior desse token já consumido volta a ser barrado pelo limite do IP.
+    assert c.post("/v1/auth/password/reset", json={"token": good, "new_password": NEW}).status_code == 429
 
 
 # ---- SMTP com falha, log e servidor SMTP de verdade ----------------------------------------------------

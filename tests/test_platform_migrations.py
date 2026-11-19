@@ -14,10 +14,12 @@ pytest.importorskip("fastapi")
 pytest.importorskip("sqlalchemy")
 
 from alembic import command
+from alembic.autogenerate import compare_metadata
+from alembic.migration import MigrationContext
 from aok_platform.app import create_app
 from aok_platform.db import init_db, make_engine
 from aok_platform.migrate import alembic_config, run_migrations
-from aok_platform.models import Agent, Organization
+from aok_platform.models import Agent, Base, Organization
 from conftest import TEST_DB_URL, pg_schema_url
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, select, text
@@ -39,6 +41,7 @@ EXPECTED_TABLES = {
     "platform_operator",
     "operator_session",
     "operator_event",
+    "rate_limit_entry",
 }
 
 EXPECTED_INDEXES = {
@@ -52,7 +55,17 @@ EXPECTED_INDEXES = {
     "admin_event": {"ix_admin_event_org_id", "ix_admin_event_at"},
     "operator_session": {"ix_operator_session_operator_id"},
     "operator_event": {"ix_operator_event_at", "ix_operator_event_operator_id"},
+    "rate_limit_entry": {"ix_rate_limit_entry_expires_at"},
 }
+
+
+def _schema_diffs(engine) -> list:
+    with engine.connect() as conn:
+        mc = MigrationContext.configure(
+            conn,
+            opts={"compare_type": True, "render_as_batch": engine.dialect.name == "sqlite"},
+        )
+        return compare_metadata(mc, Base.metadata)
 
 
 def _alembic_revisions(engine) -> list[str]:
@@ -71,7 +84,8 @@ def test_sqlite_novo_cria_tabelas_indices_e_alembic_version_idempotente(tmp_path
         tables = set(insp.get_table_names())
         assert EXPECTED_TABLES <= tables
         assert "alembic_version" in tables
-        assert _alembic_revisions(engine) == ["0001_initial_schema"]
+        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _schema_diffs(engine) == []
 
         for table, expected_ix in EXPECTED_INDEXES.items():
             got = {ix["name"] for ix in insp.get_indexes(table)}
@@ -110,7 +124,7 @@ def test_sqlite_legado_remove_unique_global_de_slug_preserva_dados_e_idempotente
 
         insp = inspect(engine)
         assert EXPECTED_TABLES <= set(insp.get_table_names())
-        assert _alembic_revisions(engine) == ["0001_initial_schema"]
+        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
         assert "ix_agent_org_id" in {ix["name"] for ix in insp.get_indexes("agent")}
 
         with Session(engine) as s:
@@ -155,7 +169,37 @@ def test_sqlite_roundtrip_upgrade_downgrade_upgrade(tmp_path):
 
         run_migrations(engine)
         assert EXPECTED_TABLES <= set(inspect(engine).get_table_names())
+        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _schema_diffs(engine) == []
+    finally:
+        engine.dispose()
+
+
+def test_sqlite_incremental_0001_para_0002_e_downgrade_parcial(tmp_path):
+    db_path = tmp_path / "inc.db"
+    url = f"sqlite:///{db_path}"
+    engine = make_engine(url)
+    try:
+        run_migrations(engine, revision="0001_initial_schema")
         assert _alembic_revisions(engine) == ["0001_initial_schema"]
+        assert "rate_limit_entry" not in set(inspect(engine).get_table_names())
+
+        run_migrations(engine)
+        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert "rate_limit_entry" in set(inspect(engine).get_table_names())
+        assert _schema_diffs(engine) == []
+
+        cfg = alembic_config(url)
+        with engine.connect() as conn:
+            cfg.attributes["connection"] = conn
+            command.downgrade(cfg, "0001_initial_schema")
+        assert _alembic_revisions(engine) == ["0001_initial_schema"]
+        assert "rate_limit_entry" not in set(inspect(engine).get_table_names())
+
+        run_migrations(engine)
+        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert "rate_limit_entry" in set(inspect(engine).get_table_names())
+        assert _schema_diffs(engine) == []
     finally:
         engine.dispose()
 
@@ -204,7 +248,7 @@ def test_cli_migrate_upgrade_current_heads_independente_de_cwd(tmp_path):
         text=True,
         check=True,
     )
-    assert "0001_initial_schema" in heads.stdout
+    assert "0002_rate_limit_entry" in heads.stdout
 
     subprocess.run(
         [sys.executable, "-m", "aok_platform.migrate", "upgrade", "--url", url],
@@ -221,7 +265,7 @@ def test_cli_migrate_upgrade_current_heads_independente_de_cwd(tmp_path):
         text=True,
         check=True,
     )
-    assert "0001_initial_schema" in current.stdout
+    assert "0002_rate_limit_entry" in current.stdout
 
     engine = make_engine(url)
     try:
@@ -244,11 +288,22 @@ def test_postgres_novo_upgrade_idempotente_e_roundtrip():
 
         insp = inspect(engine)
         assert EXPECTED_TABLES <= set(insp.get_table_names())
-        assert _alembic_revisions(engine) == ["0001_initial_schema"]
+        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _schema_diffs(engine) == []
         for table, expected_ix in EXPECTED_INDEXES.items():
             assert expected_ix <= {ix["name"] for ix in insp.get_indexes(table)}
 
         cfg = alembic_config(url)
+        with engine.connect() as conn:
+            cfg.attributes["connection"] = conn
+            command.downgrade(cfg, "0001_initial_schema")
+        assert _alembic_revisions(engine) == ["0001_initial_schema"]
+        assert "rate_limit_entry" not in set(inspect(engine).get_table_names())
+
+        run_migrations(engine)
+        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _schema_diffs(engine) == []
+
         with engine.connect() as conn:
             cfg.attributes["connection"] = conn
             command.downgrade(cfg, "base")
@@ -256,7 +311,8 @@ def test_postgres_novo_upgrade_idempotente_e_roundtrip():
 
         run_migrations(engine)
         assert EXPECTED_TABLES <= set(inspect(engine).get_table_names())
-        assert _alembic_revisions(engine) == ["0001_initial_schema"]
+        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _schema_diffs(engine) == []
     finally:
         engine.dispose()
         with admin.connect() as conn:

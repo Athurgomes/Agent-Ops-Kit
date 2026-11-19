@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import threading
-import time
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -23,40 +21,9 @@ from .auth import (
     verify_password,
 )
 from .models import Membership, User, UserSession, utcnow
+from .rate_limit import LOCK_SECONDS, MAX_FAILURES, LoginThrottle
 
-MAX_FAILURES = 5
-LOCK_SECONDS = 300
-
-
-class LoginThrottle:
-    """Falhas por e-mail em memória (por processo): 5 falhas travam o e-mail por 5 minutos."""
-
-    def __init__(self, max_failures=MAX_FAILURES, lock_seconds=LOCK_SECONDS, clock=time.monotonic):
-        self.max_failures, self.lock_seconds, self.clock = max_failures, lock_seconds, clock
-        self._state: dict[str, list[float]] = {}  # email -> [falhas, travado_até]
-        self._lock = threading.Lock()
-
-    def retry_after(self, email: str) -> int:
-        with self._lock:
-            st = self._state.get(email)
-            left = (st[1] - self.clock()) if st else 0
-            return int(left) + 1 if left > 0 else 0
-
-    def fail(self, email: str) -> None:
-        with self._lock:
-            now = self.clock()
-            if len(self._state) > 10_000:  # poda simples: descarta entradas sem trava ativa
-                self._state = {k: v for k, v in self._state.items() if v[1] > now}
-            st = self._state.setdefault(email, [0, 0.0])
-            if st[1] and st[1] <= now:  # trava expirou: recomeça a contagem
-                st[0], st[1] = 0, 0.0
-            st[0] += 1
-            if st[0] >= self.max_failures:
-                st[0], st[1] = 0, now + self.lock_seconds
-
-    def ok(self, email: str) -> None:
-        with self._lock:
-            self._state.pop(email, None)
+__all__ = ["LOCK_SECONDS", "MAX_FAILURES", "LoginThrottle", "build_auth_router"]
 
 
 class LoginIn(BaseModel):

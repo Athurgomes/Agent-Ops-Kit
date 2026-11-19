@@ -52,7 +52,7 @@ Use HTTPS na frente da API fora de testes locais: o token trafega no cabeçalho.
 3. Login: `POST /v1/auth/login` -> cookie `aok_session` (HttpOnly, SameSite=Strict, 8 h,
    `Secure` por padrão; `AOK_COOKIE_SECURE=false` só para teste local sem HTTPS).
    `POST /v1/auth/logout`, `GET /v1/auth/me`. Erro de login é sempre o mesmo (401);
-   5 falhas por e-mail travam o e-mail por 5 minutos (429, contagem em memória do processo).
+   5 falhas por e-mail travam o e-mail por 5 minutos (429, contagem compartilhada no banco com chave em SHA-256).
 4. Leitura (só sessão): `GET /v1/areas`, `/v1/areas/{id}/agents`, `/v1/agents/{id}/reports`,
    `/v1/reports/{id}`, `/v1/reports/{id}/download?format=md|html|json`. Área fora do alcance: 404.
 5. Todo download grava em `download_log`. `GET /v1/me/downloads` mostra só os do próprio usuário
@@ -154,8 +154,8 @@ curl -X POST http://127.0.0.1:8000/v1/admin/users -H "Authorization: Bearer $AOK
 # depois POST /v1/admin/memberships com {"user_id": <id>, "role": "org_admin"} (mesmos cabeçalhos)
 ```
 
-- Migrações formais de banco com **Alembic** (`platform/aok_platform/migrations/`, revisão
-  `0001_initial_schema`): aplicadas automaticamente no startup por padrão (`ensure_schema` via
+- Migrações formais de banco com **Alembic** (`platform/aok_platform/migrations/`, revisões
+  `0001_initial_schema` e `0002_rate_limit_entry`): aplicadas automaticamente no startup por padrão (`ensure_schema` via
   `AOK_AUTO_MIGRATE=true`), com lock transacional (`pg_advisory_xact_lock`) em Postgres e upgrade
   seguro de bancos legados preservando dados (`organization.slug`, `active`, `created_at`,
   `agent.org_id` e remoção do `UNIQUE(slug)` global no SQLite e Postgres).
@@ -225,20 +225,21 @@ respondem 404 e `GET /v1/auth/capabilities` devolve `{"password_reset": false}` 
 
 - `POST /v1/auth/password/forgot {email}`: responde **sempre 202**, com o mesmo corpo, exista ou não o e-mail,
   esteja o usuário ou a organização ativos ou não. A consulta, o token e o envio rodam depois da resposta. Só
-  envia se o usuário e a organização estiverem ativos. Limites em memória: 3 pedidos por e-mail e 10 por IP por
-  hora (ao exceder, continua 202 sem enviar). Falha de SMTP não aparece para o cliente; o log traz só o e-mail
-  mascarado (`a***@e***.com`), nunca o token.
+  envia se o usuário e a organização estiverem ativos. Limites persistidos no banco (`rate_limit_entry`, chave em
+  SHA-256): 3 pedidos por e-mail e 10 por IP por hora (ao exceder, continua 202 sem enviar). Falha de SMTP não
+  aparece para o cliente; o log traz só o e-mail mascarado (`a***@e***.com`), nunca o token.
 - O e-mail leva só o link `{AOK_PUBLIC_URL}/reset-password#token=<token>` (token no **fragmento**, que não vai
   para logs nem Referer), validade de 30 min e o aviso "if you didn't request this, ignore it".
 - `POST /v1/auth/password/reset {token, new_password}`: senha com 12+ caracteres (422 se curta); falha por
   qualquer motivo (inexistente, expirado, usado, usuário ou organização inativos) = `400 invalid or expired
-  token`; mais de 10 tentativas inválidas por IP por hora = 429. Sucesso = 204 sem corpo: troca a senha, revoga
-  **todas** as sessões do usuário, invalida os outros tokens pendentes, grava `user.password_reset` em
+  token`; mais de 10 tentativas inválidas por IP por hora = 429 (tokens válidos continuam sendo aceitos mesmo após
+  10 falhas do IP, evitando negação de serviço em NAT/IP compartilhado). Sucesso = 204 sem corpo: troca a senha,
+  revoga **todas** as sessões do usuário, invalida os outros tokens pendentes, grava `user.password_reset` em
   `admin_event` e envia um aviso "Your password was changed". Não faz login automático.
 - Token: `token_urlsafe(32)`, só o hash SHA-256 na tabela `password_reset` (sem IP), uso único, 30 min; um novo
   pedido invalida os anteriores.
-- Limitações: os limites são por processo (reiniciam no deploy e não somam entre vários workers); atrás de
-  proxy reverso sem `AOK_TRUSTED_PROXIES` configurado, o IP visto é o do proxy (com a variável definida,
+- Limitações: os limites são compartilhados no banco (`rate_limit_entry`, com poda periódica de entradas vencidas);
+  atrás de proxy reverso sem `AOK_TRUSTED_PROXIES` configurado, o IP visto é o do proxy (com a variável definida,
   usa o primeiro IP fora dos proxies confiáveis em `X-Forwarded-For`, da direita para a esquerda). O
   operador da plataforma não usa este fluxo (a senha dele só se redefine pela linha de comando).
 
@@ -271,9 +272,10 @@ Para operar a plataforma publicada online em instância única:
    e o acesso a `AOK_DATA_DIR` (`200 {"status": "ok"}` ou `503 {"status": "unavailable"}`, com
    `Cache-Control: no-store`). O serviço `api` em `platform/docker-compose.yml` já usa esse endpoint.
 
-Ressalva: as migrações de esquema já usam **Alembic** (com `pg_advisory_xact_lock` em Postgres e opção
-`AOK_AUTO_MIGRATE=false`), mas escalar para múltiplas réplicas ou vários workers ainda exige um
-**store compartilhado** fora da memória do processo para os limitadores de tentativas
-(`LoginThrottle` e `HourlyLimiter`). Detalhes das decisões e limites estão nos ADRs 014 e 016 em
-[docs/decisoes.md](../docs/decisoes.md).
+Múltiplas réplicas e vários workers: as migrações de esquema usam **Alembic** (com `pg_advisory_xact_lock` em
+Postgres e opção `AOK_AUTO_MIGRATE=false` para rodar `python -m aok_platform.migrate upgrade` antes de subir os
+processos) e os limitadores de tentativas (`LoginThrottle` e `HourlyLimiter`) usam store compartilhado no banco
+(`rate_limit_entry`, sem necessidade de Redis). Em múltiplos nós, apenas `AOK_DATA_DIR` precisa de volume
+compartilhado para leitura dos arquivos de relatório. Detalhes das decisões e limites estão nos ADRs 014, 016 e 017
+em [docs/decisoes.md](../docs/decisoes.md).
 
