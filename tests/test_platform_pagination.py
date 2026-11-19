@@ -83,7 +83,7 @@ def test_admin_listagens_paginacao_ordem_e_isolamento(env):
     # Cria áreas fora de ordem alfabética (incluindo nome repetido para testar desempate por id)
     areas_a = [
         ac_a.post("/v1/admin/areas", json={"name": name}).json()
-        for name in ("Zebra", "Alfa", "Alfa", "Meio", "Delta")
+        for name in ("Zebra", "Alfa", "Alfa", "Meio", "delta")
     ]
     assert len(areas_a) == 5
     # Outra organização não interfere nos totais nem nas páginas de Alfa
@@ -93,13 +93,14 @@ def test_admin_listagens_paginacao_ordem_e_isolamento(env):
     )
     ac_b.post("/v1/admin/users", json={"email": "u@beta.test", "password": USER_PWD})
 
-    # /v1/admin/areas: completo sem query params, ordenado por (name, id)
+    # /v1/admin/areas: completo sem query params, ordenado por (lower(name), name, id)
     full_areas = ac_a.get("/v1/admin/areas")
     assert full_areas.status_code == 200
     assert full_areas.headers["x-total-count"] == "5"
     full_area_ids = [a["id"] for a in full_areas.json()]
     assert [(a["name"], a["id"]) for a in full_areas.json()] == sorted(
-        [(a["name"], a["id"]) for a in areas_a]
+        [(a["name"], a["id"]) for a in areas_a],
+        key=lambda x: (x[0].lower(), x[0], x[1]),
     )
 
     p1 = ac_a.get("/v1/admin/areas?limit=2&offset=0")
@@ -115,7 +116,7 @@ def test_admin_listagens_paginacao_ordem_e_isolamento(env):
     # /v1/admin/agents: inclui desempate por id, tokens e last_report_at na página
     agents_a = []
     for i, (slug, name) in enumerate(
-        [("ag-z", "Zeta"), ("ag-a2", "Beta"), ("ag-a1", "Beta"), ("ag-c", "Gama"), ("ag-b", "Alfa")]
+        [("ag-z", "Zeta"), ("ag-a2", "Beta"), ("ag-a1", "Beta"), ("ag-c", "gama"), ("ag-b", "Alfa")]
     ):
         ag = ac_a.post(
             "/v1/admin/agents",
@@ -140,7 +141,8 @@ def test_admin_listagens_paginacao_ordem_e_isolamento(env):
     assert full_agents.headers["x-total-count"] == "5"
     full_ag_list = full_agents.json()
     assert [(a["name"], a["id"]) for a in full_ag_list] == sorted(
-        [(a["name"], a["id"]) for a in full_ag_list]
+        [(a["name"], a["id"]) for a in full_ag_list],
+        key=lambda x: (x[0].lower(), x[0], x[1]),
     )
 
     ap1 = ac_a.get("/v1/admin/agents?limit=2&offset=0")
@@ -212,7 +214,8 @@ def test_ops_organizations_paginacao_e_total(env):
     assert full.headers["x-total-count"] == "4"
     full_list = full.json()
     assert [(o["name"], o["id"]) for o in full_list] == sorted(
-        [(o["name"], o["id"]) for o in full_list]
+        [(o["name"], o["id"]) for o in full_list],
+        key=lambda x: (x[0].lower(), x[0], x[1]),
     )
 
     p1 = ops_client.get("/v1/ops/organizations?limit=2&offset=0")

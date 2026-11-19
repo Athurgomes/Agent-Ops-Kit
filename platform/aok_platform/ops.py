@@ -352,7 +352,7 @@ def build_ops_router(get_session, throttle: LoginThrottle) -> APIRouter:
     ):
         total = s.scalar(select(func.count(Organization.id))) or 0
         response.headers["X-Total-Count"] = str(total)
-        stmt = select(Organization).order_by(Organization.name, Organization.id)
+        stmt = select(Organization).order_by(func.lower(Organization.name), Organization.name, Organization.id)
         if offset > 0:
             stmt = stmt.offset(offset)
         if limit is not None:

@@ -307,7 +307,9 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
         areas = list(
             s.scalars(
                 _paginate(
-                    select(Area).where(Area.org_id == actor.org_id).order_by(Area.name, Area.id),
+                    select(Area)
+                    .where(Area.org_id == actor.org_id)
+                    .order_by(func.lower(Area.name), Area.name, Area.id),
                     limit,
                     offset,
                 )
@@ -351,7 +353,7 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
                 select(Agent, Area.name)
                 .join(Area, Area.id == Agent.area_id)
                 .where(Area.org_id == actor.org_id)
-                .order_by(Agent.name, Agent.id),
+                .order_by(func.lower(Agent.name), Agent.name, Agent.id),
                 limit,
                 offset,
             )
