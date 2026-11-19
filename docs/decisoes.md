@@ -118,9 +118,9 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Acesso por área com herança para sub-áreas (CTE recursiva, nunca para cima). `org_admin` vê a organização toda. Área fora do alcance responde 404.
 - `download_log` foi antecipado da fase 4 para a 3. Cada download grava o instante (baixado em) e o instante de geração do relatório (gerado em). Cada pessoa vê só os seus; só `org_admin` vê todos, por sessão e não pela chave de bootstrap, por LGPD. O filtro de área do histórico é por área exata, sem sub-áreas.
 - Tabelas criadas com `create_all`, sem migração.
-- Portal em React, Vite, TypeScript e Tailwind, servido pela própria API. O nome "Farol" é provisório e fictício (só em `platform/portal/src/brand.ts`). O visual é minimalista, em azul, com cantos arredondados (redesenho posterior ao primeiro visual, que se inspirava em um template neo-brutalista; o template foi abandonado). Substituído pelo ADR-009.
-- Idioma: toda a interface (landing, login, área logada) está em inglês. O conteúdo dos relatórios vindo do backend e os nomes do seed continuam em português (limitação conhecida).
-- Placeholders: Sign Up, Pricing, redes sociais e links de rodapé (Docs, Blog, Contact, Terms, Privacy) aparecem como "Soon" e não são clicáveis. Na landing, a nota do fundador é um rascunho e a fala de usuário está marcada como placeholder, não é depoimento real.
+- Portal em React, Vite, TypeScript e Tailwind, servido pela própria API. O nome "Farol" é provisório e fictício (só em `platform/portal/src/brand.ts`). O visual é minimalista, em azul, com cantos arredondados (redesenho posterior ao primeiro visual, que se inspirava em um template neo-brutalista; o template foi abandonado). Substituído pelo ADR-009 e posteriormente consolidado no ADR-015.
+- Idioma: toda a interface (landing, login, área logada) está em inglês. O conteúdo dos relatórios vindo do backend e os nomes do seed continuam em português (limitação conhecida). Superado pelo ADR-015 (interface consolidada em `pt-BR`).
+- Placeholders: Sign Up, Pricing, redes sociais e links de rodapé (Docs, Blog, Contact, Terms, Privacy) aparecem como "Soon" e não são clicáveis. Na landing, a nota do fundador é um rascunho e a fala de usuário está marcada como placeholder, não é depoimento real. Superado pelo ADR-015.
 
 **Consequências e limitações.**
 - O throttle reinicia a cada deploy, não funciona com vários workers (cada processo conta separado) e permite que terceiros travem a conta de outra pessoa por 5 minutos.
@@ -256,3 +256,20 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Para múltiplas réplicas ou vários workers em alta disponibilidade, continuam como próximos passos: adoção formal do **Alembic** para migrações (em vez de `ensure_schema` no startup) e armazenamento compartilhado fora da memória do processo para os limitadores de tentativas (`LoginThrottle` e `HourlyLimiter`).
 - `AOK_TRUSTED_PROXIES` exige a lista exata dos proxies da infraestrutura (entradas inválidas são ignoradas com registro em log); sem ela, os limites por IP da recuperação de senha continuam vendo o IP do proxy.
 - Os novos mecanismos foram validados por testes automatizados em SQLite/`TestClient` (`tests/test_packaging_isolation.py` e `tests/test_platform_online_readiness.py`); não houve teste de carga nem validação em nuvem de produção.
+
+## ADR-015: portal oficial "Farol." em pt-BR, direção visual de diário de bordo e semáforo acessível
+
+**Contexto.** Nos ADRs 008 e 009, o portal mantinha nome provisório, interface em inglês divergente do conteúdo em português dos relatórios e placeholders "Soon" (cadastro aberto, página de preços, depoimento fictício e rascunho de nota de fundador). Era preciso consolidar a identidade oficial, unificar o idioma da interface em `pt-BR`, eliminar elementos fictícios e reforçar a acessibilidade do semáforo e dos controles interativos sem depender de CDN externo.
+
+**Decisão.**
+- **Marca oficial "Farol."**: consolidada em `platform/portal/src/brand.ts` (`BRAND_NAME`, `BRAND_DOT`, `BRAND_TAGLINE`, `BRAND_SUBTITLE`) e no título das abas, encerrando o status provisório registrado no ADR-008.
+- **Interface 100% em `pt-BR` centralizada em `copy.ts`**: todos os textos visíveis ao usuário (landing, autenticação, área logada, administração e console `/ops`) passam a viver em `platform/portal/src/copy.ts`, com datas e números formatados explicitamente em `pt-BR` (`platform/portal/src/format.ts`), alinhando a interface ao idioma dos relatórios e do `seed_demo`.
+- **Foco B2B sem cadastro aberto nem preços**: removidos placeholders "Soon", rascunho de fundador e depoimento fictício. O canal comercial é opcional via `CONTACT_URL` em `platform/portal/src/brand.ts` (string vazia por padrão, ocultando CTAs de contato). O console do operador (`/ops/*`) permanece desligado por padrão (`AOK_OPS_ENABLED`) e sem links na interface (ADR-010).
+- **Direção visual Diário de Bordo / Carta Náutica e tipografia autohospedada**: paleta em papel `#ffffff`, tinta `#0a0a0a`, superfície `#f7f7f5` e azul `#2563eb` reservado a CTAs primários, links, foco (`:focus-visible`), ponto da marca e estados ativos; tipografia autohospedada via `@fontsource` (`Bricolage Grotesque`, `IBM Plex Sans` e `IBM Plex Mono`, sem CDN externo); desenhos ASCII decorativos marcados com `aria-hidden="true"` e respeito a `prefers-reduced-motion: reduce`.
+- **Semáforo-como-resultado com glifos distintos além da cor**: verde (`●`), amarelo (`◐`) e vermelho (`✕`) combinam cor, glifo distinto, rótulo textual e prefixo `sr-only`, sempre acompanhados das regras provisórias e das ressalvas explícitas ("Verde não significa seguro" e autodeclaração do relatório).
+
+**Consequências e limitações.**
+- Elimina a divergência de idioma entre interface e relatórios e remove dependência externa de fontes em tempo de execução, ao custo de embutir os arquivos `woff`/`woff2` no bundle estático (`platform/portal/dist/assets/`).
+- O provisionamento de contas segue sob controle administrativo (`org_admin` ou operador), e alterar `CONTACT_URL` requer recompilar o front-end.
+- O redesenho é restrito à camada de interface: não altera contratos de API, isolamento multi-organização, throttle em memória, regras provisórias do semáforo nem o caráter autodeclarado dos relatórios (ADR-007).
+- Verificado no build (`npm run build`) e via Edge headless/CDP em `1440x900` e `375x812` (zero erros de console, `scrollWidth <= innerWidth`, foco por teclado `:focus-visible` e `prefers-reduced-motion: reduce` em `/`, `/login` e `/app` com API simulada via CDP `Fetch`); não houve validação em leitores de tela nem em navegadores fora do Edge/Chromium.

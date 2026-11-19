@@ -60,17 +60,27 @@ Use HTTPS na frente da API fora de testes locais: o token trafega no cabeçalho.
 
 ## Portal (fase 3, front-end)
 
-Código em `platform/portal/` (React + Vite + TypeScript + Tailwind, sem biblioteca de UI). Interface
-em inglês; o nome "Farol" é provisório e fictício e vive só em `platform/portal/src/brand.ts`.
-A interface está toda em inglês (landing, login, área logada). Páginas: landing pública, login,
-areas > agents > reports > report detail (`Download HTML (ABNT / Print PDF)`, `Download Markdown` e
-`Download JSON (Evidence)`, com impressão A4 ou salvamento em PDF pelo navegador no padrão
-ABNT NBR 10719), "My downloads" e, para `org_admin`, "All downloads".
-Para `org_admin`: Administration (áreas, agentes, usuários, atividade) e All downloads.
+Código em `platform/portal/` (React + Vite + TypeScript + Tailwind, sem biblioteca de UI). O portal
+tem nome oficial **Farol.**, com identidade e canal comercial opcional (`CONTACT_URL`, vazio por
+padrão para ocultar CTAs de contato) definidos em `platform/portal/src/brand.ts`, e interface 100%
+em `pt-BR` centralizada em `platform/portal/src/copy.ts` (alinhada ao conteúdo dos relatórios e do
+`seed_demo`, com foco B2B sem cadastro aberto nem página de preços).
 
-Limitação conhecida: o conteúdo dos relatórios vindo do backend (ressalvas, textos do resumo) continua
-em português; só a interface foi traduzida. Itens "Soon" (Sign Up, Pricing, redes sociais, Docs,
-Blog, Contact, Terms, Privacy) são placeholders não clicáveis.
+- **Direção visual e tipografia**: estética de diário de bordo / carta náutica (papel `#ffffff`,
+  tinta `#0a0a0a`, superfície `#f7f7f5` e azul `#2563eb` reservado a CTAs primários, links, foco
+  `:focus-visible`, ponto da marca e estados ativos), com fontes autohospedadas via `@fontsource`
+  (`Bricolage Grotesque`, `IBM Plex Sans` e `IBM Plex Mono`, sem CDN externo), desenhos ASCII com
+  `aria-hidden="true"` e suporte a `prefers-reduced-motion: reduce`.
+- **Semáforo-como-resultado**: nunca depende apenas de cor — exibe glifos distintos (`●` Verde,
+  `◐` Amarelo, `✕` Vermelho), rótulo textual e prefixo acessível, sempre acompanhado das regras
+  provisórias e das ressalvas ("Verde não significa seguro" e autodeclaração).
+- **Telas**: landing pública (`/`), login (`/login`), áreas > agentes > relatórios > detalhe
+  (`/app/...`; botões `Baixar HTML (ABNT / PDF)`, `Baixar Markdown` e `Baixar JSON`, com impressão
+  A4 ou salvamento em PDF pelo navegador no padrão ABNT NBR 10719), "Meus downloads" e, para
+  `org_admin`, menu "Administração" (áreas, agentes, usuários, atividade) e "Todos os downloads".
+- **Console do operador (`/ops/*`)**: preservado desligado por padrão (só responde quando o
+  servidor sobe com `AOK_OPS_ENABLED=true`), sem links no site público nem no portal das
+  organizações e renderizado como 404 comum quando desativado (ADR-010 e ADR-015).
 
 ```bash
 cd platform/portal
@@ -114,7 +124,7 @@ senha; ativar/desativar) grava um `admin_event` (quando, quem, ação, alvo; sem
 `GET /v1/admin/events` (só sessão de `org_admin`; a chave de bootstrap não lê) devolve os mais
 recentes primeiro, com `limit` (1 a 500) e `offset`.
 
-Telas de administração do portal (só `org_admin`, menu "Administration"): áreas, agentes (cadastro,
+Telas de administração do portal (só `org_admin`, menu "Administração"): áreas, agentes (cadastro,
 tokens, ativar/desativar), usuários (criar, redefinir senha, acessos) e atividade. Tokens e senhas
 geradas aparecem uma única vez, só em estado da tela (nunca em storage, URL ou console).
 

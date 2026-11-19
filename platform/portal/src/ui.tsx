@@ -48,11 +48,6 @@ export function LinkButton({
 
 // ---- blocks ----------------------------------------------------------------------------------
 
-/** Flat logbook panel with 1px ink border. */
-export function Box({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cx("box p-6", className)}>{children}</div>;
-}
-
 /** Uppercase mono stamp with 1px border. */
 export function Tag({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
   return (

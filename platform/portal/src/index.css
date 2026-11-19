@@ -12,7 +12,6 @@
   --accent: #2563eb;
   --accent-hover: #1d4fd8;
   --accent-soft: rgba(37, 99, 235, 0.08);
-  --rule: #0a0a0a;
   --line: rgba(10, 10, 10, 0.16);
   --radius-panel: 0px;
   --radius-control: 2px;
@@ -31,7 +30,6 @@
   --color-subtle: var(--subtle);
   --color-hair: var(--hair);
   --color-accent: var(--accent);
-  --color-rule: var(--rule);
   --color-line: var(--line);
   --color-accent-soft: var(--accent-soft);
   --font-display: var(--font-display);
@@ -119,12 +117,6 @@
     border: 1px solid var(--ink);
     border-radius: var(--radius-panel);
     background: var(--paper);
-  }
-  .rule-t {
-    border-top: 1px solid var(--line);
-  }
-  .rule-b {
-    border-bottom: 1px solid var(--line);
   }
   .ruler-x {
     height: 8px;

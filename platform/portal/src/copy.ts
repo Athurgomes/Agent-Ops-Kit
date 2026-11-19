@@ -1,9 +1,7 @@
-import { BRAND, BRAND_DOT, BRAND_NAME, BRAND_SUBTITLE, BRAND_TAGLINE } from "./brand";
+import { BRAND, BRAND_SUBTITLE, BRAND_TAGLINE } from "./brand";
 
 export const copy = {
   brand: {
-    name: BRAND_NAME,
-    dot: BRAND_DOT,
     full: BRAND,
     tagline: BRAND_TAGLINE,
     subtitle: BRAND_SUBTITLE,
@@ -29,7 +27,6 @@ export const copy = {
   common: {
     loading: "Carregando…",
     errorFallback: "Erro.",
-    genericError: "Algo deu errado.",
     cancel: "Cancelar",
     working: "Processando…",
     copy: "Copiar",
@@ -508,7 +505,6 @@ export const copy = {
       nCases: "Casos de avaliação",
       seed: "Semente",
     },
-    downloadsEyebrow: "ARQUIVOS DO RELATÓRIO",
     downloadsTag: "HTML · MD · JSON",
     downloadsHeading: "Downloads",
     downloadFormats: {

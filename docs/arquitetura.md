@@ -40,7 +40,7 @@ Os guardrails também atuam na allowlist de tools (antes de cada chamada) e marc
 - **Avaliação**: dataset de 50 casos, checagens determinísticas, juiz opcional (mesmo modelo de 8B), A/B pareado (permutação e bootstrap, semente fixa) e gate de CI que reavalia respostas gravadas conferindo um manifesto.
 - **Red team**: ataques em arquivos do repositório (`redteam/`), critérios de sucesso por categoria, ASR com intervalo de Wilson e medição de falsos positivos em perguntas legítimas.
 - **Relatório** (`aok report build`, `aok check --publish`): resultados gravados (eval e red team, mais o resultado da verificação da auditoria, se houver) viram um pacote determinístico (`relatorio.md`, `relatorio.html`, `relatorio.json` e `pacote.json`) que `--publish` copia para uma pasta local versionada (`<pasta>/<agent-id>/<timestamp UTC>/`, com `index.json` listando as versões) ou envia à plataforma (`https://...`). `relatorio.md` e `relatorio.html` seguem estrutura técnico-executiva baseada na ABNT NBR 10719:2015 e NBR 6024:2012 (identificação documental, resumo executivo, leitura de negócios, encaminhamentos, quadro de ciência para auditoria e Apêndice A com evidências técnicas e SHA-256), com CSS estático A4 (`3cm 2cm 2cm 3cm`) pronto para impressão ou salvamento em PDF pelo navegador. Não roda modelo e o log de auditoria não entra no pacote (ADR-006 e ADR-013).
-- **Plataforma** (`platform/`): serviço FastAPI que recebe o pacote por `POST /v1/reports` e, para pessoas com sessão, serve a leitura e o portal. Entregue em fases: API (ADR-007), portal (ADR-008), administração (ADR-009), operador e várias organizações (ADR-010 e ADR-011), recuperação de senha opcional (ADR-012) e prontidão para operação online em instância única (ADR-014); ver abaixo.
+- **Plataforma** (`platform/`): serviço FastAPI que recebe o pacote por `POST /v1/reports` e, para pessoas com sessão, serve a leitura e o portal **Farol.** em `pt-BR`. Entregue em fases: API (ADR-007), portal (ADR-008), administração (ADR-009), operador e várias organizações (ADR-010 e ADR-011), recuperação de senha opcional (ADR-012), prontidão para operação online em instância única (ADR-014) e consolidação do portal **Farol.** em `pt-BR` (ADR-015); ver abaixo.
 - **Template** (`aok new`): gera um agente já instrumentado a partir de `src/agent_ops_kit/templates/agent/`.
 
 ## Plataforma (`platform/`)
@@ -51,7 +51,7 @@ flowchart LR
     AD[Admin<br/>chave AOK_ADMIN_BOOTSTRAP_KEY] -->|/v1/admin: áreas, agentes, tokens| API
     API --> DB[(SQLite nos testes<br/>Postgres no Docker)]
     API --> FS[(Arquivos dos relatórios<br/>AOK_DATA_DIR)]
-    PO[Portal React<br/>servido pela API] -->|cookie de sessão| API
+    PO[Portal Farol. React<br/>pt-BR, servido pela API] -->|cookie de sessão| API
     API --> DL[(download_log)]
     API --> AE[(admin_event)]
 ```
@@ -62,7 +62,7 @@ Fase 3 (ADR-008), fluxos:
 
 - **Login**: `POST /v1/auth/login` (e-mail e senha, scrypt) cria uma sessão e devolve o cookie `aok_session` (HttpOnly, SameSite=Strict). O throttle por e-mail é em memória.
 - **Leitura**: o portal chama `/v1/areas`, `/v1/areas/{id}/agents`, `/v1/agents/{id}/reports` e `/v1/reports/{id}`. O alcance vem da `membership`: `area_viewer` vê a área e as sub-áreas (CTE recursiva), `org_admin` vê tudo, o resto responde 404. O token de agente não lê.
-- **Telas do portal** (interface em inglês; conteúdo dos relatórios vindo do backend em português): `/` (landing), `/login`, `/app` e `/app/areas/:areaId` (áreas), `/app/areas/:areaId/agents/:agentId` (relatórios do agente), `/app/reports/:reportId` (detalhe e download: `Download HTML (ABNT / Print PDF)`, `Download Markdown`, `Download JSON (Evidence)`), `/app/downloads` e, só `org_admin`, `/app/admin/downloads`. Sign Up, Pricing, redes sociais e links de rodapé são placeholders "Soon", não clicáveis.
+- **Telas do portal** (**Farol.**, interface 100% em `pt-BR` centralizada em `platform/portal/src/copy.ts`, direção visual de diário de bordo com tipografia autohospedada via `@fontsource`, foco B2B sem cadastro aberto nem preços e `CONTACT_URL` opcional em `brand.ts`; ADR-015): `/` (landing), `/login`, `/app` e `/app/areas/:areaId` (áreas), `/app/areas/:areaId/agents/:agentId` (relatórios do agente), `/app/reports/:reportId` (detalhe, semáforo com glifos `●` Verde, `◐` Amarelo e `✕` Vermelho + regras provisórias e ressalvas visíveis, e botões `Baixar HTML (ABNT / PDF)`, `Baixar Markdown` e `Baixar JSON`), `/app/downloads` ("Meus downloads") e, só `org_admin`, `/app/admin/downloads` ("Todos os downloads").
 - **Administração** (ADR-009, só `org_admin`): telas `/app/admin/areas`, `agents`, `agents/:id` (tokens), `users` e `activity`. Rotas novas: `GET /v1/admin/areas`, `/agents`, `/agents/{id}/tokens`, `/users`, `/memberships` e `/events`. Leituras e escritas ficam na organização de quem chama (alvo de outra organização: 404). Bloqueios 409: não desativar a própria conta nem revogar o próprio `org_admin`; nunca o último `org_admin` ativo (vale também para a chave de bootstrap, que usa a primeira organização).
 - **Trilha `admin_event`**: toda escrita administrativa grava quando, quem, ação e alvo, sem segredos, na mesma transação. Imutável pela API (e pelo ORM); quem opera o banco pode alterar. `GET /v1/admin/events` só aceita sessão de `org_admin`, com `limit` e `offset`. As demais listagens do admin não têm paginação.
 - **Download com log**: `GET /v1/reports/{id}/download?format=md|html|json` confere o alcance, grava uma linha em `download_log` (baixado em, relatório gerado em) e devolve o arquivo. `/v1/me/downloads` mostra os do próprio usuário; `/v1/admin/downloads` (`org_admin` por sessão) mostra todos.
@@ -132,7 +132,7 @@ Configuração completa e limites (instância única; múltiplas réplicas ainda
 | `platform/aok_platform/create_operator.py` | `python -m aok_platform.create_operator`: cria operador com senha aleatória impressa uma vez; `--reset-password`, `--activate` |
 | `platform/aok_platform/db.py` (`ensure_schema`) | no startup, adiciona colunas e tabelas novas e preenche valores, de forma idempotente (não é Alembic) |
 | `platform/portal/src/pages/ops/` | console do operador em `/ops/*` (sem link no site; 404 comum com `AOK_OPS_ENABLED` desligado) |
-| `platform/portal/` | front-end React, Vite, TypeScript e Tailwind, servido pela API |
+| `platform/portal/` | front-end **Farol.** em `pt-BR` (`brand.ts`, `copy.ts`, tipografia autohospedada `@fontsource`), React, Vite, TypeScript e Tailwind, servido pela API |
 | `platform/docker-compose.yml` | API e Postgres. Estado das verificações (com datas e o que não foi reconfirmado): ADR-007 em [decisoes.md](decisoes.md) |
 
 ## Decisões
@@ -153,6 +153,7 @@ As decisões e suas limitações estão em [decisoes.md](decisoes.md):
 - ADR-012: recuperação de senha por e-mail (opcional, token de uso único com hash, limites em memória).
 - ADR-013: relatório técnico-executivo em linguagem de negócios e estrutura ABNT NBR 10719 (determinístico, CSS A4 para impressão/PDF pelo navegador).
 - ADR-014: prontidão para operação online em instância única (`GET /v1/health`, `AOK_DOCS_ENABLED`, `AOK_HSTS_ENABLED`, `AOK_TRUSTED_PROXIES`) e simplicidade de manutenção (D1, D2, D3, D5).
+- ADR-015: portal oficial **Farol.** em `pt-BR` (`copy.ts`), foco B2B sem cadastro/preços (`CONTACT_URL`), direção visual Diário de Bordo / Carta Náutica com tipografia autohospedada (`@fontsource`) e semáforo com glifos distintos além da cor.
 
 Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 
@@ -161,7 +162,7 @@ Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 - Kafka (eventos do agente em tópico, consumidores de auditoria e métricas).
 - Adaptador para outro framework de agentes: só existe o loop do agente de referência.
 - Prometheus e Grafana: as métricas são calculadas em Python, não exportadas.
-- Na plataforma: SSO, Sign Up, recuperação por e-mail para operadores (a recuperação de senha por e-mail dos usuários das organizações existe, opcional: ADR-012), Alembic (migração formal), store compartilhado para os limitadores de tentativa (necessário para múltiplas réplicas), dark mode, geração direta de binário PDF no servidor (o HTML já sai no formato A4 ABNT NBR 10719 para impressão/PDF pelo navegador) e paginação das listagens do admin. Trilha de login e de leitura também não existe (só download e escritas administrativas).
+- Na plataforma: SSO, cadastro aberto (Sign Up), recuperação por e-mail para operadores (a recuperação de senha por e-mail dos usuários das organizações existe, opcional: ADR-012), Alembic (migração formal), store compartilhado para os limitadores de tentativa (necessário para múltiplas réplicas), dark mode, geração direta de binário PDF no servidor (o HTML já sai no formato A4 ABNT NBR 10719 para impressão/PDF pelo navegador) e paginação das listagens do admin. Trilha de login e de leitura também não existe (só download e escritas administrativas).
 - Provisionamento automatizado de deploy em nuvem (existe container/compose pronto para operação online em instância única atrás de proxy reverso HTTPS, sem scripts de infraestrutura gerenciada).
 - Publicação em PyPI: o pacote se instala a partir do repositório.
 - Validação do gate como medida de qualidade: ele foi exercitado em 2 PRs de teste (ver a seção D de [resultados.md](resultados.md)), que provam o mecanismo, não a qualidade.

@@ -75,7 +75,7 @@ aok check --publish https://sua-plataforma --agent-id meu-agente   # ou platform
 
 ### Plataforma (fase 3: portal)
 
-Login, leitura e download dos relatórios pelo navegador (nome provisório "Farol"; ADR-008). Detalhes em [platform/README.md](platform/README.md). Para ver localmente:
+Login, leitura e download dos relatórios pelo navegador no portal oficial **Farol.** (ADR-008 e ADR-015). Detalhes em [platform/README.md](platform/README.md). Para ver localmente:
 
 ```bash
 pip install -e ".[platform]"
@@ -87,24 +87,23 @@ uvicorn aok_platform.app:create_app --factory   # http://127.0.0.1:8000
 
 Para subir tudo com um comando (dados de demonstração, operador e organização `beta`; compila o portal se faltar; só em 127.0.0.1; as senhas aparecem uma vez no terminal; Ctrl+C encerra), use `python scripts/demo_plataforma.py [--porta 8000] [--publicar] [--reset] [--dados PASTA]`. Sem `--dados`, usa `.demo/`, ignorada pelo git.
 
-- Telas: landing pública, login (`/login`), áreas > agentes > relatórios > detalhe (`/app/...`; botões `Download HTML (ABNT / Print PDF)`, `Download Markdown` e `Download JSON (Evidence)`), "My downloads" e, para `org_admin`, "All downloads". Visual em preto e branco, com azul só em botões de impacto, links e foco.
-- A interface é toda em inglês; o conteúdo dos relatórios vindo do backend e os nomes do seed seguem em português (limitação conhecida).
-- Na landing, a nota do fundador é rascunho e a fala de usuário é placeholder, não depoimento real. Sign Up, Pricing, redes sociais e links de rodapé são placeholders "Soon", não clicáveis.
+- Telas: landing pública (`/`), login (`/login`), áreas > agentes > relatórios > detalhe (`/app/...`; botões `Baixar HTML (ABNT / PDF)`, `Baixar Markdown` e `Baixar JSON`), "Meus downloads" e, para `org_admin`, "Todos os downloads".
+- Identidade e interface: 100% em `pt-BR` (centralizada em `platform/portal/src/copy.ts`), com direção visual de diário de bordo / carta náutica (papel `#ffffff`, tinta `#0a0a0a`, superfície `#f7f7f5` e azul `#2563eb` reservado a CTAs primários, links, foco, ponto da marca e estados ativos), tipografia autohospedada via `@fontsource` (sem CDN externo), foco B2B sem cadastro aberto nem página de preços (`CONTACT_URL` opcional em `platform/portal/src/brand.ts`) e semáforo com glifos distintos além da cor (`●` Verde, `◐` Amarelo, `✕` Vermelho) sempre ao lado das ressalvas ("Verde não significa seguro" e autodeclaração).
 - Cada pessoa vê só as áreas do seu perfil (com sub-áreas); área fora do alcance responde 404. O download grava em `download_log`.
 - O seed cria dados de demonstração com agentes fictícios; o conteúdo dos relatórios vem do exemplo do repositório.
-- Verificado com o design atual: capturas de tela (Edge headless) a 1440 e 390 px de todas as telas (landing, login, áreas, agente, detalhe do relatório, downloads, admin), inspecionadas. O fluxo funcional (login de admin, áreas, logout) foi exercitado no navegador na versão anterior da interface e não foi reexecutado após o redesenho (a lógica de autenticação não mudou; só a rota de login passou a `/login`).
+- Verificado com o design atual: build (`tsc --noEmit && vite build`) e checagens em Edge headless/CDP a `1440x900` e `375x812` (zero erros de console, `scrollWidth <= innerWidth`, foco por teclado `:focus-visible` e `prefers-reduced-motion: reduce` em `/`, `/login` e `/app` com API simulada via CDP `Fetch`), além de capturas inspecionadas das telas. O fluxo funcional autenticado contra o backend real foi exercitado na versão anterior da interface e não foi reexecutado após o redesenho (os contratos de API e autenticação não mudaram).
 - Limitações: throttle de login em memória (reinicia no deploy, não vale com vários workers e permite travar a conta de outra pessoa por 5 min); CSRF só por SameSite; tabelas sem migração.
-- Não existe: SSO, dark mode, geração direta de binário PDF no servidor (o `relatorio.html` já sai formatado em A4 pela ABNT NBR 10719 para impressão/PDF pelo navegador) e Sign Up (multiempresa e operador: ver a seção seguinte; recuperação de senha: ver "Plataforma: recuperação de senha").
+- Não existe: SSO, dark mode, geração direta de binário PDF no servidor (o `relatorio.html` já sai formatado em A4 pela ABNT NBR 10719 para impressão/PDF pelo navegador) e cadastro aberto (multiempresa e operador: ver a seção seguinte; recuperação de senha: ver "Plataforma: recuperação de senha").
 - Testes: ver a seção "Estado e testes" abaixo.
 
 ### Plataforma: administração
 
-Para `org_admin`, o menu "Administration" do portal (ADR-009) permite ao time de segurança:
+Para `org_admin`, o menu "Administração" do portal (ADR-009) permite ao time de segurança:
 
 - **Áreas**: criar áreas e sub-áreas.
 - **Agentes**: registrar, ativar e desativar; emitir e revogar tokens (o token aparece uma única vez).
 - **Usuários e acessos**: criar usuários, redefinir senha (gerada, exibida uma vez), vincular a áreas e desativar.
-- **Activity** (eventos administrativos: quem mudou o quê, sem segredos) e **All downloads** (tela separada).
+- **Atividade** (eventos administrativos: quem mudou o quê, sem segredos) e **Todos os downloads** (tela separada).
 
 Regras: leituras e escritas ficam na organização de quem chama; o admin não desativa a própria conta e ninguém remove o último `org_admin` ativo. Verificado no navegador, com banco temporário: criar área e sub-área, registrar agente, emitir token, publicar com `aok check --publish`, ver o relatório, revogar o token (a publicação seguinte falhou com 401), criar usuário viewer só da área, desativar e ver o login falhar, ver os eventos. Não exercitados na interface: redefinir senha, editar ou reativar agente, conceder ou revogar acesso depois da criação. Limitações: listagens sem paginação (só os eventos); `admin_event` pode ser alterado por quem opera o banco; `docker build` não foi reverificado após as telas de administração.
 
@@ -125,7 +124,7 @@ python -m aok_platform.create_operator --email ops@example.com       # imprime a
 
 ### Plataforma: recuperação de senha
 
-Opcional (ADR-012). Fica ativa só com `AOK_SMTP_HOST` e `AOK_PUBLIC_URL` definidos (também `AOK_SMTP_PORT`, `AOK_SMTP_USER`, `AOK_SMTP_PASSWORD`, `AOK_SMTP_STARTTLS`, `AOK_SMTP_FROM`; detalhes em [platform/README.md](platform/README.md)). Sem elas, as rotas respondem 404 e o "Forgot password?" do login aparece como "Soon".
+Opcional (ADR-012). Fica ativa só com `AOK_SMTP_HOST` e `AOK_PUBLIC_URL` definidos (também `AOK_SMTP_PORT`, `AOK_SMTP_USER`, `AOK_SMTP_PASSWORD`, `AOK_SMTP_STARTTLS`, `AOK_SMTP_FROM`; detalhes em [platform/README.md](platform/README.md)). Sem elas, as rotas respondem 404 e, na tela de login, o link "Esqueci minha senha" fica oculto, exibindo apenas o aviso de redefinição via administrador da organização.
 
 - O usuário pede em `/forgot-password` e vê a mesma resposta para e-mail existente ou não; só o existente recebe o e-mail, com link `#token` válido por 30 min e de uso único.
 - Em `/reset-password` define a senha nova (12+ caracteres). Todas as sessões são revogadas, não há login automático e chega um aviso de troca.
