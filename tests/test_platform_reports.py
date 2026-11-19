@@ -5,6 +5,7 @@ import io
 import json
 import threading
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -226,6 +227,81 @@ def test_duplicado_409_nao_consome_seq(env):
     assert _post(client, token, _package()).status_code == 201
     assert _post(client, token, _package()).status_code == 409
     assert _post(client, token, _package(mean=0.5)).json()["seq"] == 2
+
+
+def test_write_atomic_concorrente_sem_colisao_tmp(tmp_path):
+    from aok_platform.reports import _write_atomic
+
+    target = tmp_path / "relatorio.md"
+    n_threads = 8
+    rounds = 10
+    barrier = threading.Barrier(n_threads)
+    payloads = {
+        (tid, rnd): f"# Relatorio {tid}-{rnd}\n".encode() * 64
+        for tid in range(n_threads)
+        for rnd in range(rounds)
+    }
+
+    def worker(tid: int) -> None:
+        for rnd in range(rounds):
+            barrier.wait(timeout=5)
+            _write_atomic(target, payloads[(tid, rnd)])
+
+    with ThreadPoolExecutor(max_workers=n_threads) as pool:
+        futures = [pool.submit(worker, tid) for tid in range(n_threads)]
+        for fut in futures:
+            fut.result()
+
+    assert target.read_bytes() in set(payloads.values())
+    assert [p.name for p in tmp_path.iterdir()] == ["relatorio.md"]
+    assert not list(tmp_path.glob("*.tmp"))
+
+    bad_target = tmp_path / "pasta_existente"
+    bad_target.mkdir()
+    with pytest.raises(OSError):
+        _write_atomic(bad_target, b"conteudo")
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_publicacao_concorrente_mesmo_pacote_201_e_409(monkeypatch, tmp_path):
+    monkeypatch.setenv("AOK_ADMIN_BOOTSTRAP_KEY", KEY)
+    db_path = tmp_path / "reports.db"
+    data_dir = tmp_path / "data"
+    app = create_app(f"sqlite:///{db_path}", data_dir=data_dir)
+    try:
+        with TestClient(app) as setup_client:
+            _, token, _ = _make_agent(setup_client)
+        pkg = _package()
+        barrier = threading.Barrier(2)
+
+        def publish_once() -> int:
+            with TestClient(app) as client:
+                barrier.wait(timeout=5)
+                return _post(client, token, pkg).status_code
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(publish_once) for _ in range(2)]
+            statuses = [fut.result() for fut in futures]
+
+        assert sorted(statuses) == [201, 409]
+        with Session(app.state.engine) as s:
+            rows = s.scalars(select(ReportVersion)).all()
+            assert len(rows) == 1
+            row = rows[0]
+            assert row.seq == 1
+            folder = data_dir / Path(row.file_json).parent
+            for name in ("relatorio.md", "relatorio.html", "relatorio.json"):
+                assert (folder / name).read_bytes() == pkg["files"][name].encode("utf-8")
+            meta = json.loads((folder / "pacote.json").read_text("utf-8"))
+            assert meta == {
+                "agent_id": "rag-demo",
+                "timestamp": pkg["timestamp"],
+                "semaphore": pkg["semaphore"],
+                "sha256": pkg["sha256"],
+            }
+            assert not list(data_dir.rglob("*.tmp"))
+    finally:
+        app.state.engine.dispose()
 
 
 def test_corpo_acima_de_1_mib_413(env):

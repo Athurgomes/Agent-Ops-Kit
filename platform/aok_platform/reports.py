@@ -7,6 +7,8 @@ import json
 import os
 import re
 import shutil
+import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -133,9 +135,20 @@ def _facts(js: dict) -> dict:
 
 
 def _write_atomic(path: Path, data: bytes) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_bytes(data)
-    os.replace(tmp, path)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        tmp.write_bytes(data)
+        for attempt in range(10):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:  # Windows: MoveFileExW concorrente no mesmo destino pode retornar Access Denied
+                if os.name != "nt" or attempt == 9:
+                    raise
+                time.sleep(0.002 * (attempt + 1))
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _store(pkg: PackageIn, agent: Agent, s: Session, data_dir: Path) -> ReportVersion:
