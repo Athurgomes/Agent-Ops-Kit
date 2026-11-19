@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 from agent_ops_kit.redteam.harness import (
-    CATEGORIES,
+    OWASP_CATEGORIES,
     AttackRecord,
     asr_by_category,
     load_records,
@@ -42,8 +42,40 @@ def _load_jsonl(path: Path) -> list[dict]:
 
 
 def _categories(records: list[AttackRecord]) -> list[str]:
-    extra = sorted({r.category for r in records} - set(CATEGORIES))
-    return [c for c in CATEGORIES if any(r.category == c for r in records)] + extra
+    present = {r.category for r in records}
+    extra = sorted(present - set(OWASP_CATEGORIES))
+    return [c for c in OWASP_CATEGORIES if c in present] + extra
+
+
+def _read_blind_sha(path: Path) -> str | None:
+    meta = Path(f"{path}.meta.json")
+    if not meta.is_file():
+        return None
+    try:
+        data = json.loads(meta.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    sha = data.get("blind_suite_sha256") if isinstance(data, dict) else None
+    return sha if isinstance(sha, str) and sha else None
+
+
+def _blind_info(
+    base: list[AttackRecord],
+    guard: list[AttackRecord],
+    baseline_path: Path,
+    guardrails_path: Path,
+) -> dict:
+    n_base = sum(r.is_blind for r in base)
+    n_guard = sum(r.is_blind for r in guard)
+    shas = [s for s in (_read_blind_sha(baseline_path), _read_blind_sha(guardrails_path)) if s]
+    unique_shas = list(dict.fromkeys(shas))
+    return {
+        "has_blind": bool(n_base or n_guard),
+        "n_base": n_base,
+        "n_guard": n_guard,
+        "sha256": unique_shas[0] if len(unique_shas) == 1 else None,
+        "all_blind": bool(base or guard) and all(r.is_blind for r in base + guard),
+    }
 
 
 def _asr_comparison(base: list[AttackRecord], guard: list[AttackRecord]) -> str:
@@ -171,7 +203,11 @@ def _pct(num: int, den: int) -> str:
 
 
 def _limitations(
-    base: list[AttackRecord], attr: dict, fp: dict | None, guard: list[AttackRecord]
+    base: list[AttackRecord],
+    attr: dict,
+    fp: dict | None,
+    guard: list[AttackRecord],
+    blind: dict | None = None,
 ) -> str:
     sb = asr_by_category(base)
     sg = asr_by_category(guard)
@@ -179,6 +215,7 @@ def _limitations(
     base_low = ", ".join(
         f"{c} {_pct(sb[c]['sucessos'], sb[c]['n'])}" for c in cats if sb.get(c, {}).get("n")
     )
+    base_low_text = f" em {base_low}" if base_low else " em parte das categorias"
     items = [
         (
             "Abuso de tools: o ASR ir a zero é em grande parte POR CONSTRUÇÃO. As tools "
@@ -192,7 +229,7 @@ def _limitations(
         ),
         (
             f"{attr['none']} dos {attr['n']} ataques não foram bloqueados por nenhum guardrail: "
-            f"nesses o ataque não teve sucesso sem intervenção de guardrail. A baseline já era baixa em {base_low}; os ICs "
+            f"nesses o ataque não teve sucesso sem intervenção de guardrail. A baseline já era baixa{base_low_text}; os ICs "
             "são largos e se sobrepõem aos da execução com guardrails nessas categorias."
         ),
         (
@@ -234,15 +271,27 @@ def _limitations(
                 "input_filter.py, ambos do commit dos guardrails, anteriores às benignas)."
             ),
         ]
-    items.append(
-        "Uma execução por configuração (seed 42), n pequeno por categoria, um único modelo "
-        "(llama3.1:8b). O conjunto de ataques NÃO é reservado: foi escrito no mesmo projeto; "
-        "os guardrails foram projetados sem consultar os ataques (declaração do autor da "
-        "implementação; uma comparação por trechos de 3-4 palavras feita na revisão não "
-        "achou sobreposição) e ficaram congelados desde o commit 'feat: guardrails (...)', "
-        "antes da medição, mas a suíte não é um conjunto cego. O critério de sucesso é conservador (vazamento "
-        "parafraseado não conta)."
-    )
+    if blind and blind["has_blind"]:
+        scope = "exclusivamente suíte cega externa" if blind["all_blind"] else "suíte mista (base aberta + suíte cega externa)"
+        sha_part = f", sha256={blind['sha256']}" if blind["sha256"] else ""
+        items.append(
+            f"Uma execução por configuração (seed 42), n pequeno por categoria, um único modelo "
+            f"(llama3.1:8b). Execução com {scope}: {blind['n_base']} caso(s) cego(s) na baseline "
+            f"e {blind['n_guard']} com guardrails (`is_blind=True`{sha_part}). Por sigilo estrito, "
+            "nenhum texto de pergunta, payload, resposta do modelo ou chamada de tool dos casos "
+            "cegos é gravado ou exibido neste relatório. O critério de sucesso é conservador "
+            "(vazamento parafraseado não conta)."
+        )
+    else:
+        items.append(
+            "Uma execução por configuração (seed 42), n pequeno por categoria, um único modelo "
+            "(llama3.1:8b). O conjunto de ataques NÃO é reservado: foi escrito no mesmo projeto; "
+            "os guardrails foram projetados sem consultar os ataques (declaração do autor da "
+            "implementação; uma comparação por trechos de 3-4 palavras feita na revisão não "
+            "achou sobreposição) e ficaram congelados desde o commit 'feat: guardrails (...)', "
+            "antes da medição, mas a suíte não é um conjunto cego. O critério de sucesso é conservador (vazamento "
+            "parafraseado não conta)."
+        )
     return "\n".join(f"{i}. {t}" for i, t in enumerate(items, 1)) + "\n"
 
 
@@ -253,8 +302,10 @@ def build_summary(
     report_path: str | Path | None = None,
 ) -> str:
     """Placar curto (ASR antes -> depois por categoria, falsos positivos). Sem texto de ataque."""
-    base = _load_attacks(Path(baseline))
-    guard = _load_attacks(Path(guardrails))
+    base_p, guard_p = Path(baseline), Path(guardrails)
+    base = _load_attacks(base_p)
+    guard = _load_attacks(guard_p)
+    blind = _blind_info(base, guard, base_p, guard_p)
     sb, sg = asr_by_category(base), asr_by_category(guard)
 
     def cell(s: dict | None) -> str:
@@ -274,6 +325,11 @@ def build_summary(
         return "  " + "  ".join(cells)
 
     out = ["Red team: ASR antes → depois dos guardrails", line(head), *[line(r) for r in rows]]
+    if blind["has_blind"]:
+        out.append(
+            f"Suíte cega (sigilo estrito): {blind['n_base']} na baseline, "
+            f"{blind['n_guard']} com guardrails (textos omitidos)"
+        )
     if fp_dir is not None:
         ds = _load_jsonl(Path(fp_dir) / "fp_dataset.jsonl")
         bn = _load_jsonl(Path(fp_dir) / "fp_benign.jsonl")
@@ -294,8 +350,10 @@ def build_report(
     dataset: str | Path = "evals/dataset.jsonl",
     v1_answers: str | Path = "evals/answers/v1.jsonl",
 ) -> str:
-    base = _load_attacks(Path(baseline))
-    guard = _load_attacks(Path(guardrails))
+    base_p, guard_p = Path(baseline), Path(guardrails)
+    base = _load_attacks(base_p)
+    guard = _load_attacks(guard_p)
+    blind = _blind_info(base, guard, base_p, guard_p)
     attr_md, attr = _attribution(base, guard)
     parts = [
         "## Red team: ASR antes e depois dos guardrails",
@@ -305,6 +363,19 @@ def build_report(
             "Denominador = todos os casos executados; erros do agente não contam como sucesso."
         ),
         "",
+    ]
+    if blind["has_blind"]:
+        sha_note = f" (sha256: `{blind['sha256']}`)" if blind["sha256"] else ""
+        parts += [
+            (
+                f"Suíte cega (sigilo estrito): {blind['n_base']} caso(s) na baseline e "
+                f"{blind['n_guard']} caso(s) com guardrails marcados com `is_blind=True`"
+                f"{sha_note}. Textos de perguntas, payloads, respostas e chamadas de ferramentas "
+                "dos casos cegos não são gravados nem exibidos."
+            ),
+            "",
+        ]
+    parts += [
         _asr_comparison(base, guard),
         "### Atribuição por estágio",
         "",
@@ -314,6 +385,6 @@ def build_report(
     if fp_dir is not None:
         fp_md, fp = _fp_section(Path(fp_dir), Path(dataset), Path(v1_answers))
         parts += ["### Falsos positivos", "", fp_md.replace("### Falsos positivos dos guardrails\n\n", "")]
-    parts += ["### Limitações e leitura honesta", "", _limitations(base, attr, fp, guard)]
+    parts += ["### Limitações e leitura honesta", "", _limitations(base, attr, fp, guard, blind)]
     return "\n".join(parts)
 

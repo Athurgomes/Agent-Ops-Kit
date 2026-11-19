@@ -174,6 +174,18 @@ Para auditoria local mais ampla com Ollama, está disponível também `evals/dat
 aok eval --baseline v1 --candidate v2 --dataset evals/dataset_audit_200.jsonl --runs 3 --summary
 ```
 
+Para red team ampliado (108 ataques em 9 categorias OWASP LLM Top 10) e avaliação com suíte cega externa fora do repositório (sem gravar perguntas, respostas ou chamadas de tools dos casos cegos):
+
+```bash
+aok redteam run --attacks-dir redteam/attacks_owasp_100 --guardrails all --out reports/owasp_guardrails.jsonl
+# ou combinando/isolando uma suíte reservada externa (também via variável AOK_BLIND_ATTACKS_DIR):
+export AOK_BLIND_ATTACKS_DIR="/caminho/fora/do/repo/blind_suite"
+aok redteam run --guardrails all --blind-attacks-dir "$AOK_BLIND_ATTACKS_DIR" --out reports/blind_guardrails.jsonl
+aok redteam run --guardrails all --blind-only --out reports/blind_only.jsonl
+```
+
+As medições completas com modelo local sobre `redteam/attacks_owasp_100/` (108 ataques) e `redteam/benign_expanded/benign_50.jsonl` (54 perguntas benignas) aguardam execução com o Ollama; os resultados gravados no repositório continuam referentes aos 40 ataques e 12 benignas originais.
+
 ### Como ver o trace
 
 1. Com o Jaeger de pé e o agente executado (comando acima), abra http://localhost:16686.
@@ -254,7 +266,7 @@ Ressalvas: pelas checagens, a diferença não é distinguível de zero a 5%. O j
 - Modelo local pequeno (llama3.1:8b): tudo foi medido com ele. O ASR não generaliza para outros modelos, prompts ou dados, e o modelo às vezes responde "não encontrei" sem consultar os documentos.
 - Dataset de 50 casos e 40 ataques: intervalos de confiança largos, uma execução por configuração.
 - Os guardrails combinam heurísticas (padrões de texto, normalização anti-homoglyphs e anti-token-splitting, decodificação segura de Base64/Hex e janela multi-turn), allowlist, canary e classificador semântico local TF-IDF opcional, mas ainda podem ser contornados por paráfrases inéditas, outros idiomas ou ofuscações em múltiplas camadas. Não são proteção garantida.
-- A suíte de ataques não é reservada nem cega.
+- A suíte padrão versionada de 40 ataques e a suíte expandida (`redteam/attacks_owasp_100/`, 108 ataques) não são reservadas nem cegas; a avaliação cega exige fornecer um diretório externo fora do controle de versão via `--blind-attacks-dir` ou `AOK_BLIND_ATTACKS_DIR`. As medições completas com modelo local sobre a suíte expandida e as 54 benignas de `redteam/benign_expanded/benign_50.jsonl` aguardam execução com o Ollama.
 - A auditoria usa hash encadeado, com assinatura digital opcional da âncora (Ed25519 ou HMAC-SHA256, ADR-004 e ADR-018): sem assinatura, apagar o fim do arquivo ou reescrever toda a cadeia não é detectado sem uma âncora externa; mesmo com assinatura, depende de arquivar o recibo `.sig.json` fora do log e não inclui carimbo de tempo externo confiável (RFC 3161 TSA).
 - O CI valida respostas gravadas e o manifesto; não reexecuta o modelo (ADR-001).
 - O gate do eval foi exercitado em 2 PRs de teste, fechados sem mesclar ([#1](https://github.com/Athurgomes/Agent-Ops-Kit/pull/1) e [#2](https://github.com/Athurgomes/Agent-Ops-Kit/pull/2)); resultados em [docs/resultados.md](docs/resultados.md). Ele usa respostas gravadas, o prompt piorado foi degradado de propósito e foi uma execução por PR: é um teste de mecanismo, não uma medida de qualidade.
@@ -278,7 +290,7 @@ src/agent_ops_kit/   pacote: cli (new, eval, redteam, audit, report, check), tra
                      guardrails/, eval/, redteam/, report/, templates/
 examples/rag_agent/  agente de referência e corpus fictício
 evals/               dataset padrão (50 casos), dataset de auditoria (200 casos), prompts v1/v2, respostas gravadas, manifesto, relatórios
-redteam/             ataques, perguntas benignas, resultados gravados
+redteam/             ataques (40 originais + 108 OWASP expandidos), benignas (12 + 54), resultados gravados
 platform/            plataforma: aok_platform/ (API FastAPI), portal/ (React), Dockerfile, docker-compose.yml
 docs/                arquitetura, decisões (ADRs), resultados, demo-cli.gif
 scripts/demo.sh      demo reproduzível do kit (respostas gravadas)

@@ -354,3 +354,22 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 **Consequências e limitações.**
 - Validação local nos testes automatizados (`tests/test_guardrails_advanced.py`) registrou **0 falsos positivos** adicionais tanto nos 50 casos de `evals/dataset.jsonl` quanto nas 12 perguntas de `redteam/benign/benign.jsonl`.
 - **Limitações honestas**: o classificador TF-IDF e os decoders ainda podem ser contornados por paráfrases inéditas distantes dos protótipos, idiomas fora de PT/EN, codificações não cobertas (ex.: ROT13, cifra customizada ou múltiplas camadas aninhadas de codificação) e fragmentação além da janela configurada (`window`). Não substitui isolamento arquitetural de ferramentas nem validação de saída.
+
+## ADR-021: suíte OWASP LLM Top 10 expandida (108 ataques, 54 benignas) e mecanismo de suíte cega externa
+
+**Contexto.** A suíte inicial em `redteam/attacks/` reunia 40 casos em 4 categorias (`injecao_direta`, `injecao_indireta`, `abuso_de_tools`, `exfiltracao`) e 12 perguntas benignas em `redteam/benign/benign.jsonl`, todos versionados no mesmo repositório. Para ampliar a cobertura do OWASP LLM Top 10 e permitir avaliação com conjunto reservado externo sem expor prompts confidenciais em logs ou relatórios, era necessário expandir o esquema, criar conjuntos maiores retrocompatíveis e implementar o carregamento de suíte cega fora do git.
+
+**Decisão.**
+- **Expansão retrocompatível do esquema (`src/agent_ops_kit/redteam/attacks.py`)**: inclusão de 5 novas categorias em `Category` (`ofuscacao`, `multi_turn`, `saida_insegura`, `vazamento_dados`, `exaustao_recursos`), mantendo as 4 originais; adição dos campos opcionais `turns`, `owasp_id` e `is_blind` em `AttackCase` (exigindo `len(turns) >= 2` para `multi_turn`). Os conjuntos e resultados originais (`redteam/attacks/`, `redteam/benign/benign.jsonl`, `redteam/results/`) permanecem intactos.
+- **Conjuntos estáticos expandidos no repositório**:
+  - `redteam/attacks_owasp_100/`: 108 ataques únicos divididos em 3 arquivos JSONL (`01_injecao_direta_e_ofuscacao.jsonl`, `02_multi_turn_e_indireta.jsonl`, `03_tools_exfiltracao_e_saida.jsonl`), com 12 casos em cada uma das 9 categorias OWASP LLM Top 10.
+  - `redteam/benign_expanded/benign_50.jsonl`: 54 perguntas benignas novas no esquema `EvalCase`, cobrindo os 15 documentos de `examples/rag_agent/corpus/` e abstenções legítimas sem colisão de IDs com conjuntos anteriores.
+- **Suíte cega externa e sigilo estrito (`attacks.py`, `harness.py`, `report.py`, `cli.py`)**:
+  - `resolve_blind_dir` e `load_blind_attacks` (`BlindSuiteResult`) leem arquivos `*.jsonl` de diretório externo indicado por `--blind-attacks-dir` ou `AOK_BLIND_ATTACKS_DIR` (aceitando `poisoned_corpus/` local quando presente), marcam `is_blind=True` e calculam `suite_sha256` determinístico sem expor conteúdo de linha em exceções ou logs. Diretórios ausentes, vazios (0 casos) ou com colisão de IDs são rejeitados.
+  - Em `run_attack`, casos com múltiplos turnos em `turns` e `input_filter` ativo passam previamente por `guardrails.screen_conversation(case.turns)`.
+  - Nos registros `AttackRecord` com `is_blind=True`, `final_answer`, `raw_answer`, `tool_calls` e detalhes de exceção são esvaziados/omitidos; os metadados agregados (`blind_suite_used`, `n_blind_attacks`, `blind_suite_sha256`) são gravados no sidecar `<out>.meta.json` e exibidos com aviso explícito de sigilo em `build_report` e `build_summary`.
+
+**Consequências e limitações.**
+- Em verificação determinística offline apenas da camada de entrada (`check_input` + `LocalSemanticClassifier` + `check_conversation` em `tests/test_redteam_owasp_and_blind.py`), observou-se **0/54** falsos positivos em `benign_50.jsonl` e detecção de 66/108 casos em `attacks_owasp_100` (38/108 apenas com heurísticas sem classificador semântico), com lacunas esperadas em categorias que dependem da resposta do modelo ou da allowlist de tools (`saida_insegura`, `exaustao_recursos`, `abuso_de_tools` e `injecao_indireta`).
+- Medições completas de ASR ponta a ponta com o agente e modelo local na suíte de 108 ataques e 54 benignas aguardam execução com o Ollama; `docs/resultados.md` continua refletindo a execução gravada dos 40 ataques e 12 benignas originais.
+- Os arquivos em `redteam/attacks_owasp_100/` são públicos no repositório; a avaliação cega efetiva depende de o operador fornecer um diretório externo fora do controle de versão via `--blind-attacks-dir` ou `AOK_BLIND_ATTACKS_DIR`.

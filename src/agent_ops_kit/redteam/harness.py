@@ -21,9 +21,14 @@ from pydantic import BaseModel
 
 from agent_ops_kit.config import AgentConfig, load_config
 from agent_ops_kit.eval.runner import LLMFn
-from agent_ops_kit.guardrails import Guardrails
+from agent_ops_kit.guardrails import REFUSAL_MESSAGE, Guardrails
 from agent_ops_kit.redteam import testbed
-from agent_ops_kit.redteam.attacks import AttackCase, load_attacks
+from agent_ops_kit.redteam.attacks import (
+    AttackCase,
+    load_attacks,
+    load_blind_attacks,
+    resolve_blind_dir,
+)
 from agent_ops_kit.redteam.criteria import evaluate_attack
 
 MAX_ITERATIONS = 5
@@ -33,6 +38,14 @@ POISONED_DIR = REDTEAM_DIR / "poisoned_corpus"
 
 ALL_GUARDRAILS = ("input_filter", "untrusted_content", "tool_allowlist", "output_filter", "canary")
 CATEGORIES = ("injecao_direta", "injecao_indireta", "abuso_de_tools", "exfiltracao")
+OWASP_CATEGORIES = (
+    *CATEGORIES,
+    "ofuscacao",
+    "multi_turn",
+    "saida_insegura",
+    "vazamento_dados",
+    "exaustao_recursos",
+)
 
 
 def _tool_schema(name: str, description: str, params: dict[str, str]) -> dict:
@@ -87,6 +100,7 @@ FORBIDDEN_SCHEMAS = [
 class AttackRecord(BaseModel):
     case_id: str
     category: str
+    is_blind: bool = False
     final_answer: str = ""
     tool_calls: list[str] = []
     success: bool = False
@@ -155,6 +169,15 @@ def make_tool_runner(
     return runner
 
 
+def merge_suites(base_cases: list[AttackCase], blind_cases: list[AttackCase]) -> list[AttackCase]:
+    """Combina suíte base e suíte cega garantindo IDs únicos."""
+    base_ids = {c.id for c in base_cases}
+    dups = sorted({c.id for c in blind_cases if c.id in base_ids})
+    if dups:
+        raise ValueError(f"colisão de IDs entre suíte base e suíte cega: {dups}")
+    return [*base_cases, *blind_cases]
+
+
 def run_attack(
     case: AttackCase,
     config: AgentConfig,
@@ -163,6 +186,7 @@ def run_attack(
     max_iterations: int = MAX_ITERATIONS,
     base_runner: Callable[[str, dict, int], str] | None = None,
     guardrails: list[str] | None = None,
+    poisoned_dir: Path | None = None,
 ) -> AttackRecord:
     _, run_agent, tool_schemas, _ = _load_example()
     llm = llm or make_seeded_llm(seed)
@@ -171,24 +195,69 @@ def run_attack(
     calls: list[str] = []
     events: list[dict] = []
     g = build_guardrails(tb_config, guardrails) if guardrails else None
-    runner = make_tool_runner(case, calls, base_runner)
+    runner = make_tool_runner(
+        case, calls, base_runner, poisoned_dir=poisoned_dir or POISONED_DIR
+    )
     start = time.perf_counter()
     answer, error = "", None
     try:
-        answer = run_agent(
-            case.user_input, tb_config, llm, max_iterations, tools=tools, tool_runner=runner,
-            guardrails=g, events=events,
-        )
+        if case.turns and len(case.turns) > 1 and g is not None and "input_filter" in g.enabled:
+            verdict = g.screen_conversation(case.turns)
+            if verdict.blocked:
+                events.append({"stage": "input", "reasons": list(verdict.reasons)})
+                answer = REFUSAL_MESSAGE
+            else:
+                answer = run_agent(
+                    case.user_input, tb_config, llm, max_iterations, tools=tools,
+                    tool_runner=runner, guardrails=g, events=events,
+                )
+        else:
+            answer = run_agent(
+                case.user_input, tb_config, llm, max_iterations, tools=tools, tool_runner=runner,
+                guardrails=g, events=events,
+            )
     except Exception as e:  # noqa: BLE001 - erro do agente não conta como sucesso do ataque
-        error = f"{type(e).__name__}: {e}"
+        error = (
+            f"{type(e).__name__}: erro oculto (suíte cega)"
+            if case.is_blind
+            else f"{type(e).__name__}: {e}"
+        )
     latency = time.perf_counter() - start
     success = error is None and evaluate_attack(case, answer, calls)
     raw = next((e["raw_answer"] for e in events if "raw_answer" in e), answer)
+    if case.is_blind:
+        # Sigilo estrito: nunca gravar pergunta, resposta bruta/final ou chamadas de tool cegas.
+        return AttackRecord(
+            case_id=case.id, category=case.category, is_blind=True,
+            final_answer="", tool_calls=[], success=success, error=error,
+            latency_s=round(latency, 3), blocked_by=sorted({e["stage"] for e in events}),
+            raw_answer="",
+        )
     return AttackRecord(
-        case_id=case.id, category=case.category, final_answer=answer, tool_calls=calls,
+        case_id=case.id, category=case.category, is_blind=False,
+        final_answer=answer, tool_calls=calls,
         success=success, error=error, latency_s=round(latency, 3),
         blocked_by=sorted({e["stage"] for e in events}), raw_answer=raw,
     )
+
+
+def _write_blind_metadata(
+    out_path: str | Path,
+    records: list[AttackRecord],
+    blind_sha256: str | None,
+    guardrails: list[str] | None,
+) -> Path:
+    meta_path = Path(f"{out_path}.meta.json")
+    payload = {
+        "blind_suite_used": True,
+        "n_total_attacks": len(records),
+        "n_base_attacks": sum(not r.is_blind for r in records),
+        "n_blind_attacks": sum(r.is_blind for r in records),
+        "blind_suite_sha256": blind_sha256,
+        "guardrails": list(guardrails) if guardrails else [],
+    }
+    meta_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return meta_path
 
 
 def run_suite(
@@ -199,6 +268,9 @@ def run_suite(
     limit: int | None = None,
     seed: int = 42,
     guardrails: list[str] | None = None,
+    poisoned_dir: Path | None = None,
+    blind_poisoned_dir: Path | None = None,
+    blind_sha256: str | None = None,
 ) -> list[AttackRecord]:
     selected = cases[:limit] if limit is not None else cases
     records: list[AttackRecord] = []
@@ -208,11 +280,20 @@ def run_suite(
             Path(out_path).parent.mkdir(parents=True, exist_ok=True)
             out = stack.enter_context(open(out_path, "w", encoding="utf-8"))
         for case in selected:
-            rec = run_attack(case, config, llm, seed, guardrails=guardrails)  # run_attack já captura erros do agente
+            case_poisoned = (
+                blind_poisoned_dir
+                if (case.is_blind and blind_poisoned_dir is not None)
+                else poisoned_dir
+            )
+            rec = run_attack(
+                case, config, llm, seed, guardrails=guardrails, poisoned_dir=case_poisoned
+            )  # run_attack já captura erros do agente
             records.append(rec)
             if out:
                 out.write(json.dumps(rec.model_dump(), ensure_ascii=False) + "\n")
                 out.flush()
+    if out_path and (blind_sha256 is not None or any(r.is_blind for r in records)):
+        _write_blind_metadata(out_path, records, blind_sha256, guardrails)
     return records
 
 
@@ -246,7 +327,10 @@ def asr_by_category(records: list[AttackRecord]) -> dict:
     """ASR por categoria e total. Denominador = todos os casos executados (erros incluídos,
     contam como falha do ataque); n_erros é informado à parte."""
     out = {c: _row([r for r in records if r.category == c]) for c in CATEGORIES}
-    for c in {r.category for r in records} - set(CATEGORIES):
+    present = {r.category for r in records}
+    extra_ordered = [c for c in OWASP_CATEGORIES if c in present and c not in CATEGORIES]
+    remaining = sorted(present - set(OWASP_CATEGORIES))
+    for c in [*extra_ordered, *remaining]:
         out[c] = _row([r for r in records if r.category == c])
     out["total"] = _row(records)
     return out
@@ -292,6 +376,16 @@ def main(argv: list[str] | None = None) -> int:
         help='"all" ou lista separada por vírgulas: ' + ",".join(ALL_GUARDRAILS),
     )
     ap.add_argument("--attacks-dir", default=str(ATTACKS_DIR))
+    ap.add_argument(
+        "--blind-attacks-dir",
+        default=None,
+        help="diretório externo com *.jsonl da suíte cega (fallback: AOK_BLIND_ATTACKS_DIR)",
+    )
+    ap.add_argument(
+        "--blind-only",
+        action="store_true",
+        help="executa apenas os ataques da suíte cega (requer --blind-attacks-dir ou AOK_BLIND_ATTACKS_DIR)",
+    )
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args(argv)
@@ -303,14 +397,51 @@ def main(argv: list[str] | None = None) -> int:
             names = parse_guardrails(args.guardrails)
         except ValueError as e:
             ap.error(str(e))
+    blind_dir = resolve_blind_dir(args.blind_attacks_dir)
+    if args.blind_only and blind_dir is None:
+        ap.error("--blind-only exige --blind-attacks-dir ou AOK_BLIND_ATTACKS_DIR")
+
+    blind_cases: list[AttackCase] = []
+    blind_sha256: str | None = None
+    blind_poisoned: Path | None = None
+    if blind_dir is not None:
+        local_poisoned = blind_dir / "poisoned_corpus"
+        blind_poisoned = local_poisoned if local_poisoned.is_dir() else POISONED_DIR
+        try:
+            blind_cases, blind_sha256 = load_blind_attacks(blind_dir, blind_poisoned)
+        except ValueError as e:
+            ap.error(str(e))
+
+    base_poisoned = Path(args.attacks_dir).parent / "poisoned_corpus"
+    resolved_base_poisoned = base_poisoned if base_poisoned.is_dir() else POISONED_DIR
+    base_cases = [] if args.blind_only else load_attacks(args.attacks_dir, resolved_base_poisoned)
+    try:
+        cases = merge_suites(base_cases, blind_cases)
+    except ValueError as e:
+        ap.error(str(e))
+
     out = args.out or "redteam/results/baseline.jsonl"
     config_path, _, _, _ = _load_example()
-    cases = load_attacks(args.attacks_dir, POISONED_DIR)
     config = load_config(config_path)
-    records = run_suite(cases, config, out_path=out, limit=args.limit, seed=args.seed,
-                        guardrails=names)
+    records = run_suite(
+        cases,
+        config,
+        out_path=out,
+        limit=args.limit,
+        seed=args.seed,
+        guardrails=names,
+        poisoned_dir=resolved_base_poisoned,
+        blind_poisoned_dir=blind_poisoned,
+        blind_sha256=blind_sha256,
+    )
     title = "ASR com guardrails" if names else "ASR sem guardrails"
     print(format_asr_markdown(asr_by_category(records), title))
+    if blind_sha256 is not None:
+        n_blind = sum(r.is_blind for r in records)
+        print(
+            f"Suíte cega aplicada (sigilo estrito): {n_blind} caso(s) executados "
+            f"(sha256: {blind_sha256})."
+        )
     return 0
 
 

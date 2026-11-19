@@ -417,6 +417,10 @@ def cmd_redteam(args: argparse.Namespace) -> int:
         argv += ["--seed", str(args.seed)]
         if args.attacks_dir:
             argv += ["--attacks-dir", args.attacks_dir]
+        if args.blind_attacks_dir:
+            argv += ["--blind-attacks-dir", args.blind_attacks_dir]
+        if args.blind_only:
+            argv += ["--blind-only"]
         return harness.main(argv)
 
     from agent_ops_kit.redteam.report import ReportError, build_report, build_summary
@@ -783,6 +787,16 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--limit", type=int, default=None)
     r.add_argument("--seed", type=int, default=42)
     r.add_argument("--attacks-dir", default=None)
+    r.add_argument(
+        "--blind-attacks-dir",
+        default=None,
+        help="diretório externo com *.jsonl da suíte cega (ou use AOK_BLIND_ATTACKS_DIR)",
+    )
+    r.add_argument(
+        "--blind-only",
+        action="store_true",
+        help="executa apenas a suíte cega (requer --blind-attacks-dir ou AOK_BLIND_ATTACKS_DIR)",
+    )
     r = rsub.add_parser("report", help="relatório markdown a partir dos JSONL gravados (sem modelo)")
     r.add_argument("--baseline", required=True, help="JSONL sem guardrails")
     r.add_argument("--guardrails", required=True, help="JSONL com guardrails")
