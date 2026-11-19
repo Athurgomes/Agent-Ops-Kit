@@ -8,6 +8,22 @@ export const copy = {
     tagline: BRAND_TAGLINE,
     subtitle: BRAND_SUBTITLE,
   },
+  hero: {
+    eyebrow: "/ 00 FAROL.",
+    titlePrefix: "Enxergue ",
+    titleHighlight: "seus agentes",
+    titleDot: ".",
+    subtitle: "Relatórios de teste dos seus agentes de IA, com as limitações à vista.",
+    ctaSecondary: "Ver como funciona",
+    scrollHint: "Role para ver",
+  },
+  problem: {
+    eyebrow: "/ 01 O PROBLEMA",
+    titlePrefix: "Quem decide ",
+    titleHighlight: "só enxerga",
+    titleSuffix: " o que o time técnico consegue explicar.",
+    subtitle: "O Farol. reúne, por área, o que foi testado nos seus agentes — e deixa claro o que ficou de fora.",
+  },
   common: {
     loading: "Carregando…",
     errorFallback: "Erro.",

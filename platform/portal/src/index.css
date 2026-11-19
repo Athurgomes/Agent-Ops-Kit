@@ -86,6 +86,10 @@
       transition: none !important;
       animation: none !important;
     }
+    .iris-layer {
+      clip-path: none !important;
+      will-change: auto;
+    }
   }
 }
 
@@ -185,6 +189,15 @@
   .btn-dark:hover:not(:disabled) {
     background: #1f1f1f;
   }
+  .btn-ghost-dark {
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.24);
+  }
+  .btn-ghost-dark:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.52);
+  }
   .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -200,6 +213,43 @@
   }
   .navlink:hover {
     color: var(--accent);
+  }
+  .navlink-dark {
+    display: inline-block;
+    padding: 4px 0;
+    color: rgba(255, 255, 255, 0.84);
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    transition: color 140ms ease;
+  }
+  .navlink-dark:hover {
+    color: #ffffff;
+  }
+  .iris-layer {
+    clip-path: circle(calc(var(--iris, 0) * 150%) at 50% 50%);
+    will-change: clip-path;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .iris-layer {
+      clip-path: none;
+      will-change: auto;
+    }
+  }
+  .aura-light {
+    position: relative;
+    background-color: var(--paper);
+  }
+  .aura-light::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(46% 54% at 82% 24%, rgba(37, 99, 235, 0.22), transparent 72%),
+      radial-gradient(42% 48% at 16% 78%, rgba(10, 10, 10, 0.045), transparent 70%),
+      radial-gradient(38% 42% at 62% 84%, rgba(10, 10, 10, 0.035), transparent 70%);
+    filter: blur(28px);
   }
   .side-item {
     display: block;

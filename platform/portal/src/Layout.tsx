@@ -10,9 +10,10 @@ import { Button, cx, LinkButton, Logo } from "./ui";
 // ---------------------------------------------------------------------------------------------
 // Public layout: fixed 72px header (logo, centered nav, actions), content and clean footer.
 
-function PublicNavItems({ onNavigate }: { onNavigate?: () => void }) {
+function PublicNavItems({ dark = false, onNavigate }: { dark?: boolean; onNavigate?: () => void }) {
+  const cls = dark ? "navlink-dark" : "navlink";
   const a = (href: string, label: string) => (
-    <a key={href} href={href} className="navlink" onClick={onNavigate}>
+    <a key={href} href={href} className={cls} onClick={onNavigate}>
       {label}
     </a>
   );
@@ -29,7 +30,60 @@ export function PublicLayout({ children }: { children?: ReactNode } = {}) {
   const { me } = useAuth();
   const [open, setOpen] = useState(false);
   const loc = useLocation();
+  const isLanding = loc.pathname === "/";
+  const [onDark, setOnDark] = useState(isLanding);
+
   useEffect(() => setOpen(false), [loc.pathname]);
+
+  useEffect(() => {
+    if (!isLanding) {
+      setOnDark(false);
+      return;
+    }
+
+    let rafId = 0;
+    const measure = () => {
+      rafId = 0;
+      const hero = document.querySelector<HTMLElement>("[data-hero-iris]");
+      if (!hero) {
+        setOnDark((prev) => (prev ? false : prev));
+        return;
+      }
+      const stage = hero.querySelector<HTMLElement>("[data-hero-stage]");
+      if (stage) {
+        const total = Math.max(1, hero.offsetHeight - stage.offsetHeight);
+        const progress = Math.min(1, Math.max(0, -hero.getBoundingClientRect().top / total));
+        const next = progress < 0.48;
+        setOnDark((prev) => (prev === next ? prev : next));
+        return;
+      }
+      const darkBlock = hero.querySelector<HTMLElement>("[data-hero-dark]");
+      const next = darkBlock ? darkBlock.getBoundingClientRect().bottom > 72 : false;
+      setOnDark((prev) => (prev === next ? prev : next));
+    };
+
+    const schedule = () => {
+      if (rafId === 0) {
+        rafId = requestAnimationFrame(measure);
+      }
+    };
+
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setOnDark(true);
+    schedule();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule, { passive: true });
+    mq.addEventListener("change", schedule);
+
+    return () => {
+      if (rafId !== 0) cancelAnimationFrame(rafId);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      mq.removeEventListener("change", schedule);
+    };
+  }, [isLanding]);
+
+  const effectiveDark = isLanding && onDark;
   const hasContact = CONTACT_URL.trim().length > 0;
 
   return (
@@ -37,11 +91,18 @@ export function PublicLayout({ children }: { children?: ReactNode } = {}) {
       <a href="#content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-paper focus:p-4">
         {copy.common.skipToContent}
       </a>
-      <header className="rule-b sticky top-0 z-40 bg-paper/90 backdrop-blur-md">
+      <header
+        className={cx(
+          "sticky top-0 z-40 backdrop-blur-md transition-colors duration-200",
+          effectiveDark
+            ? "border-b border-white/10 bg-ink/90 text-white"
+            : "rule-b bg-paper/90 text-ink",
+        )}
+      >
         <div className="container-page grid h-[72px] grid-cols-[auto_1fr] items-center gap-6 lg:grid-cols-[1fr_auto_1fr]">
-          <Logo />
+          <Logo inverted={effectiveDark} />
           <nav aria-label={copy.aria.mainNav} className="hidden items-center justify-center gap-8 lg:flex">
-            <PublicNavItems />
+            <PublicNavItems dark={effectiveDark} />
           </nav>
           <div className="flex items-center justify-end gap-3">
             {me ? (
@@ -51,7 +112,13 @@ export function PublicLayout({ children }: { children?: ReactNode } = {}) {
             ) : (
               <>
                 {hasContact && (
-                  <a href={CONTACT_URL} className="btn btn-secondary btn-sm hidden sm:inline-flex">
+                  <a
+                    href={CONTACT_URL}
+                    className={cx(
+                      "btn btn-sm hidden sm:inline-flex",
+                      effectiveDark ? "btn-ghost-dark" : "btn-secondary",
+                    )}
+                  >
                     {copy.nav.contact}
                   </a>
                 )}
@@ -60,21 +127,28 @@ export function PublicLayout({ children }: { children?: ReactNode } = {}) {
                 </LinkButton>
               </>
             )}
-            <Button
-              size="sm"
-              className="lg:hidden"
+            <button
+              type="button"
+              className={cx("btn btn-sm lg:hidden", effectiveDark ? "btn-ghost-dark" : "")}
               aria-expanded={open}
               aria-controls="public-menu"
               onClick={() => setOpen((v) => !v)}
             >
               {open ? copy.common.close : copy.common.menu}
-            </Button>
+            </button>
           </div>
         </div>
         {open && (
-          <nav id="public-menu" aria-label={copy.aria.mobileMenu} className="rule-t bg-paper lg:hidden">
+          <nav
+            id="public-menu"
+            aria-label={copy.aria.mobileMenu}
+            className={cx(
+              "lg:hidden",
+              effectiveDark ? "border-t border-white/10 bg-ink/95 text-white" : "rule-t bg-paper text-ink",
+            )}
+          >
             <div className="container-page flex flex-col items-start gap-4 py-6">
-              <PublicNavItems onNavigate={() => setOpen(false)} />
+              <PublicNavItems dark={effectiveDark} onNavigate={() => setOpen(false)} />
               {me ? (
                 <div className="pt-2">
                   <LinkButton to="/app" variant="primary" size="sm">
@@ -87,7 +161,10 @@ export function PublicLayout({ children }: { children?: ReactNode } = {}) {
                     {copy.nav.login}
                   </LinkButton>
                   {hasContact && (
-                    <a href={CONTACT_URL} className="btn btn-secondary btn-sm">
+                    <a
+                      href={CONTACT_URL}
+                      className={cx("btn btn-sm", effectiveDark ? "btn-ghost-dark" : "btn-secondary")}
+                    >
                       {copy.nav.contact}
                     </a>
                   )}

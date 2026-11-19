@@ -1,101 +1,10 @@
 import type { ReactNode } from "react";
-import { BRAND, BRAND_TAGLINE, CONTACT_URL } from "../brand";
+import { BRAND, CONTACT_URL } from "../brand";
 import { copy } from "../copy";
 import { LIMITS_TEXT, SELF_DECLARED_TEXT } from "../format";
 import { LinkButton } from "../ui";
+import { HeroIris } from "./HeroIris";
 import { BeforeAfter, Proof, Showcase } from "./LandingSections";
-
-// ---- plain line icons (no containers) --------------------------------------------------------
-
-function Icon({ children, className = "size-7" }: { children: ReactNode; className?: string }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      {children}
-    </svg>
-  );
-}
-const AgentIcon = () => (
-  <Icon>
-    <rect x="4" y="8" width="16" height="11" rx="2" />
-    <path d="M12 8V4.5M10.5 4.5h3" />
-    <circle cx="9" cy="13.5" r="1" />
-    <circle cx="15" cy="13.5" r="1" />
-    <path d="M9.5 16.5h5" />
-  </Icon>
-);
-const TestIcon = () => (
-  <Icon>
-    <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" />
-    <path d="M9 12l2 2 4-4" />
-  </Icon>
-);
-const ReportIcon = () => (
-  <Icon>
-    <path d="M7 3h7l4 4v14H7z" />
-    <path d="M14 3v4h4M10 12h5M10 16h5" />
-  </Icon>
-);
-
-// ---- hero ------------------------------------------------------------------------------------
-
-function FlowRow({ n, icon, title, text }: { n: string; icon: ReactNode; title: string; text: string }) {
-  return (
-    <li className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-5">
-      <span className="font-mono text-sm font-bold text-subtle">{n}</span>
-      <div>
-        <p className="text-lg font-extrabold">{title}</p>
-        <p className="text-sm text-subtle">{text}</p>
-      </div>
-      {icon}
-    </li>
-  );
-}
-
-function AgentFlow() {
-  return (
-    <figure className="m-0">
-      <div className="box">
-        <p className="rule-b px-6 py-4 text-sm font-extrabold">AI agent → tested → report</p>
-        <ol className="m-0 list-none divide-y divide-line p-0 px-6">
-          <FlowRow n="01" icon={<AgentIcon />} title="Your AI agent" text="Runs where your team runs it." />
-          <FlowRow n="02" icon={<TestIcon />} title="Tested" text="Quality evaluation and red-team attacks." />
-          <FlowRow n="03" icon={<ReportIcon />} title="Report" text="Published here, with its caveats." />
-        </ol>
-      </div>
-      <figcaption className="mt-4 text-sm text-subtle">
-        Illustrative diagram. {BRAND} never runs your agent; it only stores and shows the report your team publishes.
-      </figcaption>
-    </figure>
-  );
-}
-
-function Hero() {
-  return (
-    <div className="container-page grid grid-cols-12 items-end gap-x-0 gap-y-12 py-24 lg:gap-x-12">
-      <div className="col-span-12 flex flex-col items-start gap-8 lg:col-span-7">
-        <p className="text-sm font-extrabold">{BRAND_TAGLINE}</p>
-        <h1 className="heading text-5xl sm:text-6xl lg:text-7xl">
-          See what your AI agents were tested for. Read what was left out.
-        </h1>
-        <p className="max-w-xl text-xl text-subtle">
-          {BRAND} gathers the test reports of your AI agents by area, with every result and every caveat in the same
-          place.
-        </p>
-        <div className="flex flex-wrap items-center gap-4 pt-2">
-          <LinkButton to="/login" variant="primary" size="lg">
-            Log In
-          </LinkButton>
-          <a href="#how-it-works" className="btn btn-secondary btn-lg">
-            How it works
-          </a>
-        </div>
-      </div>
-      <div className="col-span-12 lg:col-span-5">
-        <AgentFlow />
-      </div>
-    </div>
-  );
-}
 
 // ---- features: a ruled list, not a grid of cards ---------------------------------------------
 
@@ -304,7 +213,7 @@ function FinalCta() {
 export function Landing() {
   return (
     <>
-      <Hero />
+      <HeroIris />
       <Features />
       <BeforeAfter />
       <HowItWorks />
