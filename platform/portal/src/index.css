@@ -235,7 +235,7 @@
     color: #ffffff;
   }
   .iris-layer {
-    clip-path: circle(calc(var(--iris, 0) * 150%) at 50% 50%);
+    clip-path: circle(calc(var(--iris, 0) * 75%) at 50% 50%);
     will-change: clip-path;
   }
   @media (prefers-reduced-motion: reduce) {

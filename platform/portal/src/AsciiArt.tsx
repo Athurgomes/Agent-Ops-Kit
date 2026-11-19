@@ -404,15 +404,26 @@ export function AsciiSounding({ className = "" }: { className?: string }) {
   return <canvas ref={ref} aria-hidden="true" className={`pointer-events-none block h-44 w-full ${className}`} />;
 }
 
-// 7. Cena 9: Silhueta de farol e feixe varrendo o horizonte costeiro sobre #0A0A0A
+// 7. Cena 9: Farol (cúpula, lanterna azul, galeria, torre afunilada com faixas e base de pedras) e feixe
 const TOWER = [
-  "    /\\    ",
-  "   [##]   ",
-  "   |::|   ",
-  "   |  |   ",
-  "  /|  |\\  ",
-  " /_|__|\\_ ",
+  "      !      ",
+  "     .^.     ",
+  "    (___)    ",
+  "   [|*@*|]   ",
+  "  =|=|=|=|=  ",
+  "    /:::\\    ",
+  "    /###\\    ",
+  "   /:::::\\   ",
+  "   /#####\\   ",
+  "  /:::::::\\  ",
+  "  /#######\\  ",
+  " /:::::::::\\ ",
+  " /###|_|###\\ ",
+  "%#%#%#%#%#%#%",
 ];
+const TOWER_CH = 9; // avanço horizontal por caractere
+const TOWER_LANTERN_ROW = 3; // linha do "@"
+const TOWER_LANTERN_COL = 6; // coluna do "@"
 
 export function AsciiHorizon({ className = "" }: { className?: string }) {
   const ref = useCanvasArt((ctx, w, h, elapsed, isStatic) => {
@@ -422,11 +433,13 @@ export function AsciiHorizon({ className = "" }: { className?: string }) {
     const cellY = 16;
     const cols = Math.floor(w / cellX);
     const rows = Math.floor(h / cellY);
-    const towerCol = Math.max(4, Math.floor(cols * 0.72));
-    const lanternRow = Math.max(2, Math.floor(rows * 0.32));
-    const lanternX = towerCol * cellX + 44;
-    const lanternY = (lanternRow + 1.5) * cellY;
-    const horizonRow = lanternRow + TOWER.length;
+    const towerW = TOWER[0].length * TOWER_CH;
+    const towerLeft = Math.max(8, Math.min(Math.floor(w * 0.72), w - towerW - 10));
+    const horizonRow = Math.max(TOWER.length + 1, rows - 2); // linha d'água logo abaixo da base
+    const top = horizonRow - TOWER.length;
+    const lanternX = towerLeft + (TOWER_LANTERN_COL + 0.5) * TOWER_CH;
+    const lanternY = (top + TOWER_LANTERN_ROW + 0.5) * cellY;
+    const beamEnd = towerLeft + 2.5 * TOWER_CH; // o feixe sai pela vidraça esquerda
 
     ctx.font = `600 12px ${MONO_FONT}`;
     ctx.textAlign = "center";
@@ -442,7 +455,7 @@ export function AsciiHorizon({ className = "" }: { className?: string }) {
           ctx.fillText(c % 2 === 0 ? "~" : "-", x, y);
           continue;
         }
-        if (x < lanternX) {
+        if (x < beamEnd) {
           const dx = lanternX - x;
           const dy = y - lanternY;
           const angle = Math.atan2(dy, dx);
@@ -456,14 +469,122 @@ export function AsciiHorizon({ className = "" }: { className?: string }) {
       }
     }
 
-    // Silhueta do farol
-    ctx.textAlign = "left";
+    // Silhueta do farol (caractere a caractere para ancorar a lanterna)
     TOWER.forEach((line, idx) => {
-      const y = (lanternRow + idx + 0.5) * cellY;
-      ctx.fillStyle = idx === 1 ? "#2563EB" : "#FFFFFF";
-      ctx.fillText(line, towerCol * cellX, y);
+      const y = (top + idx + 0.5) * cellY;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === " ") continue;
+        const x = towerLeft + (i + 0.5) * TOWER_CH;
+        let color = "#FFFFFF";
+        if (idx === TOWER_LANTERN_ROW && (ch === "@" || ch === "*")) color = "#2563EB";
+        else if (idx === 4 || ch === ":") color = "#A3A3A3";
+        else if (idx === 0 || ch === "%") color = "#737373";
+        ctx.fillStyle = color;
+        ctx.fillText(ch, x, y);
+      }
     });
   }, "#0A0A0A");
 
-  return <canvas ref={ref} aria-hidden="true" className={`pointer-events-none block h-48 w-full ${className}`} />;
+  return <canvas ref={ref} aria-hidden="true" className={`pointer-events-none block h-[17rem] w-full ${className}`} />;
+}
+
+// 8. Cena 5: Casco de navio em corte com anteparas estanques; um grupo de compartimentos aceso
+function mixBlueWhite(k: number) {
+  const r = Math.round(37 + (255 - 37) * k);
+  const g = Math.round(99 + (255 - 99) * k);
+  const b = Math.round(235 + (255 - 235) * k);
+  return `rgb(${r},${g},${b})`;
+}
+
+export function AsciiHull({ className = "" }: { className?: string }) {
+  const ref = useCanvasArt((ctx, w, h, elapsed, isStatic) => {
+    const t = isStatic ? 1.2 : elapsed / 1000;
+    const cellX = 10;
+    const cellY = 14;
+    const cols = Math.floor(w / cellX);
+    const rows = Math.floor(h / cellY);
+    const xl = Math.max(1, Math.round(cols * 0.05));
+    const xr = cols - 1 - xl;
+    const mid = (xl + xr) / 2;
+    const halfW = Math.max(1, (xr - xl) / 2);
+    const r0 = Math.max(1, Math.round(rows * 0.12));
+    const rKeel = Math.round(rows * 0.72);
+    const rWater = Math.round(rows * 0.55);
+    const rDeck = Math.round((r0 + rKeel) / 2);
+    const n = cols < 40 ? 5 : 7;
+    const litStart = Math.floor(n / 2) - 1;
+    const span = xr - xl + 1;
+
+    const bottom = (c: number) => rKeel - Math.round(3 * Math.pow(Math.abs((c - mid) / halfW), 4));
+    const inside = (c: number, r: number) => c >= xl && c <= xr && r >= r0 && r <= bottom(c);
+    const comp = (c: number) => Math.min(n - 1, Math.floor(((c - xl) * n) / span));
+    const isBulkhead = (c: number) => {
+      for (let k = 1; k < n; k++) if (c === xl + Math.round((k * span) / n)) return true;
+      return false;
+    };
+    const isLit = (c: number) => {
+      const k = comp(c);
+      return k >= litStart && k < litStart + 3;
+    };
+
+    ctx.font = `600 11px ${MONO_FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    for (let r = 0; r < rows; r++) {
+      const y = (r + 0.5) * cellY + (h - rows * cellY) * 0.5;
+      for (let c = 0; c < cols; c++) {
+        const x = (c + 0.5) * cellX + (w - cols * cellX) * 0.5;
+
+        if (!inside(c, r)) {
+          // Água por fora do casco, com ondas lentas
+          if (r >= rWater) {
+            const depth = r - rWater;
+            const wave = Math.sin(c * 0.55 - t * 1.6 + depth * 1.3);
+            if (depth === 0 && wave > -0.2) {
+              ctx.fillStyle = "#737373";
+              ctx.fillText(wave > 0.5 ? "~" : "-", x, y);
+            } else if (depth > 0 && wave > 0.55) {
+              ctx.fillStyle = depth % 2 === 0 ? "#404040" : "#525252";
+              ctx.fillText("~", x, y);
+            }
+          }
+          continue;
+        }
+
+        const lit = isLit(c);
+        const edge =
+          r === r0 || !inside(c - 1, r) || !inside(c + 1, r) || !inside(c, r + 1) || !inside(c, r - 1);
+        if (edge) {
+          ctx.fillStyle = "#D4D4D4";
+          ctx.fillText(r === r0 ? "=" : "#", x, y);
+          continue;
+        }
+        if (isBulkhead(c)) {
+          const touchesLit = isLit(c - 1) !== isLit(c) || lit;
+          ctx.fillStyle = touchesLit ? "#FFFFFF" : "#737373";
+          ctx.fillText("|", x, y);
+          continue;
+        }
+        if (r === rDeck) {
+          ctx.fillStyle = lit ? "#D4D4D4" : "#525252";
+          ctx.fillText("-", x, y);
+          continue;
+        }
+        if (lit) {
+          if (c % 2 === 1 && r % 2 === 0) {
+            const k = 0.5 + 0.5 * Math.sin(t * 0.9 + c * 0.7 + r * 1.1);
+            ctx.fillStyle = mixBlueWhite(k);
+            ctx.fillText(k > 0.6 ? "o" : ".", x, y);
+          }
+        } else if ((r + c) % 2 === 0) {
+          ctx.fillStyle = "#404040";
+          ctx.fillText("/", x, y);
+        }
+      }
+    }
+  }, "#0A0A0A");
+
+  return <canvas ref={ref} aria-hidden="true" className={`pointer-events-none block h-56 w-full ${className}`} />;
 }

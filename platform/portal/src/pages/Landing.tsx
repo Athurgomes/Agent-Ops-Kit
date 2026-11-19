@@ -9,7 +9,6 @@ import {
   AudienceSection,
   HowItWorksSection,
   PermissionsSection,
-  SceneEyebrow,
   WhatYouSeeSection,
 } from "./LandingSections";
 
@@ -25,10 +24,7 @@ function HonestySection() {
         <div className="mt-10 grid grid-cols-1 gap-10 lg:grid-cols-12 lg:gap-12">
           <div className="lg:col-span-5">
             <Reveal>
-              <p className="font-mono text-xs font-semibold uppercase tracking-[0.08em] text-white">
-                {copy.honesty.eyebrow}
-              </p>
-              <h2 className="font-display mt-4 text-4xl font-extrabold leading-[1.02] tracking-[-0.035em] text-white sm:text-5xl lg:text-6xl">
+              <h2 className="font-display text-4xl font-extrabold leading-[1.02] tracking-[-0.035em] text-white sm:text-5xl lg:text-6xl">
                 {copy.honesty.title}
               </h2>
             </Reveal>
@@ -69,8 +65,7 @@ function FaqSection() {
       <div className="container-page grid grid-cols-1 gap-10 py-20 lg:grid-cols-12 lg:gap-12 lg:py-28">
         <div className="flex flex-col justify-between gap-8 lg:col-span-4">
           <Reveal>
-            <SceneEyebrow text={copy.faq.eyebrow} />
-            <h2 className="heading mt-4 text-3xl sm:text-5xl">{copy.faq.title}</h2>
+            <h2 className="heading text-3xl sm:text-5xl">{copy.faq.title}</h2>
           </Reveal>
 
           <div className="border border-ink bg-surface p-4">
@@ -115,8 +110,7 @@ function ClosingSection() {
       <div className="container-page grid grid-cols-1 items-end gap-12 py-24 lg:grid-cols-12 lg:py-32">
         <div className="lg:col-span-7">
           <Reveal>
-            <SceneEyebrow text={copy.closing.eyebrow} dark />
-            <span aria-hidden="true" className="closing-dot mt-6 mb-6 block size-4 rounded-full bg-accent" />
+            <span aria-hidden="true" className="closing-dot mb-6 block size-4 rounded-full bg-accent" />
             <Logo to={null} inverted size="text-6xl sm:text-8xl lg:text-[7.5rem]" />
             <p className="font-display mt-5 text-2xl font-extrabold leading-[1.06] tracking-[-0.03em] text-white sm:text-4xl">
               {copy.closing.tagline}

@@ -57,7 +57,6 @@ export function Login() {
   return (
     <AuthShell
       title={copy.auth.login.pageTitle}
-      eyebrow={copy.auth.login.eyebrow}
       sheetCode={copy.auth.login.sheetCode}
       art="horizon"
     >

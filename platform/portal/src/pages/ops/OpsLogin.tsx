@@ -117,11 +117,7 @@ export function OpsLogin() {
           <div className="relative border border-ink bg-paper">
             <CornerMarks />
             <div className="border-b border-ink bg-surface px-6 py-4 sm:px-10">
-              <div className="flex items-center justify-between gap-3">
-                <p className="eyebrow flex items-center gap-2.5">
-                  <span aria-hidden="true" className="size-2 shrink-0 bg-accent" />
-                  {lCopy.eyebrow}
-                </p>
+              <div className="flex items-center justify-end gap-3">
                 <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-subtle">
                   {lCopy.sheetCode}
                 </span>

@@ -30,7 +30,6 @@ export function ForgotPassword() {
   return (
     <AuthShell
       title={copy.auth.forgot.pageTitle}
-      eyebrow={copy.auth.forgot.eyebrow}
       sheetCode={copy.auth.forgot.sheetCode}
       art="compass"
     >

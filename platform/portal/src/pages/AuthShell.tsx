@@ -41,13 +41,11 @@ export function CornerMarks({ dark = false }: { dark?: boolean }) {
 /** Asymmetric logbook shell shared by login and password recovery pages. */
 export function AuthShell({
   title,
-  eyebrow,
   sheetCode = copy.auth.shell.sheetCode,
   art = "horizon",
   children,
 }: {
   title: string;
-  eyebrow: string;
   sheetCode?: string;
   art?: "horizon" | "compass";
   children: ReactNode;
@@ -114,7 +112,7 @@ export function AuthShell({
             <span>{copy.auth.shell.coordinate}</span>
             <span>{artCode}</span>
           </div>
-          {art === "compass" ? <AsciiCompass className="h-52" /> : <AsciiHorizon className="h-44" />}
+          {art === "compass" ? <AsciiCompass className="h-52" /> : <AsciiHorizon className="h-[17rem]" />}
           <div aria-hidden="true" className="ruler-x-light mt-3" />
         </div>
 
@@ -140,11 +138,7 @@ export function AuthShell({
           <div className="relative border border-ink bg-paper">
             <CornerMarks />
             <div className="border-b border-ink bg-surface px-6 py-4 sm:px-10">
-              <div className="flex items-center justify-between gap-3">
-                <p className="eyebrow flex items-center gap-2.5">
-                  <span aria-hidden="true" className="size-2 shrink-0 bg-accent" />
-                  {eyebrow}
-                </p>
+              <div className="flex items-center justify-end gap-3">
                 <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-subtle">
                   {sheetCode}
                 </span>

@@ -76,7 +76,6 @@ export function ResetPassword() {
     return (
       <AuthShell
         title={copy.auth.reset.donePageTitle}
-        eyebrow={copy.auth.reset.eyebrow}
         sheetCode={copy.auth.reset.sheetCode}
         art="compass"
       >
@@ -96,7 +95,6 @@ export function ResetPassword() {
     return (
       <AuthShell
         title={copy.auth.reset.invalidPageTitle}
-        eyebrow={copy.auth.reset.eyebrow}
         sheetCode={copy.auth.reset.sheetCode}
         art="compass"
       >
@@ -121,7 +119,6 @@ export function ResetPassword() {
     return (
       <AuthShell
         title={copy.auth.reset.tooManyPageTitle}
-        eyebrow={copy.auth.reset.eyebrow}
         sheetCode={copy.auth.reset.sheetCode}
         art="compass"
       >
@@ -141,7 +138,6 @@ export function ResetPassword() {
   return (
     <AuthShell
       title={copy.auth.reset.formPageTitle}
-      eyebrow={copy.auth.reset.eyebrow}
       sheetCode={copy.auth.reset.sheetCode}
       art="compass"
     >

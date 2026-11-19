@@ -7,17 +7,13 @@ export const copy = {
     subtitle: BRAND_SUBTITLE,
   },
   hero: {
-    eyebrow: "/ 00 FAROL.",
     titlePrefix: "Enxergue ",
     titleHighlight: "seus agentes",
     titleDot: ".",
     subtitle: "Relatórios de teste dos seus agentes de IA, com as limitações à vista.",
     ctaSecondary: "Ver como funciona",
-    scrollHint: "Role para abrir a carta",
-    coordinate: "LAT 23°33'S · LON 046°38'W · FEIXE CONTÍNUO",
   },
   problem: {
-    eyebrow: "/ 01 O PROBLEMA",
     coordinate: "FOLHA 01 · VISIBILIDADE",
     titlePrefix: "Quem decide ",
     titleHighlight: "só enxerga",
@@ -90,7 +86,6 @@ export const copy = {
     logoutError: "Não foi possível encerrar a sessão no servidor; tente novamente.",
   },
   howItWorks: {
-    eyebrow: "/ 02 ROTA DE PUBLICAÇÃO",
     title: "Do teste no agente à leitura por área.",
     stickyLabel: "ROTA ATIVA · MARCO",
     steps: [
@@ -119,7 +114,6 @@ export const copy = {
     ],
   },
   whatYouSee: {
-    eyebrow: "/ 03 REGISTRO DE BORDO",
     title: "Versões claras para quem decide e trilha completa para auditoria.",
     coordinate: "POS 23°33'S · FOLHA DE REGISTRO · VERIFICAÇÃO SHA-256",
     headers: {
@@ -159,8 +153,6 @@ export const copy = {
     ],
   },
   permissions: {
-    eyebrow: "/ 04 CONTROLE DE ALCANCE",
-    marginNote: "ANTEPARA ESTANQUE · ISOLAMENTO POR ÁREA",
     title: "Visibilidade por área, sem expor o resto da organização.",
     subtitle:
       "Cada agente pertence a uma área. O acesso cobre a própria área e suas sub-áreas, e nunca sobe para áreas paralelas ou superiores.",
@@ -182,7 +174,6 @@ export const copy = {
     ],
   },
   honesty: {
-    eyebrow: "/ 05 SINAL E LIMITE",
     title: "O que um relatório verde não significa",
     lead: "Verde não significa seguro. Indica apenas que nada reprovou neste teste, com estes ataques e estas ressalvas.",
     points: [
@@ -201,7 +192,6 @@ export const copy = {
     ],
   },
   audience: {
-    eyebrow: "/ 06 TRIPULAÇÃO",
     title: "Para times B2B com agentes de IA em operação.",
     caption: "BANDEIRAS DE SINALIZAÇÃO · PERFIS DE ACESSO",
     items: [
@@ -223,7 +213,6 @@ export const copy = {
     ],
   },
   faq: {
-    eyebrow: "/ 07 DIÁRIO DE DÚVIDAS",
     title: "Perguntas frequentes",
     caption: "SONDA BATIMÉTRICA · ESCOPO DO PORTAL",
     items: [
@@ -255,7 +244,6 @@ export const copy = {
     ],
   },
   closing: {
-    eyebrow: "/ 08 PONTO DE REFERÊNCIA",
     tagline: BRAND_TAGLINE,
     note: "Entre com o e-mail e a senha configurados pela administração da sua organização.",
   },
@@ -334,7 +322,6 @@ export const copy = {
     },
     login: {
       pageTitle: "Entrar",
-      eyebrow: "/ 01 ACESSO",
       sheetCode: "FOLHA 01",
       title: "Entrar no portal",
       subtitle: "Acesse os relatórios de teste e segurança dos agentes da sua área.",
@@ -348,7 +335,6 @@ export const copy = {
     },
     forgot: {
       pageTitle: "Recuperar senha",
-      eyebrow: "/ 02 RECUPERAÇÃO",
       sheetCode: "FOLHA 02",
       title: "Esqueceu a senha?",
       subtitle: "Informe seu e-mail para receber um link de redefinição de senha.",
@@ -359,7 +345,6 @@ export const copy = {
       backToLogin: "← Voltar para entrar",
     },
     reset: {
-      eyebrow: "/ 03 NOVA SENHA",
       sheetCode: "FOLHA 03",
       formPageTitle: "Escolher nova senha",
       formTitle: "Nova senha",
@@ -911,7 +896,6 @@ export const copy = {
       coordinate: "OPERAÇÃO · SESSÃO ISOLADA",
       compassCode: "ROSA DE RUMO",
       asideNote: "Este console é exclusivo para operadores da plataforma. Não é o acesso de uma organização.",
-      eyebrow: "/ 01 OPERADOR",
       sheetCode: "FOLHA OP-01",
       title: "Acesso do operador",
       subtitle: "Entre com as credenciais de operador para gerenciar organizações e metadados da plataforma.",

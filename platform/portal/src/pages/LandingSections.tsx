@@ -1,16 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { AsciiCompass, AsciiFresnel, AsciiSignalFlags, AsciiWaves } from "../AsciiArt";
+import { AsciiFresnel, AsciiHull, AsciiSignalFlags, AsciiWaves } from "../AsciiArt";
 import { copy } from "../copy";
 import { Reveal } from "../Reveal";
-
-export function SceneEyebrow({ text, dark = false }: { text: string; dark?: boolean }) {
-  return (
-    <p className={`eyebrow flex items-center gap-2.5 ${dark ? "!text-white/80" : ""}`}>
-      <span aria-hidden="true" className="size-2 shrink-0 bg-accent" />
-      {text}
-    </p>
-  );
-}
 
 export function CornerMarks({ dark = false }: { dark?: boolean }) {
   const tone = dark ? "text-white/75" : "text-ink";
@@ -64,10 +55,9 @@ export function HowItWorksSection() {
 
   return (
     <section id="how-it-works" className="border-b border-ink bg-paper text-ink">
-      <div className="container-page py-20 lg:py-28">
+      <div className="container-page pb-20 pt-14 lg:pb-28 lg:pt-16">
         <Reveal className="max-w-4xl">
-          <SceneEyebrow text={copy.howItWorks.eyebrow} />
-          <h2 className="heading mt-4 text-4xl sm:text-5xl lg:text-6xl">{copy.howItWorks.title}</h2>
+          <h2 className="heading text-4xl sm:text-5xl lg:text-6xl">{copy.howItWorks.title}</h2>
         </Reveal>
 
         <div className="mt-12 grid grid-cols-1 items-start gap-10 lg:grid-cols-12 lg:gap-12">
@@ -108,7 +98,7 @@ export function HowItWorksSection() {
                   ref={(el) => {
                     stepRefs.current[i] = el;
                   }}
-                  className="border-t border-ink py-10 first:pt-0 lg:py-14 lg:first:pt-0"
+                  className="border-t border-ink py-10 lg:py-14"
                 >
                   <Reveal delayMs={i * 40} className="flex flex-col items-start gap-4">
                     <div className="flex w-full items-center justify-between gap-4">
@@ -168,8 +158,7 @@ export function WhatYouSeeSection() {
             <div className="grid grid-cols-1 border-b border-ink lg:grid-cols-12">
               <div className="flex flex-col justify-between gap-6 p-6 sm:p-10 lg:col-span-7">
                 <div>
-                  <SceneEyebrow text={copy.whatYouSee.eyebrow} />
-                  <h2 className="heading mt-4 text-3xl sm:text-5xl lg:text-[3.5rem]">{copy.whatYouSee.title}</h2>
+                  <h2 className="heading text-3xl sm:text-5xl lg:text-[3.5rem]">{copy.whatYouSee.title}</h2>
                 </div>
                 <div className="flex flex-col gap-3">
                   <div aria-hidden="true" className="ruler-x" />
@@ -237,27 +226,20 @@ export function WhatYouSeeSection() {
   );
 }
 
-// ---- Cena 5: Controle de alcance (#0A0A0A + árvore ASCII + AsciiCompass + 2 blocos regrados) -
+// ---- Cena 5: Controle de alcance (#0A0A0A + árvore ASCII + AsciiHull + 2 blocos regrados) -
 
 export function PermissionsSection() {
   return (
     <section className="bg-ink text-white">
       <div className="container-page py-20 lg:py-28">
         <div className="grid grid-cols-1 gap-8 border-b border-white/25 pb-10 lg:grid-cols-12 lg:items-end">
-          <div className="lg:col-span-8">
+          <div className="lg:col-span-10">
             <Reveal>
-              <SceneEyebrow text={copy.permissions.eyebrow} dark />
-              <h2 className="font-display mt-4 text-3xl font-extrabold leading-[1.03] tracking-[-0.035em] text-white sm:text-5xl lg:text-6xl">
+              <h2 className="font-display text-3xl font-extrabold leading-[1.03] tracking-[-0.035em] text-white sm:text-5xl lg:text-6xl">
                 {copy.permissions.title}
               </h2>
               <p className="mt-5 max-w-2xl text-lg text-[#D4D4D4]">{copy.permissions.subtitle}</p>
             </Reveal>
-          </div>
-
-          <div className="lg:col-span-4 lg:text-right">
-            <p className="font-mono text-xs font-semibold uppercase tracking-[0.08em] text-[#D4D4D4]">
-              {copy.permissions.marginNote}
-            </p>
           </div>
         </div>
 
@@ -285,7 +267,7 @@ export function PermissionsSection() {
           {/* Rosa dos ventos ASCII + 2 blocos regrados sem cartões */}
           <div className="flex flex-col gap-8 lg:col-span-6">
             <div className="border border-white/25 bg-[#0A0A0A] p-3">
-              <AsciiCompass />
+              <AsciiHull />
             </div>
 
             <div className="flex flex-col">
@@ -317,8 +299,7 @@ export function AudienceSection() {
       <div className="container-page grid grid-cols-1 gap-10 py-20 lg:grid-cols-12 lg:gap-12 lg:py-28">
         <div className="flex flex-col justify-between gap-8 lg:col-span-4">
           <Reveal>
-            <SceneEyebrow text={copy.audience.eyebrow} />
-            <h2 className="heading mt-4 text-3xl sm:text-5xl">{copy.audience.title}</h2>
+            <h2 className="heading text-3xl sm:text-5xl">{copy.audience.title}</h2>
           </Reveal>
 
           <div className="border border-ink bg-paper p-4">
