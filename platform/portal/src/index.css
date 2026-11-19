@@ -251,6 +251,47 @@
       radial-gradient(38% 42% at 62% 84%, rgba(10, 10, 10, 0.035), transparent 70%);
     filter: blur(28px);
   }
+  .reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    transition:
+      opacity 650ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 650ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  @keyframes closing-dot-enter {
+    0% {
+      opacity: 0.4;
+      transform: scale(0.75);
+      box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.35);
+    }
+    60% {
+      opacity: 1;
+      transform: scale(1.06);
+      box-shadow: 0 0 0 12px rgba(37, 99, 235, 0);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+    }
+  }
+  .is-visible .closing-dot {
+    animation: closing-dot-enter 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal {
+      opacity: 1;
+      transform: none;
+      transition-delay: 0ms;
+    }
+    .is-visible .closing-dot {
+      animation: none;
+    }
+  }
   .side-item {
     display: block;
     padding: 8px 14px;
