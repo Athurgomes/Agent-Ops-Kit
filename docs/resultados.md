@@ -25,7 +25,13 @@ Obs.: `--reuse` confere o manifesto das respostas gravadas. Sem `--judge`, o `ao
 
 ## A. Avaliação A/B de prompts (v1 vs v2)
 
-Fonte: `evals/results/v1_vs_v2.md` (50 perguntas, llama3.1:8b, semente 42, respostas geradas na própria execução).
+Fonte: `evals/results/v1_vs_v2.md` (50 perguntas, llama3.1:8b, semente 42, respostas geradas na própria execução). Os números nas tabelas abaixo correspondem exclusivamente ao conjunto padrão de 50 casos (`evals/dataset.jsonl`).
+
+Para auditoria local mais ampla com Ollama (sem respostas gravadas nem medições publicadas aqui), o repositório inclui também `evals/dataset_audit_200.jsonl` (200 casos cobrindo os 15 documentos do corpus e casos de abstenção):
+
+```bash
+aok eval --baseline v1 --candidate v2 --dataset evals/dataset_audit_200.jsonl --runs 3
+```
 
 Métrica determinística (checagens):
 

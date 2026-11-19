@@ -168,6 +168,12 @@ Para medir variância e consistência entre múltiplas execuções por caso (ex.
 aok eval --baseline v1 --candidate v2 --runs 3 --summary
 ```
 
+Para auditoria local mais ampla com Ollama, está disponível também `evals/dataset_audit_200.jsonl` (200 casos cobrindo os 15 documentos do corpus e casos de abstenção; sem respostas gravadas no repositório):
+
+```bash
+aok eval --baseline v1 --candidate v2 --dataset evals/dataset_audit_200.jsonl --runs 3 --summary
+```
+
 ### Como ver o trace
 
 1. Com o Jaeger de pé e o agente executado (comando acima), abra http://localhost:16686.
@@ -186,7 +192,7 @@ Workflows (`.github/workflows/`): `ci.yml` (jobs `test`, `portal` e `postgres`) 
 
 ## Resultados medidos
 
-Fonte única: [docs/resultados.md](docs/resultados.md). Modelo llama3.1:8b via Ollama, semente 42, uma execução por configuração. As tabelas abaixo são cópia, sem alterações.
+Fonte única: [docs/resultados.md](docs/resultados.md). Modelo llama3.1:8b via Ollama, semente 42, uma execução por configuração sobre o conjunto padrão de 50 casos (`evals/dataset.jsonl`). As tabelas abaixo são cópia, sem alterações.
 
 ### Segurança: ASR antes e depois dos guardrails
 
@@ -271,7 +277,7 @@ Nada disto existe ainda:
 src/agent_ops_kit/   pacote: cli (new, eval, redteam, audit, report, check), tracing, audit, metrics,
                      guardrails/, eval/, redteam/, report/, templates/
 examples/rag_agent/  agente de referência e corpus fictício
-evals/               dataset, prompts v1/v2, respostas gravadas, manifesto, relatórios
+evals/               dataset padrão (50 casos), dataset de auditoria (200 casos), prompts v1/v2, respostas gravadas, manifesto, relatórios
 redteam/             ataques, perguntas benignas, resultados gravados
 platform/            plataforma: aok_platform/ (API FastAPI), portal/ (React), Dockerfile, docker-compose.yml
 docs/                arquitetura, decisões (ADRs), resultados, demo-cli.gif
