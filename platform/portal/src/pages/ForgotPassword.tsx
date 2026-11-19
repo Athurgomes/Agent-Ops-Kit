@@ -2,10 +2,11 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { copy } from "../copy";
 import { Button, Field } from "../ui";
 import { AuthShell } from "./AuthShell";
 
-export const FORGOT_MESSAGE = "If an account exists for that email, we've sent a reset link. It expires in 30 minutes.";
+export const FORGOT_MESSAGE = copy.auth.forgot.sentMessage;
 
 export function ForgotPassword() {
   const nav = useNavigate();
@@ -27,31 +28,45 @@ export function ForgotPassword() {
   }
 
   return (
-    <AuthShell title="Reset password">
-      <h1 className="heading text-4xl sm:text-5xl">Forgot password?</h1>
+    <AuthShell
+      title={copy.auth.forgot.pageTitle}
+      eyebrow={copy.auth.forgot.eyebrow}
+      sheetCode={copy.auth.forgot.sheetCode}
+      art="compass"
+    >
+      <h1 className="heading text-3xl sm:text-5xl">{copy.auth.forgot.title}</h1>
       {sent ? (
         <>
-          <p role="status" className="mt-6 box border-l-4 border-l-accent p-4 font-semibold">
+          <p role="status" className="mt-6 border border-ink border-l-4 border-l-accent bg-surface p-4 font-semibold text-ink">
             {FORGOT_MESSAGE}
           </p>
-          <p className="mt-8">
+          <p className="mt-8 text-sm">
             <Link to="/login" className="link">
-              Back to Log In
+              {copy.auth.forgot.backToLogin}
             </Link>
           </p>
         </>
       ) : (
         <>
-          <p className="mt-3 text-subtle">Enter your email and we'll send you a link to choose a new password.</p>
+          <p className="mt-3 text-subtle">{copy.auth.forgot.subtitle}</p>
           <form onSubmit={submit} className="mt-8 flex flex-col gap-6">
-            <Field label="Email" id="email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
+            <Field
+              label={copy.auth.forgot.emailLabel}
+              id="email"
+              type="email"
+              autoComplete="username"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoFocus
+            />
             <Button type="submit" variant="primary" size="lg" disabled={busy} className="mt-2 w-full">
-              {busy ? "Sending…" : "Send reset link"}
+              {busy ? copy.auth.forgot.submitting : copy.auth.forgot.submit}
             </Button>
           </form>
           <p className="mt-8 text-sm">
             <Link to="/login" className="link">
-              Back to Log In
+              {copy.auth.forgot.backToLogin}
             </Link>
           </p>
         </>
