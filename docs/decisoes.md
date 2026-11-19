@@ -273,3 +273,17 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O provisionamento de contas segue sob controle administrativo (`org_admin` ou operador), e alterar `CONTACT_URL` requer recompilar o front-end.
 - O redesenho é restrito à camada de interface: não altera contratos de API, isolamento multi-organização, throttle em memória, regras provisórias do semáforo nem o caráter autodeclarado dos relatórios (ADR-007).
 - Verificado no build (`npm run build`) e via Edge headless/CDP em `1440x900` e `375x812` (zero erros de console, `scrollWidth <= innerWidth`, foco por teclado `:focus-visible` e `prefers-reduced-motion: reduce` em `/`, `/login` e `/app` com API simulada via CDP `Fetch`); não houve validação em leitores de tela nem em navegadores fora do Edge/Chromium.
+
+## ADR-016: migrações formais de banco com Alembic (SQLite e Postgres)
+
+**Contexto.** Conforme registrado no ADR-014, o `ensure_schema` artesanal em `platform/aok_platform/db.py` apenas criava tabelas e colunas ausentes sem versionamento formal e mantinha no SQLite legado a dívida da restrição global `UNIQUE(slug)` na tabela `agent`. Para evoluir o esquema com segurança e preparar a camada de banco para múltiplos workers, era necessário adotar migrações formais com Alembic sem quebrar instalações existentes nem complicar o fluxo local/Docker.
+
+**Decisão.**
+- **Alembic empacotado em `aok_platform`**: adicionado `alembic>=1.13` ao extra `platform` em `pyproject.toml`, com os scripts empacotados em `platform/aok_platform/migrations/` (`env.py`, `script.py.mako`, `versions/0001_initial_schema.py`) via `package-data` e arquivo auxiliar `platform/alembic.ini` para uso direto com `alembic -c platform/alembic.ini`.
+- **Revisão inicial `0001_initial_schema` compatível com banco vazio e legado**: em banco vazio cria as 14 tabelas, FKs, restrições únicas e índices equivalentes a `models.py`; em banco legado sem `alembic_version` adiciona colunas ausentes, executa o backfill determinístico (`organization.slug`, `active`, `created_at`, `agent.org_id`), cria os índices novos e remove a unicidade global de `agent.slug` tanto no Postgres (`DROP CONSTRAINT IF EXISTS agent_slug_key`) quanto no SQLite (via `batch_alter_table(..., recreate="always")` preservando todos os dados).
+- **Concorrência e `AOK_AUTO_MIGRATE`**: em Postgres, `env.py` adquire `pg_advisory_xact_lock` antes do DDL dentro da transação; `init_db` mantém tratamento explícito de `IntegrityError` ao criar a organização `default`. `ensure_schema` delega para `run_migrations` (`platform/aok_platform/migrate.py`), que também expõe `python -m aok_platform.migrate [upgrade|current|heads]`. A variável `AOK_AUTO_MIGRATE` (padrão `true`) permite desligar a migração automática no startup (`false`, `0`, `no`, `off`) quando o operador executa `migrate upgrade` antes de subir vários workers.
+
+**Consequências e limitações.**
+- Bancos existentes criados antes do Alembic recebem a revisão inicial no primeiro `upgrade` sem perda de dados, e o SQLite legado passa a suportar o mesmo `slug` de agente em organizações diferentes.
+- Com `AOK_AUTO_MIGRATE=false` sobre banco não migrado, `init_db` recusa o startup com erro explícito sem alterar o banco.
+- A adoção do Alembic resolve o versionamento e a serialização de DDL, mas escalar para múltiplas réplicas ou vários workers ainda depende de um armazenamento compartilhado fora da memória do processo para os limitadores de tentativas (`LoginThrottle` e `HourlyLimiter`), que continuam sendo o próximo passo para multi-réplica.

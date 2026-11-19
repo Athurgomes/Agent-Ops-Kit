@@ -134,7 +134,9 @@ geradas aparecem uma única vez, só em estado da tela (nunca em storage, URL ou
   seus usuários não logam (erro genérico), as sessões existentes dão 401, os tokens de agente dão 401
   e nada é apagado. Reativar devolve tudo.
 - O slug de agente é único **por organização** (`UNIQUE(org_id, slug)`); o 409 só vale dentro da
-  própria organização e não revela outras organizações, exceto em bancos SQLite antigos (UNIQUE(slug) global até recriar a tabela). O e-mail de usuário continua único **globalmente**: o
+  própria organização e não revela outras organizações (inclusive após migrar bancos SQLite legados,
+  nos quais a migração inicial recria `agent` preservando os dados e removendo o `UNIQUE(slug)` global).
+  O e-mail de usuário continua único **globalmente**: o
   login é só por e-mail, então o mesmo e-mail em duas organizações seria ambíguo.
 - Relatórios novos ficam em `AOK_DATA_DIR/<org_id>/<slug>/<sha256>`. Os já gravados continuam
   resolvidos pelos caminhos guardados no banco (download com checagem contra path traversal).
@@ -152,10 +154,18 @@ curl -X POST http://127.0.0.1:8000/v1/admin/users -H "Authorization: Bearer $AOK
 # depois POST /v1/admin/memberships com {"user_id": <id>, "role": "org_admin"} (mesmos cabeçalhos)
 ```
 
-- Colunas novas em bancos existentes: `ensure_schema` (em `db.py`, roda no startup) adiciona o que falta
-  e preenche (slug da organização, `active`, `created_at`, `agent.org_id`). **Migração formal
-  (Alembic) continua dívida.** Limite conhecido: em bancos antigos a restrição `UNIQUE(slug)` de
-  `agent` permanece no SQLite (o Postgres a remove); lá o slug segue global até recriar a tabela.
+- Migrações formais de banco com **Alembic** (`platform/aok_platform/migrations/`, revisão
+  `0001_initial_schema`): aplicadas automaticamente no startup por padrão (`ensure_schema` via
+  `AOK_AUTO_MIGRATE=true`), com lock transacional (`pg_advisory_xact_lock`) em Postgres e upgrade
+  seguro de bancos legados preservando dados (`organization.slug`, `active`, `created_at`,
+  `agent.org_id` e remoção do `UNIQUE(slug)` global no SQLite e Postgres).
+- Para aplicar ou inspecionar migrações explicitamente (recomendado com `AOK_AUTO_MIGRATE=false`
+  ao subir vários workers):
+
+```bash
+python -m aok_platform.migrate upgrade   # aplica até head (lê AOK_DATABASE_URL ou --url)
+python -m aok_platform.migrate current   # mostra revisão aplicada
+```
 - `seed_demo` continua usando a única organização (a primeira).
 
 ## Operador da plataforma (`/v1/ops`)
@@ -252,15 +262,18 @@ Para operar a plataforma publicada online em instância única:
      `Referrer-Policy: no-referrer` já vão em todas as respostas);
    - `AOK_TRUSTED_PROXIES=<IPs/CIDRs do proxy>` (lista separada por vírgula dos proxies confiáveis para
      extrair o IP real em `X-Forwarded-For` na recuperação de senha);
+   - `AOK_AUTO_MIGRATE=false` (opcional em deploy com múltiplos workers/réplicas: desativa a
+     execução de migrações no startup e exige rodar `python -m aok_platform.migrate upgrade`
+     antes de iniciar os processos da API);
    - Remova `AOK_ADMIN_BOOTSTRAP_KEY` após criar o primeiro `org_admin` (ou usar `AOK_OPS_ENABLED=true` +
      CLI `create_operator`).
 4. **Healthcheck**: configure o proxy/orquestrador em `GET /v1/health`, que valida `SELECT 1` no Postgres
    e o acesso a `AOK_DATA_DIR` (`200 {"status": "ok"}` ou `503 {"status": "unavailable"}`, com
    `Cache-Control: no-store`). O serviço `api` em `platform/docker-compose.yml` já usa esse endpoint.
 
-Ressalva: a plataforma está preparada para **instância única** (1 worker/processo). Escalar para múltiplas
-réplicas ou vários workers ainda exige migrações formais com **Alembic** (em vez de `ensure_schema` no
-startup) e um **store compartilhado** fora da memória do processo para os limitadores de tentativas
-(`LoginThrottle` e `HourlyLimiter`). Detalhes das decisões e limites estão no ADR-014 em
+Ressalva: as migrações de esquema já usam **Alembic** (com `pg_advisory_xact_lock` em Postgres e opção
+`AOK_AUTO_MIGRATE=false`), mas escalar para múltiplas réplicas ou vários workers ainda exige um
+**store compartilhado** fora da memória do processo para os limitadores de tentativas
+(`LoginThrottle` e `HourlyLimiter`). Detalhes das decisões e limites estão nos ADRs 014 e 016 em
 [docs/decisoes.md](../docs/decisoes.md).
 

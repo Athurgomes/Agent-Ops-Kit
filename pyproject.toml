@@ -22,7 +22,7 @@ aok = "agent_ops_kit.cli:main"
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "httpx"]
 rag = ["chromadb", "ollama"]
-platform = ["fastapi", "uvicorn", "sqlalchemy>=2", "psycopg[binary]"]
+platform = ["fastapi", "uvicorn", "sqlalchemy>=2", "psycopg[binary]", "alembic>=1.13"]
 
 [tool.setuptools.packages.find]
 where = ["src", "platform"]
@@ -30,6 +30,7 @@ include = ["agent_ops_kit*", "aok_platform*"]
 
 [tool.setuptools.package-data]
 agent_ops_kit = ["templates/agent/**/*"]
+aok_platform = ["migrations/**/*", "migrations/*.py", "migrations/*.mako"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "platform", "."]
