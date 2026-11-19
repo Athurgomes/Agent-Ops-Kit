@@ -1,81 +1,112 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { copy } from "../../copy";
 import { fmtDate } from "../../format";
 import { opsApi } from "../../opsApi";
-import { Button, EmptyState, ErrorBox, Loading, PageHeader, useAsync } from "../../ui";
+import { Button, ErrorBox, LogbookEmpty, LogbookLoading, PageHeader, useAsync } from "../../ui";
 
 const PAGE = 50;
 
-export const OPS_ACTIONS: Record<string, string> = {
-  "auth.login": "Signed in",
-  "org.create": "Created organization",
-  "org.update": "Renamed organization",
-  "org.activate": "Activated organization",
-  "org.deactivate": "Deactivated organization",
-  "org.admin_create": "Created organization admin",
-  "org.admin_password_reset": "Reset admin password",
-};
+export const OPS_ACTIONS: Record<string, string> = copy.ops.activity.actions;
+export const OPS_TARGETS: Record<string, string> = copy.ops.activity.targets;
 
 export function OpsActivity() {
   const [offset, setOffset] = useState(0);
   const st = useAsync(() => opsApi.events(PAGE, offset), [offset]);
   const rows = st.data ?? [];
+  const page = offset / PAGE + 1;
+  const aCopy = copy.ops.activity;
+
+  useEffect(() => {
+    document.title = `${aCopy.pageTitle} · ${copy.opsBar.subtitle} · ${copy.brand.full}`;
+  }, [aCopy.pageTitle]);
 
   return (
     <>
       <PageHeader
-        crumbs={[{ label: "Operator console" }, { label: "Activity" }]}
-        title="Activity"
-        lead="What operators did on the platform, newest first. Passwords are never recorded. Dates use your browser's time zone."
+        crumbs={[{ label: copy.opsBar.subtitle }, { label: aCopy.crumb }]}
+        title={aCopy.title}
+        lead={aCopy.lead}
+        stamp={aCopy.stamp}
       />
-      {st.loading && !st.data && <Loading />}
+
+      {st.loading && !st.data && <LogbookLoading label={aCopy.loadingLabel} caption={aCopy.loadingCaption} />}
       {st.error && <ErrorBox>{st.error}</ErrorBox>}
-      {st.data && rows.length === 0 && <EmptyState title={offset ? "No more events." : "No operator activity yet."} />}
-      {rows.length > 0 && (
-        <div className="box max-h-[70vh] overflow-auto">
-          <table className="data-table min-w-[48rem]">
-            <caption className="sr-only">Operator activity</caption>
-            <thead>
-              <tr>
-                <th scope="col">When</th>
-                <th scope="col">Operator</th>
-                <th scope="col">Action</th>
-                <th scope="col">Organization</th>
-                <th scope="col">Target</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((e) => (
-                <tr key={e.id}>
-                  <td className="whitespace-nowrap">{fmtDate(e.at)}</td>
-                  <td className="break-all">{e.operator_email}</td>
-                  <td className="font-semibold">{OPS_ACTIONS[e.action] ?? e.action}</td>
-                  <td>
-                    {e.target_org_id !== null ? (
-                      <Link to={`/ops/organizations/${e.target_org_id}`} className="link">
-                        {e.target_org_slug}
-                      </Link>
-                    ) : (
-                      <span className="text-subtle">None</span>
-                    )}
-                  </td>
-                  <td>
-                    {e.target_type ?? ""}
-                    {e.target_id !== null && <span className="text-subtle"> #{e.target_id}</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {st.data && rows.length === 0 && (
+        <LogbookEmpty
+          tag={aCopy.emptyTag}
+          title={offset ? aCopy.emptyMoreTitle : aCopy.emptyTitle}
+          artCaption={aCopy.emptyArtCaption}
+        >
+          {offset ? aCopy.emptyMoreBody : aCopy.emptyBody}
+        </LogbookEmpty>
       )}
-      <nav aria-label="Pagination" className="mt-6 flex items-center gap-4">
+      {rows.length > 0 && (
+        <section aria-labelledby="ops-activity-list">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-4">
+            <h2 id="ops-activity-list" className="eyebrow text-ink">
+              {aCopy.listHeading}
+            </h2>
+            <span className="font-mono text-xs font-semibold tabular-nums text-subtle">
+              {copy.common.pageLabel(page)}
+            </span>
+          </div>
+
+          <div className="box max-h-[70vh] overflow-auto">
+            <table className="data-table min-w-[48rem]">
+              <caption className="sr-only">{aCopy.tableCaption}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{aCopy.columns.when}</th>
+                  <th scope="col">{aCopy.columns.operator}</th>
+                  <th scope="col">{aCopy.columns.action}</th>
+                  <th scope="col">{aCopy.columns.organization}</th>
+                  <th scope="col">{aCopy.columns.target}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((e) => (
+                  <tr key={e.id} className="hover:bg-surface">
+                    <td className="whitespace-nowrap font-mono text-xs tabular-nums text-ink">{fmtDate(e.at)}</td>
+                    <td className="break-all font-mono text-xs text-ink">{e.operator_email}</td>
+                    <td className="font-semibold text-ink">{OPS_ACTIONS[e.action] ?? e.action}</td>
+                    <td>
+                      {e.target_org_id !== null ? (
+                        <Link
+                          to={`/ops/organizations/${e.target_org_id}`}
+                          className="link font-mono text-xs font-semibold"
+                        >
+                          {e.target_org_slug}
+                        </Link>
+                      ) : (
+                        <span className="text-sm text-subtle">{copy.common.none}</span>
+                      )}
+                    </td>
+                    <td className="text-sm text-ink">
+                      {e.target_type ? (OPS_TARGETS[e.target_type] ?? e.target_type) : copy.common.none}
+                      {e.target_id !== null && (
+                        <span className="font-mono text-xs text-subtle"> #{e.target_id}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+      <nav
+        aria-label={copy.common.paginationAria}
+        className="mt-6 flex flex-wrap items-center gap-4 border-t border-line pt-5"
+      >
         <Button size="sm" disabled={offset === 0 || st.loading} onClick={() => setOffset(Math.max(0, offset - PAGE))}>
-          Newer
+          {copy.common.newer}
         </Button>
-        <span className="text-sm text-subtle">Page {offset / PAGE + 1}</span>
+        <span className="font-mono text-xs font-semibold tabular-nums text-subtle">
+          {copy.common.pageLabel(page)}
+        </span>
         <Button size="sm" disabled={rows.length < PAGE || st.loading} onClick={() => setOffset(offset + PAGE)}>
-          Older
+          {copy.common.older}
         </Button>
       </nav>
     </>

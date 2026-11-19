@@ -1,8 +1,9 @@
 // Operator session state. Its own context, separate from the portal's AuthProvider: one never clears
 // the other. Only mounted under /ops, so the public site and the portal never call /v1/ops.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { copy } from "./copy";
 import { PublicLayout } from "./Layout";
 import { opsApi, setOpsUnauthorizedHandler } from "./opsApi";
 import type { OpsOperator } from "./opsApi";
@@ -47,18 +48,21 @@ function OpsProvider({ children }: { children: ReactNode }) {
 
   // Tab title and robots meta only while the console really exists (anon/authed). Never while loading or
   // when the server has it off (disabled): then the page must look like any unknown route, tab included.
+  const initialTitleRef = useRef(document.title);
   const live = status === "anon" || status === "authed";
   useEffect(() => {
     if (!live) return;
+    const savedTitle = initialTitleRef.current;
     const meta = document.createElement("meta");
     meta.name = "robots";
     meta.content = "noindex, nofollow";
     document.head.appendChild(meta);
-    const title = document.title;
-    document.title = "Farol · Operator console";
+    if (!document.title.includes(copy.opsBar.subtitle)) {
+      document.title = `${copy.brand.full} · ${copy.opsBar.subtitle}`;
+    }
     return () => {
       meta.remove();
-      document.title = title;
+      document.title = savedTitle;
     };
   }, [live]);
 

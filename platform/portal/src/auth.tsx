@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { api, setUnauthorizedHandler } from "./api";
 import type { AgentItem, AreaNode, Me } from "./api";
+import { fmtApiError } from "./format";
 import { Loading } from "./ui";
 
 type AuthState = {
@@ -115,8 +116,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
         const lists = await Promise.all(areas.map((a) => api.agents(a.id)));
         if (alive) setState({ tree, areas, agents: lists.flat(), ready: true, error: null, reload });
       } catch (e) {
-        if (alive)
-          setState((s) => ({ ...s, ready: true, error: e instanceof Error ? e.message : "Error." }));
+        if (alive) setState((s) => ({ ...s, ready: true, error: fmtApiError(e) }));
       }
     })();
     return () => {

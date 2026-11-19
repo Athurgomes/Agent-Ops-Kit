@@ -1,11 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { adminApi } from "../../adminApi";
 import type { AdminArea } from "../../adminApi";
 import { useCatalog } from "../../auth";
+import { copy } from "../../copy";
 import { Modal } from "../../dialogs";
-import { Button, EmptyState, ErrorBox, Field, Loading, PageHeader, Select, useAsync } from "../../ui";
+import { fmtApiError } from "../../format";
+import {
+  Button,
+  ErrorBox,
+  Field,
+  LogbookEmpty,
+  LogbookLoading,
+  PageHeader,
+  Select,
+  useAsync,
+} from "../../ui";
 import { indent, orderTree, selfAndDescendants } from "./tree";
+
+const fmtIdx = (i: number) => String(i + 1).padStart(2, "0");
 
 /** Create (area === null) or edit (rename and move) an area. */
 function AreaForm({
@@ -42,17 +55,33 @@ function AreaForm({
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(fmtApiError(err));
       setBusy(false);
     }
   }
 
   return (
-    <Modal title={area ? "Edit area" : "Create area"} onClose={onClose}>
+    <Modal
+      title={area ? copy.admin.areas.form.editTitle : copy.admin.areas.form.createTitle}
+      onClose={onClose}
+    >
       <form onSubmit={submit} className="flex flex-col gap-6">
-        <Field label="Name" id="area-name" required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-        <Select label="Parent area" id="area-parent" value={parent} onChange={(e) => setParent(e.target.value)}>
-          <option value="">None (top-level area)</option>
+        <Field
+          label={copy.admin.areas.form.nameLabel}
+          id="area-name"
+          required
+          maxLength={200}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoFocus
+        />
+        <Select
+          label={copy.admin.areas.form.parentLabel}
+          id="area-parent"
+          value={parent}
+          onChange={(e) => setParent(e.target.value)}
+        >
+          <option value="">{copy.admin.areas.form.parentNone}</option>
           {options.map((a) => (
             <option key={a.id} value={a.id}>
               {indent(a.depth)}
@@ -60,16 +89,14 @@ function AreaForm({
             </option>
           ))}
         </Select>
-        <p className="text-sm text-subtle">
-          Pick a parent to make this a sub-area. People with access to an area also see its sub-areas.
-        </p>
+        <p className="text-sm text-subtle">{copy.admin.areas.form.parentHint}</p>
         {error && <ErrorBox>{error}</ErrorBox>}
-        <div className="flex flex-wrap justify-end gap-3">
+        <div className="flex flex-wrap justify-end gap-3 border-t border-line pt-4">
           <Button onClick={onClose} disabled={busy}>
-            Cancel
+            {copy.common.cancel}
           </Button>
           <Button type="submit" variant="primary" disabled={busy || !name.trim()}>
-            {busy ? "Saving…" : area ? "Save changes" : "Create area"}
+            {busy ? copy.common.saving : area ? copy.common.saveChanges : copy.admin.areas.form.createSubmit}
           </Button>
         </div>
       </form>
@@ -84,55 +111,93 @@ export function AdminAreas() {
   const [editing, setEditing] = useState<AdminArea | "new" | null>(null);
   const rows = st.data ? orderTree(st.data) : [];
 
+  useEffect(() => {
+    document.title = `${copy.admin.areas.pageTitle} · ${copy.brand.full}`;
+  }, []);
+
   return (
     <>
       <PageHeader
-        crumbs={[{ label: "Administration" }, { label: "Areas" }]}
-        title="Areas"
-        lead="Areas group agents, and access is granted by area. A sub-area inherits the access of its parents. Areas cannot be deleted."
+        crumbs={[{ label: copy.admin.crumbRoot }, { label: copy.admin.areas.crumb }]}
+        title={copy.admin.areas.title}
+        lead={copy.admin.areas.lead}
+        stamp={copy.admin.areas.stamp}
       >
         <Button variant="primary" onClick={() => setEditing("new")}>
-          Create area
+          {copy.admin.areas.createAction}
         </Button>
       </PageHeader>
 
-      {st.loading && !st.data && <Loading />}
+      {st.loading && !st.data && (
+        <LogbookLoading label={copy.admin.areas.loadingLabel} caption={copy.admin.areas.loadingCaption} />
+      )}
       {st.error && <ErrorBox>{st.error}</ErrorBox>}
-      {st.data && rows.length === 0 && <EmptyState title="No areas yet.">Create the first area to start registering agents.</EmptyState>}
+      {st.data && rows.length === 0 && (
+        <LogbookEmpty
+          tag={copy.admin.areas.emptyTag}
+          title={copy.admin.areas.emptyTitle}
+          artCaption={copy.admin.areas.emptyArtCaption}
+        >
+          {copy.admin.areas.emptyBody}
+        </LogbookEmpty>
+      )}
       {rows.length > 0 && (
-        <div className="box overflow-x-auto">
-          <table className="data-table min-w-[32rem]">
-            <caption className="sr-only">Areas</caption>
-            <thead>
-              <tr>
-                <th scope="col">Area</th>
-                <th scope="col">Agents</th>
-                <th scope="col">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((a) => (
-                <tr key={a.id}>
-                  <th scope="row">
-                    <span aria-hidden="true" className="text-subtle">
-                      {indent(a.depth)}
-                    </span>
-                    {a.name}
-                    {a.depth > 0 && <span className="sr-only"> (sub-area)</span>}
+        <section aria-labelledby="admin-areas-list">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-4">
+            <h2 id="admin-areas-list" className="eyebrow text-ink">
+              {copy.admin.areas.listHeading}
+            </h2>
+            <span className="font-mono text-xs font-semibold tabular-nums text-subtle">
+              {copy.admin.areas.countLabel(rows.length)}
+            </span>
+          </div>
+
+          <div className="box overflow-x-auto">
+            <table className="data-table min-w-[32rem]">
+              <caption className="sr-only">{copy.admin.areas.tableCaption}</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="w-20">
+                    {copy.admin.areas.columns.index}
                   </th>
-                  <td>{a.agent_count}</td>
-                  <td className="text-right">
-                    <Button size="sm" onClick={() => setEditing(a)} aria-label={`Edit area ${a.name}`}>
-                      Edit
-                    </Button>
-                  </td>
+                  <th scope="col">{copy.admin.areas.columns.area}</th>
+                  <th scope="col" className="w-28">
+                    {copy.admin.areas.columns.agents}
+                  </th>
+                  <th scope="col" className="w-28 text-right">
+                    <span className="sr-only">{copy.admin.areas.columns.actions}</span>
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {rows.map((a, idx) => (
+                  <tr key={a.id} className="hover:bg-surface">
+                    <td className="font-mono text-xs font-semibold tabular-nums text-subtle">{fmtIdx(idx)}</td>
+                    <th scope="row">
+                      {a.depth > 0 && (
+                        <span aria-hidden="true" className="mr-1 font-mono text-xs font-normal text-subtle">
+                          {indent(a.depth)}
+                        </span>
+                      )}
+                      <span className={a.depth === 0 ? "font-display text-lg font-extrabold text-ink" : "font-semibold text-ink"}>
+                        {a.name}
+                      </span>
+                      {a.depth > 0 && <span className="sr-only">{copy.admin.areas.subareaSr}</span>}
+                    </th>
+                    <td className="font-mono text-sm tabular-nums text-ink">
+                      {String(a.agent_count).padStart(2, "0")}
+                    </td>
+                    <td className="text-right">
+                      <Button size="sm" onClick={() => setEditing(a)} aria-label={copy.admin.areas.editAria(a.name)}>
+                        {copy.common.edit}
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
       {editing && st.data && (

@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { copy } from "./copy";
+import { fmtApiError } from "./format";
 import { Button, ErrorBox, cx } from "./ui";
 
 export function Modal({
@@ -31,14 +32,17 @@ export function Modal({
       aria-labelledby={id}
       onClose={onClose}
       className={cx(
-        "box m-auto w-[calc(100%-32px)] p-8 backdrop:bg-ink/45",
+        "box m-auto w-[calc(100%-32px)] p-0 text-ink backdrop:bg-ink/55",
         wide ? "max-w-2xl" : "max-w-lg",
       )}
     >
-      <h2 id={id} className="heading mb-6 text-2xl">
-        {title}
-      </h2>
-      {children}
+      <div className="border-b border-ink bg-surface px-6 py-4 sm:px-8">
+        <h2 id={id} className="heading text-2xl">
+          {title}
+        </h2>
+        <div aria-hidden="true" className="ruler-x mt-3" />
+      </div>
+      <div className="p-6 sm:p-8">{children}</div>
     </dialog>
   );
 }
@@ -78,7 +82,7 @@ export function ConfirmModal({
                 await onConfirm();
                 onClose();
               } catch (e) {
-                setError(e instanceof Error ? e.message : copy.common.genericError);
+                setError(fmtApiError(e));
                 setBusy(false);
               }
             }}
@@ -139,20 +143,27 @@ export function OneTimeSecret({
     setSaid(announcement); // filled after mount so the status region is announced
   }, [announcement]);
   return (
-    <div ref={ref} role="region" aria-label={title} tabIndex={-1} className="box p-6">
+    <div ref={ref} role="region" aria-label={title} tabIndex={-1} className="box border-l-4 border-l-accent">
       <p role="status" className="sr-only">
         {said}
       </p>
-      <p className="heading text-xl">{title}</p>
-      <p className="mt-2 font-semibold">{copy.dialogs.secretWarning}</p>
-      <p className="mt-4 break-all border border-ink bg-surface p-3 font-mono text-sm select-all">{secret}</p>
-      <div className="mt-4 flex flex-wrap items-center gap-4">
-        <CopyButton text={secret} />
-        <Button size="sm" variant="primary" onClick={onDismiss}>
-          {copy.dialogs.secretStored}
-        </Button>
+      <div className="border-b border-ink bg-surface px-6 py-3.5">
+        <p className="heading text-xl">{title}</p>
+        <div aria-hidden="true" className="ruler-x mt-2.5" />
       </div>
-      {extra}
+      <div className="p-6">
+        <p className="font-semibold text-ink">{copy.dialogs.secretWarning}</p>
+        <p className="mt-4 break-all border border-ink bg-surface p-3 font-mono text-sm text-ink select-all">
+          {secret}
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-4">
+          <CopyButton text={secret} />
+          <Button size="sm" variant="primary" onClick={onDismiss}>
+            {copy.dialogs.secretStored}
+          </Button>
+        </div>
+        {extra}
+      </div>
     </div>
   );
 }

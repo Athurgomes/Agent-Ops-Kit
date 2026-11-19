@@ -1,16 +1,32 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { adminApi } from "../../adminApi";
 import type { AdminUser, Role } from "../../adminApi";
 import { useAuth } from "../../auth";
+import { copy } from "../../copy";
 import { ConfirmModal, Modal, OneTimeSecret } from "../../dialogs";
+import { fmtApiError } from "../../format";
 import { generatePassword } from "../../password";
-import { Button, cx, EmptyState, ErrorBox, Field, Loading, PageHeader, Select, Tag, useAsync } from "../../ui";
+import {
+  Button,
+  cx,
+  ErrorBox,
+  Field,
+  LogbookEmpty,
+  LogbookLoading,
+  PageHeader,
+  Select,
+  Tag,
+  useAsync,
+} from "../../ui";
 import { indent, orderTree } from "./tree";
 
 type Secret = { title: string; value: string };
 
-const roleLabel = (r: string) => (r === "org_admin" ? "Organization admin" : "Area viewer");
+const fmtIdx = (i: number) => String(i + 1).padStart(2, "0");
+
+const roleLabel = (r: string) =>
+  r === "org_admin" ? copy.admin.roles.orgAdmin : copy.admin.roles.areaViewer;
 
 function AreaOptions() {
   const areas = useAsync(() => adminApi.areas(), []);
@@ -37,6 +53,8 @@ function CreateUser({ onClose, onDone }: { onClose: () => void; onDone: (secret:
   const [busy, setBusy] = useState(false);
   const [createdId, setCreatedId] = useState<number | null>(null); // set once the account exists
 
+  const fCopy = copy.admin.users.createForm;
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (createdId !== null) return; // never create twice
@@ -48,14 +66,14 @@ function CreateUser({ onClose, onDone }: { onClose: () => void; onDone: (secret:
       setCreatedId(userId);
       if (access === "admin") await adminApi.grant(userId, "org_admin", null);
       else if (access.startsWith("area:")) await adminApi.grant(userId, "area_viewer", Number(access.slice(5)));
-      onDone(generated ? { title: `Initial password for ${email.trim()}`, value: password } : null);
+      onDone(generated ? { title: copy.admin.users.initialPasswordTitle(email.trim()), value: password } : null);
       onClose();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Something went wrong.";
+      const msg = fmtApiError(err);
       if (userId !== null) {
         // the user exists but the access step failed: say so, and do not offer to create it again
-        onDone(generated ? { title: `Initial password for ${email.trim()}`, value: password } : null);
-        setError(`The user was created, but granting access failed: ${msg} Use "Manage access" on the list.`);
+        onDone(generated ? { title: copy.admin.users.initialPasswordTitle(email.trim()), value: password } : null);
+        setError(fCopy.partialGrantError(msg));
         setBusy(false);
         return;
       }
@@ -65,12 +83,21 @@ function CreateUser({ onClose, onDone }: { onClose: () => void; onDone: (secret:
   }
 
   return (
-    <Modal title="Create user" onClose={onClose}>
+    <Modal title={fCopy.title} onClose={onClose}>
       <form onSubmit={submit} className="flex flex-col gap-6">
-        <Field label="Email" id="user-email" type="email" required maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
+        <Field
+          label={fCopy.emailLabel}
+          id="user-email"
+          type="email"
+          required
+          maxLength={254}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoFocus
+        />
         <div className="flex flex-col gap-2">
           <Field
-            label="Initial password"
+            label={fCopy.passwordLabel}
             id="user-password"
             type={generated ? "text" : "password"}
             autoComplete="new-password"
@@ -82,7 +109,7 @@ function CreateUser({ onClose, onDone }: { onClose: () => void; onDone: (secret:
               setPassword(e.target.value);
               setGenerated(false);
             }}
-            hint="At least 12 characters. Generate one if you prefer; it is shown here and again once after you create the user."
+            hint={fCopy.passwordHint}
           />
           <div>
             <Button
@@ -92,30 +119,31 @@ function CreateUser({ onClose, onDone }: { onClose: () => void; onDone: (secret:
                 setGenerated(true);
               }}
             >
-              Generate
+              {fCopy.generateAction}
             </Button>
           </div>
         </div>
-        <Select label="Access" id="user-access" value={access} onChange={(e) => setAccess(e.target.value)}>
-          <option value="none">No access yet</option>
-          <option value="admin">Organization admin (all areas and administration)</option>
+        <Select label={fCopy.accessLabel} id="user-access" value={access} onChange={(e) => setAccess(e.target.value)}>
+          <option value="none">{fCopy.accessNone}</option>
+          <option value="admin">{fCopy.accessAdmin}</option>
           {areas.data &&
             orderTree(areas.data).map((a) => (
               <option key={a.id} value={`area:${a.id}`}>
-                Area viewer: {indent(a.depth)}
+                {fCopy.accessViewerPrefix}
+                {indent(a.depth)}
                 {a.name}
               </option>
             ))}
         </Select>
-        <p className="text-sm text-subtle">Access to an area includes its sub-areas.</p>
+        <p className="text-sm text-subtle">{fCopy.accessHint}</p>
         {error && <ErrorBox>{error}</ErrorBox>}
-        <div className="flex flex-wrap justify-end gap-3">
+        <div className="flex flex-wrap justify-end gap-3 border-t border-line pt-4">
           <Button onClick={onClose} disabled={busy}>
-            {createdId !== null ? "Close" : "Cancel"}
+            {createdId !== null ? copy.common.close : copy.common.cancel}
           </Button>
           {createdId === null && (
             <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? "Creating…" : "Create user"}
+              {busy ? fCopy.submitting : fCopy.submit}
             </Button>
           )}
         </div>
@@ -128,22 +156,30 @@ function ResetPassword({ user, onClose, onDone }: { user: AdminUser; onClose: ()
   const [password] = useState(() => generatePassword());
   return (
     <ConfirmModal
-      title={`Reset password for ${user.email}?`}
-      confirmLabel="Reset password"
+      title={copy.admin.users.resetModal.title(user.email)}
+      confirmLabel={copy.admin.users.resetModal.confirm}
       onClose={onClose}
       onConfirm={async () => {
         await adminApi.patchUser(user.id, { password });
-        onDone({ title: `New password for ${user.email}`, value: password });
+        onDone({ title: copy.admin.users.newPasswordTitle(user.email), value: password });
       }}
     >
-      <p>
-        A new random password will be set and shown once. This ends all of the user's sessions, so they must log in again.
-      </p>
+      <p>{copy.admin.users.resetModal.body}</p>
     </ConfirmModal>
   );
 }
 
-function ManageAccess({ userId, users, onClose, onChanged }: { userId: number; users: AdminUser[]; onClose: () => void; onChanged: () => void }) {
+function ManageAccess({
+  userId,
+  users,
+  onClose,
+  onChanged,
+}: {
+  userId: number;
+  users: AdminUser[];
+  onClose: () => void;
+  onChanged: () => void;
+}) {
   const { me } = useAuth();
   const user = users.find((u) => u.id === userId);
   const [role, setRole] = useState<Role>("area_viewer");
@@ -152,6 +188,8 @@ function ManageAccess({ userId, users, onClose, onChanged }: { userId: number; u
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<number | null>(null);
   if (!user) return null;
+
+  const mCopy = copy.admin.users.manageAccess;
 
   async function grant(e: FormEvent) {
     e.preventDefault();
@@ -162,7 +200,7 @@ function ManageAccess({ userId, users, onClose, onChanged }: { userId: number; u
       onChanged();
       setArea("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(fmtApiError(err));
     } finally {
       setBusy(false);
     }
@@ -175,35 +213,40 @@ function ManageAccess({ userId, users, onClose, onChanged }: { userId: number; u
       setConfirming(null);
       onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(fmtApiError(err));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Modal title={`Access for ${user.email}`} onClose={onClose} wide>
+    <Modal title={mCopy.title(user.email)} onClose={onClose} wide>
       <div className="flex flex-col gap-6">
-        <p className="text-subtle">Access to an area includes its sub-areas, never the areas above it.</p>
+        <p className="text-subtle">{mCopy.lead}</p>
         {user.memberships.length === 0 ? (
-          <p className="font-semibold">No access yet.</p>
+          <p className="border border-line bg-surface px-4 py-3 text-sm font-semibold text-ink">{mCopy.empty}</p>
         ) : (
-          <ul className="m-0 list-none p-0">
+          <ul className="m-0 list-none border border-ink p-0">
             {user.memberships.map((m) => {
               const own = me?.id === user.id && m.role === "org_admin";
+              const targetLabel =
+                m.role === "org_admin" ? copy.admin.roles.orgAdmin : (m.area_name ?? copy.admin.roles.areaFallback);
               return (
-                <li key={m.id} className="rule-t flex flex-wrap items-center justify-between gap-3 py-3 last:border-b last:border-ink">
+                <li
+                  key={m.id}
+                  className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0"
+                >
                   <span>
-                    <span className="font-bold">{m.role === "org_admin" ? "Organization admin" : m.area_name}</span>
+                    <span className="font-semibold text-ink">{targetLabel}</span>
                     {m.role !== "org_admin" && <span className="text-subtle"> · {roleLabel(m.role)}</span>}
                   </span>
                   {confirming === m.id ? (
-                    <span className="flex items-center gap-2">
+                    <span className="flex flex-wrap items-center gap-2">
                       <Button size="sm" variant="dark" disabled={busy} onClick={() => revoke(m.id)}>
-                        Confirm revoke
+                        {mCopy.confirmRevoke}
                       </Button>
                       <Button size="sm" disabled={busy} onClick={() => setConfirming(null)}>
-                        Cancel
+                        {copy.common.cancel}
                       </Button>
                     </span>
                   ) : (
@@ -212,14 +255,14 @@ function ManageAccess({ userId, users, onClose, onChanged }: { userId: number; u
                       disabled={busy || own}
                       aria-describedby={own ? `own-admin-note-${m.id}` : undefined}
                       onClick={() => setConfirming(m.id)}
-                      aria-label={`Revoke ${m.role === "org_admin" ? "organization admin" : m.area_name} access`}
+                      aria-label={mCopy.revokeAria(targetLabel)}
                     >
-                      Revoke
+                      {mCopy.revoke}
                     </Button>
                   )}
                   {own && (
                     <p id={`own-admin-note-${m.id}`} className="w-full text-sm text-subtle">
-                      You cannot remove your own admin access.
+                      {mCopy.ownAdminNote}
                     </p>
                   )}
                 </li>
@@ -228,30 +271,38 @@ function ManageAccess({ userId, users, onClose, onChanged }: { userId: number; u
           </ul>
         )}
 
-        <form onSubmit={grant} className="box flex flex-col gap-4 p-4">
-          <p className="font-extrabold">Grant access</p>
-          <Select label="Role" id="grant-role" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-            <option value="area_viewer">Area viewer</option>
-            <option value="org_admin">Organization admin</option>
-          </Select>
-          <p className="text-sm text-subtle">
-            {role === "area_viewer" ? "Reads the reports of one area and its sub-areas." : "Reads every area and uses the administration pages."}
-          </p>
-          {role === "area_viewer" && (
-            <Select label="Area" id="grant-area" required value={area} onChange={(e) => setArea(e.target.value)}>
-              <option value="">Choose an area…</option>
-              <AreaOptions />
+        <form onSubmit={grant} className="border border-ink bg-surface p-5">
+          <p className="eyebrow mb-4 text-ink">{mCopy.grantHeading}</p>
+          <div className="flex flex-col gap-4">
+            <Select label={mCopy.roleLabel} id="grant-role" value={role} onChange={(e) => setRole(e.target.value as Role)}>
+              <option value="area_viewer">{copy.admin.roles.areaViewer}</option>
+              <option value="org_admin">{copy.admin.roles.orgAdmin}</option>
             </Select>
-          )}
-          <div>
-            <Button type="submit" variant="primary" size="sm" disabled={busy || (role === "area_viewer" && !area)}>
-              Grant access
-            </Button>
+            <p className="text-sm text-subtle">
+              {role === "area_viewer" ? mCopy.roleViewerDesc : mCopy.roleAdminDesc}
+            </p>
+            {role === "area_viewer" && (
+              <Select
+                label={mCopy.areaLabel}
+                id="grant-area"
+                required
+                value={area}
+                onChange={(e) => setArea(e.target.value)}
+              >
+                <option value="">{mCopy.areaPlaceholder}</option>
+                <AreaOptions />
+              </Select>
+            )}
+            <div>
+              <Button type="submit" variant="primary" size="sm" disabled={busy || (role === "area_viewer" && !area)}>
+                {mCopy.grantSubmit}
+              </Button>
+            </div>
           </div>
         </form>
         {error && <ErrorBox>{error}</ErrorBox>}
-        <div className="flex justify-end">
-          <Button onClick={onClose}>Done</Button>
+        <div className="flex justify-end border-t border-line pt-4">
+          <Button onClick={onClose}>{copy.common.done}</Button>
         </div>
       </div>
     </Modal>
@@ -270,117 +321,155 @@ export function AdminUsers() {
   const [toggling, setToggling] = useState<AdminUser | null>(null);
   const [accessFor, setAccessFor] = useState<number | null>(null);
 
+  useEffect(() => {
+    document.title = `${copy.admin.users.pageTitle} · ${copy.brand.full}`;
+  }, []);
+
+  const uCopy = copy.admin.users;
+
   const actions = (u: AdminUser, align = "") => (
     <div className={cx("flex flex-wrap gap-2", align)}>
-      <Button size="sm" onClick={() => setAccessFor(u.id)} aria-label={`Manage access for ${u.email}`}>
-        Access
+      <Button size="sm" onClick={() => setAccessFor(u.id)} aria-label={uCopy.actions.accessAria(u.email)}>
+        {uCopy.actions.access}
       </Button>
-      <Button size="sm" onClick={() => setResetting(u)} aria-label={`Reset password for ${u.email}`}>
-        Reset password
+      <Button size="sm" onClick={() => setResetting(u)} aria-label={uCopy.actions.resetPasswordAria(u.email)}>
+        {uCopy.actions.resetPassword}
       </Button>
       <Button
         size="sm"
         disabled={me?.id === u.id}
         aria-describedby={me?.id === u.id ? "self-deactivate-note" : undefined}
         onClick={() => setToggling(u)}
-        aria-label={`${u.active ? "Deactivate" : "Activate"} ${u.email}`}
+        aria-label={uCopy.actions.toggleAria(u.active, u.email)}
       >
-        {u.active ? "Deactivate" : "Activate"}
+        {u.active ? copy.common.deactivate : copy.common.activate}
       </Button>
     </div>
   );
 
+  const membershipText = (m: AdminUser["memberships"][number]) =>
+    m.role === "org_admin"
+      ? copy.admin.roles.orgAdmin
+      : copy.admin.roles.viewerTag(m.area_name ?? copy.admin.roles.areaFallback);
+
   return (
     <>
       <PageHeader
-        crumbs={[{ label: "Administration" }, { label: "Users" }]}
-        title="Users"
-        lead="People who can log in. Their access decides which agents' reports they can read."
+        crumbs={[{ label: copy.admin.crumbRoot }, { label: uCopy.crumb }]}
+        title={uCopy.title}
+        lead={uCopy.lead}
+        stamp={uCopy.stamp}
       >
         <Button variant="primary" onClick={() => setCreating(true)}>
-          Create user
+          {uCopy.createAction}
         </Button>
       </PageHeader>
 
       <p id="self-deactivate-note" className="sr-only">
-        You cannot deactivate your own account.
+        {uCopy.selfDeactivateNote}
       </p>
       {secret && (
         <div className="mb-6">
           <OneTimeSecret
             title={secret.title}
-            announcement="Password generated. Shown once; store it now."
+            announcement={uCopy.secretAnnouncement}
             secret={secret.value}
             onDismiss={() => setSecret(null)}
           />
         </div>
       )}
-      {st.loading && !st.data && <Loading />}
-      {st.error && <ErrorBox>{st.error}</ErrorBox>}
-      {st.data && st.data.length === 0 && <EmptyState title="No users yet." />}
-      {st.data && st.data.length > 0 && (
-        <div className="box hidden overflow-x-auto md:block">
-          <table className="data-table min-w-[52rem]">
-            <caption className="sr-only">Users</caption>
-            <thead>
-              <tr>
-                <th scope="col">Email</th>
-                <th scope="col">Status</th>
-                <th scope="col">Access</th>
-                <th scope="col">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {st.data.map((u) => (
-                <tr key={u.id}>
-                  <th scope="row" className="break-all">
-                    {u.email}
-                    {me?.id === u.id && <span className="whitespace-nowrap font-normal text-subtle"> (you)</span>}
-                  </th>
-                  <td>{u.active ? <Tag>Active</Tag> : <Tag>Inactive</Tag>}</td>
-                  <td>
-                    {u.memberships.length === 0 ? (
-                      <span className="text-subtle">None</span>
-                    ) : (
-                      <ul className="m-0 list-none p-0">
-                        {u.memberships.map((m) => (
-                          <li key={m.id}>{m.role === "org_admin" ? "Organization admin" : `${m.area_name} (viewer)`}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </td>
-                  <td>
-                    {actions(u, "justify-end")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {st.loading && !st.data && (
+        <LogbookLoading label={uCopy.loadingLabel} caption={uCopy.loadingCaption} />
       )}
-
+      {st.error && <ErrorBox>{st.error}</ErrorBox>}
+      {st.data && st.data.length === 0 && (
+        <LogbookEmpty tag={uCopy.emptyTag} title={uCopy.emptyTitle} artCaption={uCopy.emptyArtCaption}>
+          {uCopy.emptyBody}
+        </LogbookEmpty>
+      )}
       {st.data && st.data.length > 0 && (
-        <ul className="m-0 list-none p-0 md:hidden">
-          {st.data.map((u) => (
-            <li key={u.id} className="rule-t flex flex-col gap-3 py-5 last:border-b last:border-ink">
-              <p className="break-all font-bold">
-                {u.email}
-                {me?.id === u.id && <span className="font-normal text-subtle"> (you)</span>}
-              </p>
-              <p className="flex flex-wrap items-center gap-3 text-sm">
-                {u.active ? <Tag>Active</Tag> : <Tag>Inactive</Tag>}
-                <span className="text-subtle">
-                  {u.memberships.length === 0
-                    ? "No access"
-                    : u.memberships.map((m) => (m.role === "org_admin" ? "Organization admin" : `${m.area_name} (viewer)`)).join(", ")}
-                </span>
-              </p>
-              {actions(u)}
-            </li>
-          ))}
-        </ul>
+        <section aria-labelledby="admin-users-list">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-4">
+            <h2 id="admin-users-list" className="eyebrow text-ink">
+              {uCopy.listHeading}
+            </h2>
+            <span className="font-mono text-xs font-semibold tabular-nums text-subtle">
+              {uCopy.countLabel(st.data.length)}
+            </span>
+          </div>
+
+          <div className="box hidden overflow-x-auto md:block">
+            <table className="data-table min-w-[52rem]">
+              <caption className="sr-only">{uCopy.tableCaption}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{uCopy.columns.email}</th>
+                  <th scope="col">{uCopy.columns.status}</th>
+                  <th scope="col">{uCopy.columns.access}</th>
+                  <th scope="col" className="text-right">
+                    <span className="sr-only">{uCopy.columns.actions}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {st.data.map((u) => (
+                  <tr key={u.id} className="hover:bg-surface">
+                    <th scope="row" className="break-all font-mono text-xs font-semibold text-ink">
+                      {u.email}
+                      {me?.id === u.id && (
+                        <span className="ml-1.5 whitespace-nowrap font-sans font-normal text-subtle">
+                          {uCopy.youMarker}
+                        </span>
+                      )}
+                    </th>
+                    <td>
+                      <Tag muted={!u.active}>{u.active ? copy.common.active : copy.common.inactive}</Tag>
+                    </td>
+                    <td className="text-sm text-ink">
+                      {u.memberships.length === 0 ? (
+                        <span className="text-subtle">{copy.common.none}</span>
+                      ) : (
+                        <ul className="m-0 list-none p-0">
+                          {u.memberships.map((m) => (
+                            <li key={m.id}>{membershipText(m)}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                    <td>{actions(u, "justify-end")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="border border-ink bg-paper md:hidden">
+            <div className="ruler-x" aria-hidden="true" />
+            <ul className="m-0 list-none divide-y divide-ink/25 p-0">
+              {st.data.map((u, idx) => (
+                <li key={u.id} className="flex flex-col gap-3 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono text-xs font-semibold tabular-nums text-subtle">
+                      {fmtIdx(idx)}
+                      {me?.id === u.id ? ` · ${uCopy.youMarker}` : ""}
+                    </span>
+                    <Tag muted={!u.active}>{u.active ? copy.common.active : copy.common.inactive}</Tag>
+                  </div>
+                  <p className="break-all font-mono text-sm font-semibold text-ink">{u.email}</p>
+                  <div className="border-t border-line pt-2.5">
+                    <p className="eyebrow">{uCopy.columns.access}</p>
+                    <p className="mt-1 text-sm text-subtle">
+                      {u.memberships.length === 0
+                        ? uCopy.noAccess
+                        : u.memberships.map(membershipText).join(", ")}
+                    </p>
+                  </div>
+                  <div className="pt-1">{actions(u)}</div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
       )}
 
       {creating && (
@@ -404,19 +493,19 @@ export function AdminUsers() {
       )}
       {toggling && (
         <ConfirmModal
-          title={toggling.active ? `Deactivate ${toggling.email}?` : `Activate ${toggling.email}?`}
-          confirmLabel={toggling.active ? "Deactivate" : "Activate"}
+          title={
+            toggling.active
+              ? uCopy.toggleModal.deactivateTitle(toggling.email)
+              : uCopy.toggleModal.activateTitle(toggling.email)
+          }
+          confirmLabel={toggling.active ? copy.common.deactivate : copy.common.activate}
           onClose={() => setToggling(null)}
           onConfirm={async () => {
             await adminApi.patchUser(toggling.id, { active: !toggling.active });
             reload();
           }}
         >
-          <p>
-            {toggling.active
-              ? "The user will not be able to log in, and all of their sessions end now."
-              : "The user will be able to log in again with their current password."}
-          </p>
+          <p>{toggling.active ? uCopy.toggleModal.deactivateBody : uCopy.toggleModal.activateBody}</p>
         </ConfirmModal>
       )}
       {accessFor !== null && st.data && (

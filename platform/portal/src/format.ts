@@ -43,10 +43,10 @@ export function fmtApiError(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 0) return copy.errors.network;
     if (err.status === 401) return copy.errors.unauthorized;
-    if (err.status === 404) return copy.errors.notFound;
+    if (err.status === 404) return err.message || copy.errors.notFound;
     if (err.status === 429) return copy.errors.tooMany;
     if (err.status >= 500) return copy.errors.server;
-    return copy.errors.generic;
+    return err.message || copy.errors.generic;
   }
   return err instanceof Error && err.message ? err.message : copy.common.errorFallback;
 }

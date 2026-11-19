@@ -1,4 +1,5 @@
 // Cliente da API. A sessão é um cookie HttpOnly definido pelo servidor: aqui só enviamos o cookie.
+import { copy } from "./copy";
 
 export type Me = {
   id: number;
@@ -92,18 +93,18 @@ export async function request(path: string, init: RequestInit = {}, handle401 = 
   try {
     res = await fetch(path, { credentials: "same-origin", ...init });
   } catch {
-    throw new ApiError(0, "Could not reach the server. Please try again in a moment.");
+    throw new ApiError(0, copy.errors.network);
   }
   if (res.status === 401 && handle401) onUnauthorized();
   return res;
 }
 
 export function failure(res: Response): ApiError {
-  let msg = "Something went wrong. Please try again.";
-  if (res.status === 404) msg = "Not found, or you do not have access.";
-  else if (res.status === 429) msg = "Too many attempts. Wait a few minutes and try again.";
-  else if (res.status === 401) msg = "Your session expired. Please log in again.";
-  else if (res.status >= 500) msg = "Server error. Please try again in a moment.";
+  let msg: string = copy.errors.generic;
+  if (res.status === 404) msg = copy.errors.notFound;
+  else if (res.status === 429) msg = copy.errors.tooMany;
+  else if (res.status === 401) msg = copy.errors.unauthorized;
+  else if (res.status >= 500) msg = copy.errors.server;
   return new ApiError(res.status, msg);
 }
 
@@ -131,7 +132,7 @@ export const api = {
       },
       false,
     );
-    if (res.status === 401) throw new ApiError(401, "Invalid email or password.");
+    if (res.status === 401) throw new ApiError(401, copy.auth.errors.invalidCredentials);
     if (!res.ok) throw failure(res);
     return (await res.json()) as Me;
   },

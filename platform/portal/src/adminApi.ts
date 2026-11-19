@@ -1,6 +1,7 @@
-// Administration API (org_admin only). Server messages are Portuguese, so they are mapped here to
-// clear English; secrets (new tokens, passwords) are only ever returned to the caller, never stored.
+// Administration API (org_admin only). Server errors are mapped to user-friendly pt-BR messages;
+// secrets (new tokens, passwords) are only ever returned to the caller, never stored.
 import { ApiError, failure, request } from "./api";
+import { copy } from "./copy";
 
 export type AdminArea = { id: number; name: string; parent_id: number | null; agent_count: number };
 export type AdminAgent = {
@@ -47,21 +48,19 @@ async function adminFailure(res: Response): Promise<ApiError> {
   } catch {
     /* no body */
   }
-  if (detail.includes("ciclo"))
-    return new ApiError(422, "That move would create a loop: an area cannot sit under itself or one of its own sub-areas.");
+  if (detail.includes("ciclo")) return new ApiError(422, copy.adminErrors.areaCycle);
   if (res.status === 409 && detail.includes("própria conta"))
-    return new ApiError(409, "You cannot deactivate your own account.");
+    return new ApiError(409, copy.adminErrors.selfDeactivate);
   if (res.status === 409 && detail.includes("próprio acesso"))
-    return new ApiError(409, "You cannot remove your own organization admin access.");
-  if (res.status === 409 && detail.includes("última"))
-    return new ApiError(409, "This is the last active organization admin. Make someone else an admin first.");
-  if (res.status === 409 && detail.includes("slug")) return new ApiError(409, "That slug is already used by another agent.");
-  if (res.status === 409 && detail.includes("mail")) return new ApiError(409, "That email is already registered.");
-  if (res.status === 409) return new ApiError(409, "That user already has this access.");
-  if (res.status === 422 && detail.includes("area_id")) return new ApiError(422, "Pick an area for this role.");
-  if (res.status === 422) return new ApiError(422, "A field is not valid. Check the values and try again.");
-  if (res.status === 403) return new ApiError(403, "You do not have permission to do this.");
-  if (res.status === 404) return new ApiError(404, "Not found. It may have been removed, or it belongs to another organization.");
+    return new ApiError(409, copy.adminErrors.selfRevokeAdmin);
+  if (res.status === 409 && detail.includes("última")) return new ApiError(409, copy.adminErrors.lastAdmin);
+  if (res.status === 409 && detail.includes("slug")) return new ApiError(409, copy.adminErrors.slugInUse);
+  if (res.status === 409 && detail.includes("mail")) return new ApiError(409, copy.adminErrors.emailInUse);
+  if (res.status === 409) return new ApiError(409, copy.adminErrors.duplicateAccess);
+  if (res.status === 422 && detail.includes("area_id")) return new ApiError(422, copy.adminErrors.areaRequired);
+  if (res.status === 422) return new ApiError(422, copy.errors.invalidField);
+  if (res.status === 403) return new ApiError(403, copy.errors.forbidden);
+  if (res.status === 404) return new ApiError(404, copy.adminErrors.notFound);
   return failure(res);
 }
 

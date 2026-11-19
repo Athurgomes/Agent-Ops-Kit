@@ -1,11 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { copy } from "../../copy";
 import { ConfirmModal, Modal } from "../../dialogs";
-import { fmtDate } from "../../format";
+import { fmtApiError, fmtDate } from "../../format";
 import { opsApi } from "../../opsApi";
 import type { OpsOrg } from "../../opsApi";
-import { Button, EmptyState, ErrorBox, Field, Loading, PageHeader, Tag, useAsync } from "../../ui";
+import {
+  Button,
+  ErrorBox,
+  Field,
+  LogbookEmpty,
+  LogbookLoading,
+  PageHeader,
+  Tag,
+  useAsync,
+} from "../../ui";
 
 const SLUG = "[a-z0-9\\-]{1,64}";
 
@@ -19,21 +29,18 @@ export function ToggleOrg({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const tCopy = copy.ops.orgs.toggleModal;
   return (
     <ConfirmModal
-      title={org.active ? `Deactivate ${org.name}?` : `Activate ${org.name}?`}
-      confirmLabel={org.active ? "Deactivate" : "Activate"}
+      title={org.active ? tCopy.deactivateTitle(org.name) : tCopy.activateTitle(org.name)}
+      confirmLabel={org.active ? copy.common.deactivate : copy.common.activate}
       onClose={onClose}
       onConfirm={async () => {
         await opsApi.patchOrg(org.id, { active: !org.active });
         onDone();
       }}
     >
-      <p>
-        {org.active
-          ? "Users of this organization will not be able to sign in and agent tokens stop working; nothing is deleted. You can activate it again."
-          : "Users of this organization will be able to sign in again and agent tokens work again."}
-      </p>
+      <p>{org.active ? tCopy.deactivateBody : tCopy.activateBody}</p>
     </ConfirmModal>
   );
 }
@@ -45,6 +52,8 @@ function CreateOrg({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const fCopy = copy.ops.orgs.createForm;
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -54,32 +63,40 @@ function CreateOrg({ onClose }: { onClose: () => void }) {
       onClose();
       nav(`/ops/organizations/${o.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(fmtApiError(err));
       setBusy(false);
     }
   }
 
   return (
-    <Modal title="Create organization" onClose={onClose}>
+    <Modal title={fCopy.title} onClose={onClose}>
       <form onSubmit={submit} className="flex flex-col gap-6">
-        <Field label="Name" id="org-name" required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         <Field
-          label="Slug"
+          label={fCopy.nameLabel}
+          id="org-name"
+          required
+          maxLength={200}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoFocus
+        />
+        <Field
+          label={fCopy.slugLabel}
           id="org-slug"
           required
           pattern={SLUG}
           maxLength={64}
           value={slug}
           onChange={(e) => setSlug(e.target.value)}
-          hint="Lowercase letters, digits and hyphens, 1 to 64 characters. It is unique and identifies the organization."
+          hint={fCopy.slugHint}
         />
         {error && <ErrorBox>{error}</ErrorBox>}
-        <div className="flex flex-wrap justify-end gap-3">
+        <div className="flex flex-wrap justify-end gap-3 border-t border-line pt-4">
           <Button onClick={onClose} disabled={busy}>
-            Cancel
+            {copy.common.cancel}
           </Button>
           <Button type="submit" variant="primary" disabled={busy || !name.trim()}>
-            {busy ? "Creating…" : "Create organization"}
+            {busy ? fCopy.submitting : fCopy.submit}
           </Button>
         </div>
       </form>
@@ -93,70 +110,145 @@ export function OpsOrganizations() {
   const [creating, setCreating] = useState(false);
   const [toggling, setToggling] = useState<OpsOrg | null>(null);
 
+  const oCopy = copy.ops.orgs;
+
+  useEffect(() => {
+    document.title = `${oCopy.pageTitle} · ${copy.opsBar.subtitle} · ${copy.brand.full}`;
+  }, [oCopy.pageTitle]);
+
+  const orgs = st.data ?? [];
+  const totalActive = orgs.filter((o) => o.active).length;
+  const totalAgents = orgs.reduce((sum, o) => sum + o.agents_count, 0);
+  const totalReports = orgs.reduce((sum, o) => sum + o.reports_count, 0);
+
   return (
     <>
       <PageHeader
-        crumbs={[{ label: "Operator console" }, { label: "Organizations" }]}
-        title="Organizations"
-        lead="Every organization on the platform. You see counts and metadata only; report contents are not available here."
+        crumbs={[{ label: copy.opsBar.subtitle }, { label: oCopy.crumb }]}
+        title={oCopy.title}
+        lead={oCopy.lead}
+        stamp={oCopy.stamp}
       >
         <Button variant="primary" onClick={() => setCreating(true)}>
-          Create organization
+          {oCopy.createAction}
         </Button>
       </PageHeader>
 
-      {st.loading && !st.data && <Loading />}
+      {st.loading && !st.data && <LogbookLoading label={oCopy.loadingLabel} caption={oCopy.loadingCaption} />}
       {st.error && <ErrorBox>{st.error}</ErrorBox>}
-      {st.data && st.data.length === 0 && <EmptyState title="No organizations yet." />}
+      {st.data && st.data.length === 0 && (
+        <LogbookEmpty tag={oCopy.emptyTag} title={oCopy.emptyTitle} artCaption={oCopy.emptyArtCaption}>
+          {oCopy.emptyBody}
+        </LogbookEmpty>
+      )}
       {st.data && st.data.length > 0 && (
-        <div className="box overflow-x-auto">
-          <table className="data-table min-w-[64rem]">
-            <caption className="sr-only">Organizations</caption>
-            <thead>
-              <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Slug</th>
-                <th scope="col">Status</th>
-                <th scope="col">Areas</th>
-                <th scope="col">Agents</th>
-                <th scope="col">Users</th>
-                <th scope="col">Active tokens</th>
-                <th scope="col">Reports</th>
-                <th scope="col">Last report</th>
-                <th scope="col">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {st.data.map((o) => (
-                <tr key={o.id}>
-                  <th scope="row">
-                    <Link to={`/ops/organizations/${o.id}`} className="link">
-                      {o.name}
-                    </Link>
-                  </th>
-                  <td className="font-mono text-sm">{o.slug}</td>
-                  <td>{o.active ? <Tag>Active</Tag> : <Tag>Inactive</Tag>}</td>
-                  <td>{o.areas_count}</td>
-                  <td>{o.agents_count}</td>
-                  <td>{o.users_count}</td>
-                  <td>{o.tokens_active_count}</td>
-                  <td>{o.reports_count}</td>
-                  <td className="whitespace-nowrap">{o.last_report_at ? fmtDate(o.last_report_at) : "Never"}</td>
-                  <td className="text-right">
-                    <Button size="sm" onClick={() => setToggling(o)} aria-label={`${o.active ? "Deactivate" : "Activate"} ${o.name}`}>
-                      {o.active ? "Deactivate" : "Activate"}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <dl className="mb-10 grid grid-cols-2 border border-ink bg-paper sm:grid-cols-4">
+            {[
+              [oCopy.kpi.orgs, orgs.length],
+              [oCopy.kpi.active, totalActive],
+              [oCopy.kpi.agents, totalAgents],
+              [oCopy.kpi.reports, totalReports],
+            ].map(([label, val], i) => (
+              <div
+                key={String(label)}
+                className={`p-5 ${i < 2 ? "border-b border-line sm:border-b-0" : ""} ${i % 2 === 0 ? "border-r border-line" : ""} ${i === 1 ? "sm:border-r sm:border-line" : ""}`}
+              >
+                <dt className="eyebrow">{label}</dt>
+                <dd className="mt-2 font-display text-3xl font-extrabold tabular-nums text-ink">
+                  {String(val).padStart(2, "0")}
+                </dd>
+              </div>
+            ))}
+          </dl>
+
+          <section aria-labelledby="ops-orgs-list">
+            <div className="mb-4 flex flex-wrap items-baseline justify-between gap-4">
+              <h2 id="ops-orgs-list" className="eyebrow text-ink">
+                {oCopy.listHeading}
+              </h2>
+              <span className="font-mono text-xs font-semibold tabular-nums text-subtle">
+                {oCopy.countLabel(st.data.length)}
+              </span>
+            </div>
+
+            <div className="box overflow-x-auto">
+              <table className="data-table [&_td]:px-2 [&_th]:px-2 [&_tr>*:first-child]:pl-4 [&_tr>*:last-child]:pr-4">
+                <caption className="sr-only">{oCopy.tableCaption}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" className="min-w-[10rem]">
+                      {oCopy.columns.name}
+                    </th>
+                    <th scope="col">{oCopy.columns.slug}</th>
+                    <th scope="col">{oCopy.columns.status}</th>
+                    <th scope="col">{oCopy.columns.areas}</th>
+                    <th scope="col">{oCopy.columns.agents}</th>
+                    <th scope="col">{oCopy.columns.users}</th>
+                    <th scope="col">{oCopy.columns.activeTokens}</th>
+                    <th scope="col">{oCopy.columns.reports}</th>
+                    <th scope="col">{oCopy.columns.lastReport}</th>
+                    <th scope="col" className="text-right">
+                      <span className="sr-only">{oCopy.columns.actions}</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {st.data.map((o) => (
+                    <tr key={o.id} className="hover:bg-surface">
+                      <th scope="row" className="min-w-[10rem]">
+                        <Link
+                          to={`/ops/organizations/${o.id}`}
+                          className="font-display text-base font-extrabold leading-snug text-ink no-underline hover:text-accent"
+                        >
+                          {o.name}
+                        </Link>
+                      </th>
+                      <td className="whitespace-nowrap font-mono text-xs text-subtle">{o.slug}</td>
+                      <td className="whitespace-nowrap">
+                        <Tag muted={!o.active}>
+                          {o.active ? copy.common.activeFem : copy.common.inactiveFem}
+                        </Tag>
+                      </td>
+                      <td className="font-mono text-sm tabular-nums text-ink">
+                        {String(o.areas_count).padStart(2, "0")}
+                      </td>
+                      <td className="font-mono text-sm tabular-nums text-ink">
+                        {String(o.agents_count).padStart(2, "0")}
+                      </td>
+                      <td className="font-mono text-sm tabular-nums text-ink">
+                        {String(o.users_count).padStart(2, "0")}
+                      </td>
+                      <td className="font-mono text-sm tabular-nums text-ink">
+                        {String(o.tokens_active_count).padStart(2, "0")}
+                      </td>
+                      <td className="font-mono text-sm tabular-nums text-ink">
+                        {String(o.reports_count).padStart(2, "0")}
+                      </td>
+                      <td className="whitespace-nowrap font-mono text-xs tabular-nums text-ink">
+                        {o.last_report_at ? fmtDate(o.last_report_at) : copy.common.never}
+                      </td>
+                      <td className="whitespace-nowrap text-right">
+                        <Button
+                          size="sm"
+                          onClick={() => setToggling(o)}
+                          aria-label={oCopy.toggleAria(o.active, o.name)}
+                        >
+                          {o.active ? copy.common.deactivate : copy.common.activate}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
       )}
       {creating && <CreateOrg onClose={() => setCreating(false)} />}
-      {toggling && <ToggleOrg org={toggling} onClose={() => setToggling(null)} onDone={() => setVersion((v) => v + 1)} />}
+      {toggling && (
+        <ToggleOrg org={toggling} onClose={() => setToggling(null)} onDone={() => setVersion((v) => v + 1)} />
+      )}
     </>
   );
 }

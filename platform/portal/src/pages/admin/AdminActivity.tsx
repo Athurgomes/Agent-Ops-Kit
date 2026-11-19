@@ -1,87 +1,101 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { adminApi } from "../../adminApi";
+import { copy } from "../../copy";
 import { fmtDate } from "../../format";
-import { Button, EmptyState, ErrorBox, Loading, PageHeader, useAsync } from "../../ui";
+import { Button, ErrorBox, LogbookEmpty, LogbookLoading, PageHeader, useAsync } from "../../ui";
 
 const PAGE = 50;
 
-export const ACTIONS: Record<string, string> = {
-  "area.create": "Created area",
-  "area.update": "Edited area",
-  "agent.create": "Registered agent",
-  "agent.update": "Edited agent",
-  "agent.activate": "Activated agent",
-  "agent.deactivate": "Deactivated agent",
-  "token.issue": "Issued agent token",
-  "token.revoke": "Revoked agent token",
-  "user.create": "Created user",
-  "user.update": "Edited user",
-  "user.activate": "Activated user",
-  "user.deactivate": "Deactivated user",
-  "user.password_change": "Changed user password",
-  "membership.create": "Granted access",
-  "membership.delete": "Revoked access",
-};
-export const TARGETS: Record<string, string> = {
-  area: "Area",
-  agent: "Agent",
-  agent_token: "Token",
-  user: "User",
-  membership: "Access grant",
-};
+export const ACTIONS: Record<string, string> = copy.admin.activity.actions;
+export const TARGETS: Record<string, string> = copy.admin.activity.targets;
 
 export function AdminActivity() {
   const [offset, setOffset] = useState(0);
   const st = useAsync(() => adminApi.events(PAGE, offset), [offset]);
   const rows = st.data ?? [];
   const page = offset / PAGE + 1;
+  const aCopy = copy.admin.activity;
+
+  useEffect(() => {
+    document.title = `${aCopy.pageTitle} · ${copy.brand.full}`;
+  }, [aCopy.pageTitle]);
 
   return (
     <>
       <PageHeader
-        crumbs={[{ label: "Administration" }, { label: "Activity" }]}
-        title="Activity"
-        lead="Who changed what in the administration, newest first. Passwords and tokens are never recorded. Dates use your browser's time zone."
+        crumbs={[{ label: copy.admin.crumbRoot }, { label: aCopy.crumb }]}
+        title={aCopy.title}
+        lead={aCopy.lead}
+        stamp={aCopy.stamp}
       />
 
-      {st.loading && !st.data && <Loading />}
+      {st.loading && !st.data && <LogbookLoading label={aCopy.loadingLabel} caption={aCopy.loadingCaption} />}
       {st.error && <ErrorBox>{st.error}</ErrorBox>}
-      {st.data && rows.length === 0 && <EmptyState title={offset ? "No more events." : "No administrative activity yet."} />}
-      {rows.length > 0 && (
-        <div className="box max-h-[70vh] overflow-auto">
-          <table className="data-table min-w-[44rem]">
-            <caption className="sr-only">Administrative activity</caption>
-            <thead>
-              <tr>
-                <th scope="col">When</th>
-                <th scope="col">Who</th>
-                <th scope="col">Action</th>
-                <th scope="col">Target</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((e) => (
-                <tr key={e.id}>
-                  <td className="whitespace-nowrap">{fmtDate(e.at)}</td>
-                  <td className="break-all">{e.actor_email ?? (e.actor_user_id === null ? "Bootstrap key" : `User #${e.actor_user_id}`)}</td>
-                  <td className="font-semibold">{ACTIONS[e.action] ?? e.action}</td>
-                  <td>
-                    {TARGETS[e.target_type] ?? e.target_type}
-                    {e.target_id !== null && <span className="text-subtle"> #{e.target_id}</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {st.data && rows.length === 0 && (
+        <LogbookEmpty
+          tag={aCopy.emptyTag}
+          title={offset ? aCopy.emptyMoreTitle : aCopy.emptyTitle}
+          artCaption={aCopy.emptyArtCaption}
+        >
+          {offset ? aCopy.emptyMoreBody : aCopy.emptyBody}
+        </LogbookEmpty>
       )}
-      <nav aria-label="Pagination" className="mt-6 flex items-center gap-4">
+      {rows.length > 0 && (
+        <section aria-labelledby="admin-activity-list">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-4">
+            <h2 id="admin-activity-list" className="eyebrow text-ink">
+              {aCopy.listHeading}
+            </h2>
+            <span className="font-mono text-xs font-semibold tabular-nums text-subtle">
+              {copy.common.pageLabel(page)}
+            </span>
+          </div>
+
+          <div className="box max-h-[70vh] overflow-auto">
+            <table className="data-table min-w-[44rem]">
+              <caption className="sr-only">{aCopy.tableCaption}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{aCopy.columns.when}</th>
+                  <th scope="col">{aCopy.columns.who}</th>
+                  <th scope="col">{aCopy.columns.action}</th>
+                  <th scope="col">{aCopy.columns.target}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((e) => (
+                  <tr key={e.id} className="hover:bg-surface">
+                    <td className="whitespace-nowrap font-mono text-xs tabular-nums text-ink">{fmtDate(e.at)}</td>
+                    <td className="break-all font-mono text-xs text-ink">
+                      {e.actor_email ??
+                        (e.actor_user_id === null ? aCopy.bootstrapKey : aCopy.userRef(e.actor_user_id))}
+                    </td>
+                    <td className="font-semibold text-ink">{ACTIONS[e.action] ?? e.action}</td>
+                    <td className="text-sm text-ink">
+                      {TARGETS[e.target_type] ?? e.target_type}
+                      {e.target_id !== null && (
+                        <span className="font-mono text-xs text-subtle"> #{e.target_id}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+      <nav
+        aria-label={copy.common.paginationAria}
+        className="mt-6 flex flex-wrap items-center gap-4 border-t border-line pt-5"
+      >
         <Button size="sm" disabled={offset === 0 || st.loading} onClick={() => setOffset(Math.max(0, offset - PAGE))}>
-          Newer
+          {copy.common.newer}
         </Button>
-        <span className="text-sm text-subtle">Page {page}</span>
+        <span className="font-mono text-xs font-semibold tabular-nums text-subtle">
+          {copy.common.pageLabel(page)}
+        </span>
         <Button size="sm" disabled={rows.length < PAGE || st.loading} onClick={() => setOffset(offset + PAGE)}>
-          Older
+          {copy.common.older}
         </Button>
       </nav>
     </>

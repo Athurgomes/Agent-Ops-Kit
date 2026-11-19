@@ -2,6 +2,7 @@
 // 401 handler, so an operator session and a portal session never clear each other. Metadata only:
 // nothing here can read report contents, and secrets (generated passwords) are only returned to the caller.
 import { ApiError } from "./api";
+import { copy } from "./copy";
 
 export type OpsOperator = { id: number; email: string };
 export type OpsOrg = {
@@ -87,7 +88,7 @@ async function opsFetch(path: string, init: RequestInit = {}, handle401 = true):
   try {
     res = await fetch(path, { credentials: "same-origin", ...init });
   } catch {
-    throw new ApiError(0, "Could not reach the server. Please try again in a moment.");
+    throw new ApiError(0, copy.errors.network);
   }
   if (res.status === 401 && handle401) onOpsUnauthorized();
   return res;
@@ -101,14 +102,14 @@ async function friendly(res: Response): Promise<ApiError> {
   } catch {
     /* no body */
   }
-  if (res.status === 409 && detail.includes("slug")) return new ApiError(409, "That slug is already used by another organization.");
-  if (res.status === 409) return new ApiError(409, "That email is already registered.");
-  if (res.status === 422) return new ApiError(422, "A field is not valid. Check the values and try again.");
-  if (res.status === 404) return new ApiError(404, "Not found.");
-  if (res.status === 429) return new ApiError(429, "Too many attempts. Wait a few minutes and try again.");
-  if (res.status === 401) return new ApiError(401, "Your session expired. Please log in again.");
-  if (res.status >= 500) return new ApiError(res.status, "Server error. Please try again in a moment.");
-  return new ApiError(res.status, "Something went wrong. Please try again.");
+  if (res.status === 409 && detail.includes("slug")) return new ApiError(409, copy.opsErrors.orgSlugInUse);
+  if (res.status === 409) return new ApiError(409, copy.opsErrors.emailInUse);
+  if (res.status === 422) return new ApiError(422, copy.errors.invalidField);
+  if (res.status === 404) return new ApiError(404, copy.opsErrors.notFound);
+  if (res.status === 429) return new ApiError(429, copy.errors.tooMany);
+  if (res.status === 401) return new ApiError(401, copy.errors.unauthorized);
+  if (res.status >= 500) return new ApiError(res.status, copy.errors.server);
+  return new ApiError(res.status, copy.errors.generic);
 }
 
 async function send<T>(path: string, method: string, body?: unknown): Promise<T> {
@@ -139,7 +140,7 @@ export const opsApi = {
       false,
     );
     if (res.status === 404) return "disabled";
-    if (res.status === 401) throw new ApiError(401, "Invalid email or password.");
+    if (res.status === 401) throw new ApiError(401, copy.auth.errors.invalidCredentials);
     if (!res.ok) throw await friendly(res);
     return (await res.json()) as OpsOperator;
   },

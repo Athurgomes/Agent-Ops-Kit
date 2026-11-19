@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 import { Link } from "react-router-dom";
+import { AsciiSounding, AsciiWaves } from "./AsciiArt";
 import { copy } from "./copy";
 import { fmtApiError, semaforoOf } from "./format";
 
@@ -53,9 +54,14 @@ export function Box({ className, children }: { className?: string; children: Rea
 }
 
 /** Uppercase mono stamp with 1px border. */
-export function Tag({ children }: { children: ReactNode }) {
+export function Tag({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
   return (
-    <span className="inline-block rounded-[2px] border border-ink bg-surface px-2 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-ink">
+    <span
+      className={cx(
+        "inline-block rounded-[2px] border px-2 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em]",
+        muted ? "border-ink/40 bg-paper text-subtle" : "border-ink bg-surface text-ink",
+      )}
+    >
       {children}
     </span>
   );
@@ -124,6 +130,60 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
       <p className="heading text-2xl">{title}</p>
       {children && <p className="max-w-xl text-subtle">{children}</p>}
     </div>
+  );
+}
+
+/** Logbook loading block with ASCII waves (aria-hidden, respects prefers-reduced-motion). */
+export function LogbookLoading({
+  label = copy.common.loading,
+  caption,
+}: {
+  label?: string;
+  caption: string;
+}) {
+  return (
+    <div role="status" aria-live="polite" className="border border-ink bg-paper">
+      <span className="sr-only">{label}</span>
+      <div className="flex items-center justify-between border-b border-line bg-surface px-5 py-3">
+        <span className="eyebrow">{caption}</span>
+        <span className="font-mono text-xs text-subtle">···</span>
+      </div>
+      <AsciiWaves className="h-20 border-b border-line" />
+      <div className="flex animate-pulse flex-col gap-3 p-6">
+        <div className="h-8 w-1/3 border border-line bg-surface" />
+        <div className="h-12 w-full border border-line bg-surface" />
+        <div className="h-12 w-full border border-line bg-surface" />
+      </div>
+    </div>
+  );
+}
+
+/** Logbook empty state with ASCII sounding gauge (aria-hidden, respects prefers-reduced-motion). */
+export function LogbookEmpty({
+  tag,
+  title,
+  artCaption,
+  children,
+}: {
+  tag: string;
+  title: string;
+  artCaption: string;
+  children?: ReactNode;
+}) {
+  return (
+    <section className="grid grid-cols-1 border border-ink bg-surface md:grid-cols-[1.35fr_1fr]">
+      <div className="flex flex-col items-start justify-center gap-3 p-8 lg:p-10">
+        <Tag>{tag}</Tag>
+        <h2 className="heading text-2xl lg:text-3xl">{title}</h2>
+        {children && <p className="max-w-lg text-subtle">{children}</p>}
+      </div>
+      <div className="flex flex-col justify-between border-t border-ink/25 bg-surface md:border-l md:border-t-0">
+        <AsciiSounding className="h-40" />
+        <p className="border-t border-line px-4 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-subtle">
+          {artCaption}
+        </p>
+      </div>
+    </section>
   );
 }
 
