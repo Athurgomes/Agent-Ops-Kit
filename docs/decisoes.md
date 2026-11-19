@@ -333,3 +333,24 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 **Consequências e limitações.**
 - Os resultados atualmente gravados no repositório (`evals/answers/` e `docs/resultados.md`) permanecem com **1 execução por configuração** (semente 42) até que seja feita nova gravação com o Ollama local.
 - O tempo de geração cresce linearmente com `runs` quando executado com o modelo; o CI continua usando `--reuse` sobre as respostas gravadas sem custo de inferência.
+
+## ADR-020: endurecimento anti-ofuscação, janela multi-turn e classificador semântico local TF-IDF
+
+**Contexto.** Conforme registrado nos ADRs anteriores e nas limitações documentadas em `input_filter.py`, as heurísticas originais baseadas apenas em expressões regulares, NFKC e remoção básica de zero-width podiam ser contornadas por homoglyphs cirílicos ou gregos, fragmentação de palavras por espaços ou pontuação (token-splitting), payloads codificados em Base64 ou Hex, ataques distribuídos em múltiplos turnos de conversa e paráfrases semânticas sem vocabulário literal das regras. Era preciso endurecer a camada de entrada sem introduzir dependências pagas, chamadas externas ou novos falsos positivos no conjunto benigno.
+
+**Decisão.**
+- **Normalização anti-ofuscação (`src/agent_ops_kit/guardrails/obfuscation.py`)**:
+  - **Confusables / Homoglyphs**: mapeamento de caracteres cirílicos e gregos visualmente semelhantes para ASCII equivalente após NFKC, remoção de caracteres zero-width (reaproveitando `verdict.strip_invisible`) e remoção de caracteres de formatação invisíveis (`Cf`).
+  - **Anti token-splitting**: colapso conservador apenas de sequências de tokens curtos separados por pontuação interna (`.`, `-`, `_`) ou espaços únicos entre letras individuais, preservando abreviações, siglas e palavras hifenizadas legítimas.
+  - **Decodificação segura de Base64 e Hex**: extração de candidatos Base64 (padrão ou URL-safe, `>= 16` caracteres) e Hex (`>= 20` dígitos pares, compacto com ou sem `0x` ou espaçado por bytes) com validação estrita UTF-8 e proporção mínima de caracteres imprimíveis (`>= 0.90`). Nunca bloqueia apenas pela aparência codificada (evitando falsos positivos em hashes SHA-256 ou texto comum): o conteúdo decodificado é submetido aos padrões reais do filtro e sinalizado com `"encoded_payload:<padrao>"`.
+- **Classificador semântico local (`src/agent_ops_kit/guardrails/semantic.py`)**:
+  - `LocalSemanticClassifier` implementado em biblioteca padrão Python, determinístico e 100% offline, usando vetores TF-IDF L2-normalizados que combinam n-gramas de palavras (1-2 grams) e n-gramas de caracteres (3-5 grams) sobre protótipos curados PT/EN de intenções de ataque versus perguntas corporativas/técnicas benignas.
+  - Exige simultaneamente que a similaridade máxima de cosseno com protótipos de ataque atinja `threshold` (padrão calibrado `0.25`) **e** que a margem sobre o melhor protótipo benigno atinja `margin` (padrão calibrado `0.08`), expondo `score(...) -> SemanticScore` e `make_local_semantic_classifier(...)`.
+- **Integração em janela multi-turn e fachada (`input_filter.py`, `guardrails/__init__.py`)**:
+  - `check_input` mantém assinatura retrocompatível e passa a aplicar `obfuscation=True` por padrão e `semantic_classifier` opcional.
+  - `check_conversation` e `Guardrails.screen_conversation(..., window=4)` avaliam apenas turnos do usuário (ignorando turnos do assistente para não gerar auto-bloqueio em recusas) tanto isoladamente quanto em janela deslizante contígua de 2 até `window` turnos, incluindo junção de fragmentos codificados partidos entre turnos (`"multi_turn_injection"`).
+  - `Guardrails` aceita `semantic_classifier` opcional e suporta a flag opcional `"semantic_filter"` em `agent.yaml` sem quebrar esquemas ou configurações existentes.
+
+**Consequências e limitações.**
+- Validação local nos testes automatizados (`tests/test_guardrails_advanced.py`) registrou **0 falsos positivos** adicionais tanto nos 50 casos de `evals/dataset.jsonl` quanto nas 12 perguntas de `redteam/benign/benign.jsonl`.
+- **Limitações honestas**: o classificador TF-IDF e os decoders ainda podem ser contornados por paráfrases inéditas distantes dos protótipos, idiomas fora de PT/EN, codificações não cobertas (ex.: ROT13, cifra customizada ou múltiplas camadas aninhadas de codificação) e fragmentação além da janela configurada (`window`). Não substitui isolamento arquitetural de ferramentas nem validação de saída.

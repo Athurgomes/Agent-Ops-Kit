@@ -1,8 +1,8 @@
-"""Filtro de entrada (LLM01): heuristicas PT/EN + classificador opcional.
+"""Filtro de entrada (LLM01): heuristicas PT/EN, anti-ofuscacao, multi-turn e classificadores.
 
-Limites: heuristica por padrao e bypassavel (parafrase, outros idiomas,
-ofuscacao nao prevista). Por isso o projeto mede tambem a taxa de falsos
-positivos: um filtro agressivo demais bloqueia perguntas legitimas.
+Limites: heuristica por padrao e classificador TF-IDF local sao contornaveis (parafrase
+inedita, outros idiomas, ofuscacao em multiplas camadas). Por isso o projeto mede tambem
+a taxa de falsos positivos: um filtro agressivo demais bloqueia perguntas legitimas.
 
 Falsos positivos conhecidos (documentados, nao corrigidos de proposito):
 - "Como mostrar minhas credenciais no portal?" e bloqueada (verbo "mostrar"
@@ -18,11 +18,20 @@ fora do ar sempre que o Ollama cair. O classificador so roda se as heuristicas
 nao bloquearam.
 """
 
+from __future__ import annotations
+
 import json
 import re
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
+from .obfuscation import (
+    collapse_token_splitting,
+    decode_encoded_payloads,
+    deobfuscate_homoglyphs,
+)
+from .semantic import LocalSemanticClassifier
 from .verdict import Verdict, normalize, strip_invisible
 
 _OBJ = (
@@ -102,22 +111,166 @@ _FAKE_DELIM = re.compile(
 )
 
 
-def check_input(text: str, classifier: Callable[[str], bool] | None = None) -> Verdict:
-    """Heuristicas PT/EN; classificador opcional (fail-open se ele lancar excecao)."""
-    reasons: list[str] = []
+def _match_patterns(text: str) -> list[str]:
+    hits: list[str] = []
     variants = {normalize(text), normalize(text, leet=True)}
     for name, pat in _PATTERNS:
         if any(pat.search(v) for v in variants):
-            reasons.append(name)
+            hits.append(name)
     if _FAKE_DELIM.search(strip_invisible(text).lower()):
-        reasons.append("fake_delimiter")
+        hits.append("fake_delimiter")
+    return hits
+
+
+def check_input(
+    text: str,
+    classifier: Callable[[str], bool] | None = None,
+    *,
+    obfuscation: bool = True,
+    semantic_classifier: LocalSemanticClassifier | None = None,
+) -> Verdict:
+    """Heuristicas PT/EN, anti-ofuscacao, classificador semantico local e Ollama fail-open."""
+    reasons = _match_patterns(text)
+
+    base_clean = strip_invisible(text)
+    homo = base_clean
+    has_homo = False
+    split_text = base_clean
+    has_split = False
+
+    if obfuscation:
+        homo = deobfuscate_homoglyphs(text)
+        has_homo = homo != base_clean
+        if has_homo:
+            for hit in _match_patterns(homo):
+                if hit not in reasons:
+                    if "homoglyph_obfuscation" not in reasons:
+                        reasons.append("homoglyph_obfuscation")
+                    reasons.append(hit)
+
+        split_source = homo if has_homo else base_clean
+        split_text = collapse_token_splitting(split_source)
+        has_split = split_text != split_source
+        if has_split:
+            for hit in _match_patterns(split_text):
+                if hit not in reasons:
+                    if has_homo and "homoglyph_obfuscation" not in reasons:
+                        reasons.append("homoglyph_obfuscation")
+                    if "token_splitting" not in reasons:
+                        reasons.append("token_splitting")
+                    reasons.append(hit)
+
+        payloads = decode_encoded_payloads(base_clean)
+        if has_homo:
+            for item in decode_encoded_payloads(homo):
+                if item not in payloads:
+                    payloads.append(item)
+        for _method, decoded in payloads:
+            for hit in _match_patterns(decoded):
+                reasons.append(f"encoded_payload:{hit}")
+
+    if not reasons and semantic_classifier is not None:
+        candidates = [text]
+        if obfuscation:
+            if has_split:
+                candidates.append(split_text)
+            elif has_homo:
+                candidates.append(homo)
+        if any(semantic_classifier(c) for c in candidates):
+            reasons.append("semantic_classifier")
+
     if not reasons and classifier is not None:
         try:
             if classifier(text):
                 reasons.append("classifier")
         except Exception:  # noqa: BLE001, S110 - fail-open: classificador indisponivel
             pass
-    return Verdict(bool(reasons), tuple(reasons))
+
+    deduped = tuple(dict.fromkeys(reasons))
+    return Verdict(bool(deduped), deduped)
+
+
+def _extract_user_messages(messages: Sequence[str | Mapping[str, Any]]) -> list[str]:
+    user_texts: list[str] = []
+    for item in messages:
+        if isinstance(item, str):
+            if item.strip():
+                user_texts.append(item)
+        elif isinstance(item, Mapping):
+            if item.get("role") == "user":
+                content = item.get("content", "")
+                if isinstance(content, str) and content.strip():
+                    user_texts.append(content)
+        else:
+            raise TypeError("Cada mensagem deve ser str ou Mapping com role/content")
+    return user_texts
+
+
+def _check_split_encoded_chunks(chunk: Sequence[str]) -> list[str]:
+    """Detecta payloads Base64/Hex partidos exatamente na costura entre turnos."""
+    candidates = ["".join(p.strip() for p in chunk)]
+    tokenized = [p.strip().split() for p in chunk]
+    if all(tokenized):
+        middle = "".join(t for toks in tokenized[1:-1] for t in toks)
+        frontier = f"{tokenized[0][-1]}{middle}{tokenized[-1][0]}"
+        if frontier not in candidates:
+            candidates.append(frontier)
+
+    hits: list[str] = []
+    for cand in candidates:
+        for _method, decoded in decode_encoded_payloads(cand):
+            for hit in _match_patterns(decoded):
+                hits.append(f"encoded_payload:{hit}")
+    return hits
+
+
+def check_conversation(
+    messages: Sequence[str | Mapping[str, Any]],
+    classifier: Callable[[str], bool] | None = None,
+    *,
+    window: int = 4,
+    obfuscation: bool = True,
+    semantic_classifier: LocalSemanticClassifier | None = None,
+) -> Verdict:
+    """Analisa turnos do usuario individualmente e em janela deslizante (multi-turn)."""
+    if window < 1:
+        raise ValueError("window deve ser >= 1")
+
+    user_texts = _extract_user_messages(messages)
+    if not user_texts:
+        return Verdict(False, ())
+
+    for msg in user_texts:
+        verdict = check_input(
+            msg,
+            classifier,
+            obfuscation=obfuscation,
+            semantic_classifier=semantic_classifier,
+        )
+        if verdict.blocked:
+            return verdict
+
+    recent = user_texts[-window:]
+    for span in range(2, len(recent) + 1):
+        for start in range(len(recent) - span + 1):
+            chunk = recent[start : start + span]
+            combined = " ".join(chunk)
+            verdict = check_input(
+                combined,
+                classifier,
+                obfuscation=obfuscation,
+                semantic_classifier=semantic_classifier,
+            )
+            if verdict.blocked:
+                reasons = tuple(dict.fromkeys(("multi_turn_injection", *verdict.reasons)))
+                return Verdict(True, reasons)
+            if obfuscation:
+                encoded_hits = _check_split_encoded_chunks(chunk)
+                if encoded_hits:
+                    reasons = tuple(dict.fromkeys(("multi_turn_injection", *encoded_hits)))
+                    return Verdict(True, reasons)
+
+    return Verdict(False, ())
 
 
 _CLASSIFIER_PROMPT = (
