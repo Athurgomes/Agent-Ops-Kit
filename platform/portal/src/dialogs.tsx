@@ -2,6 +2,7 @@
 // dialog, a copy button and a one-time secret block. No storage: secrets live only in React state.
 import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { copy } from "./copy";
 import { Button, ErrorBox, cx } from "./ui";
 
 export function Modal({
@@ -29,7 +30,10 @@ export function Modal({
       ref={ref}
       aria-labelledby={id}
       onClose={onClose}
-      className={cx("box m-auto w-[calc(100%-32px)] p-8 backdrop:bg-black/50", wide ? "max-w-2xl" : "max-w-lg")}
+      className={cx(
+        "box m-auto w-[calc(100%-32px)] p-8 backdrop:bg-ink/40 backdrop:backdrop-blur-[2px]",
+        wide ? "max-w-2xl" : "max-w-lg",
+      )}
     >
       <h2 id={id} className="heading mb-6 text-2xl">
         {title}
@@ -62,7 +66,7 @@ export function ConfirmModal({
         {error && <ErrorBox>{error}</ErrorBox>}
         <div className="flex flex-wrap justify-end gap-3">
           <Button onClick={onClose} disabled={busy} autoFocus>
-            Cancel
+            {copy.common.cancel}
           </Button>
           <Button
             variant="dark"
@@ -74,12 +78,12 @@ export function ConfirmModal({
                 await onConfirm();
                 onClose();
               } catch (e) {
-                setError(e instanceof Error ? e.message : "Something went wrong.");
+                setError(e instanceof Error ? e.message : copy.common.genericError);
                 setBusy(false);
               }
             }}
           >
-            {busy ? "Working…" : confirmLabel}
+            {busy ? copy.common.working : confirmLabel}
           </Button>
         </div>
       </div>
@@ -87,7 +91,7 @@ export function ConfirmModal({
   );
 }
 
-export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+export function CopyButton({ text, label = copy.common.copy }: { text: string; label?: string }) {
   const [state, setState] = useState<"idle" | "ok" | "fail">("idle");
   return (
     <span className="inline-flex items-center gap-3">
@@ -105,8 +109,8 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
         {label}
       </Button>
       <span role="status" className="text-sm text-subtle">
-        {state === "ok" && "Copied"}
-        {state === "fail" && "Could not copy; select it and copy by hand."}
+        {state === "ok" && copy.common.copied}
+        {state === "fail" && copy.common.copyFailed}
       </span>
     </span>
   );
@@ -119,7 +123,7 @@ export function OneTimeSecret({
   title,
   secret,
   extra,
-  announcement = "Secret generated. Shown once; store it now.",
+  announcement = copy.dialogs.secretAnnouncement,
   onDismiss,
 }: {
   title: string;
@@ -135,17 +139,17 @@ export function OneTimeSecret({
     setSaid(announcement); // filled after mount so the status region is announced
   }, [announcement]);
   return (
-    <div ref={ref} role="region" aria-label={title} tabIndex={-1} className="box border-2 p-6">
+    <div ref={ref} role="region" aria-label={title} tabIndex={-1} className="box p-6">
       <p role="status" className="sr-only">
         {said}
       </p>
       <p className="heading text-xl">{title}</p>
-      <p className="mt-2 font-semibold">Store it now; it won't be shown again.</p>
-      <p className="mt-4 break-all border border-ink bg-white p-3 font-mono text-sm select-all">{secret}</p>
+      <p className="mt-2 font-semibold">{copy.dialogs.secretWarning}</p>
+      <p className="mt-4 break-all rounded-xl border border-line bg-surface p-3 font-mono text-sm select-all">{secret}</p>
       <div className="mt-4 flex flex-wrap items-center gap-4">
         <CopyButton text={secret} />
         <Button size="sm" variant="primary" onClick={onDismiss}>
-          I have stored it
+          {copy.dialogs.secretStored}
         </Button>
       </div>
       {extra}

@@ -2,8 +2,10 @@
 import { useEffect, useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 import { Link } from "react-router-dom";
-import { BRAND } from "./brand";
+import { copy } from "./copy";
 import { semaforoOf } from "./format";
+
+export { Logo } from "./Logo";
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -43,54 +45,20 @@ export function LinkButton({
   );
 }
 
-/** Not-yet-available action: not clickable (no href, no handler), default cursor, "Soon" label. */
-export function SoonButton({
-  children,
-  variant = "dark",
-  size = "sm",
-  className,
-}: {
-  children: ReactNode;
-  variant?: Variant;
-  size?: Size;
-  className?: string;
-}) {
-  return (
-    <span role="button" aria-disabled="true" title="Coming soon" className={cx(btnCls(variant, size, className), "soon")}>
-      {children}
-      <span className="soon-badge">Soon</span>
-    </span>
-  );
-}
-
-/** Not-yet-available text item (nav, footer, login): not a link, with a discreet "Soon" label. */
-export function SoonText({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <span aria-disabled="true" title="Coming soon" className={cx("soon inline-flex items-center gap-2", className)}>
-      {children}
-      <span className="soon-badge">Soon</span>
-    </span>
-  );
-}
-
 // ---- blocks ----------------------------------------------------------------------------------
 
-export function Logo({ to = "/", size = "text-2xl" }: { to?: string; size?: string }) {
-  return (
-    <Link to={to} className={cx("heading no-underline", size)} aria-label={`${BRAND}, home`}>
-      {BRAND}
-    </Link>
-  );
-}
-
-/** Container: thin black border, square corners, no shadow. */
+/** Rounded panel surface with subtle border and shadow. */
 export function Box({ className, children }: { className?: string; children: ReactNode }) {
   return <div className={cx("box p-6", className)}>{children}</div>;
 }
 
-/** Small square label. */
+/** Small pill label. */
 export function Tag({ children }: { children: ReactNode }) {
-  return <span className="inline-block border border-ink px-2 py-0.5 text-sm font-semibold">{children}</span>;
+  return (
+    <span className="inline-block rounded-full border border-line bg-surface px-2.5 py-0.5 font-mono text-xs font-semibold">
+      {children}
+    </span>
+  );
 }
 
 /** Traffic-light label: color + dot + text (never color alone). Colors only ever mean the result. */
@@ -99,13 +67,13 @@ export function SemaforoBadge({ value, size = "md" }: { value: string; size?: "m
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-2 whitespace-nowrap border border-ink font-bold",
+        "inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-line font-bold",
         s.cls,
         size === "lg" ? "px-4 py-2 text-lg" : "px-2.5 py-0.5 text-sm",
       )}
     >
       <span aria-hidden="true" className={cx("size-2.5 rounded-full", s.dot)} />
-      <span className="sr-only">Traffic light: </span>
+      <span className="sr-only">{copy.aria.trafficLightPrefix}</span>
       {s.label}
     </span>
   );
@@ -126,20 +94,20 @@ export function Title({
 
 // ---- states ----------------------------------------------------------------------------------
 
-export function Loading({ label = "Loading…" }: { label?: string }) {
+export function Loading({ label = copy.common.loading }: { label?: string }) {
   return (
     <div role="status" className="flex animate-pulse flex-col gap-4" aria-live="polite">
       <span className="sr-only">{label}</span>
-      <div className="h-8 w-1/3 bg-hair" />
-      <div className="h-20 w-full bg-hair/60" />
-      <div className="h-20 w-full bg-hair/60" />
+      <div className="h-8 w-1/3 rounded-xl bg-hair" />
+      <div className="h-20 w-full rounded-xl bg-hair/60" />
+      <div className="h-20 w-full rounded-xl bg-hair/60" />
     </div>
   );
 }
 
 export function ErrorBox({ children }: { children: ReactNode }) {
   return (
-    <div role="alert" className="box flex items-start gap-3 bg-[#fee2e2] p-4">
+    <div role="alert" className="flex items-start gap-3 rounded-2xl border border-[#fecaca] bg-[#fef2f2] p-4 text-[#991b1b]">
       <span aria-hidden="true" className="font-black">
         !
       </span>
@@ -150,14 +118,14 @@ export function ErrorBox({ children }: { children: ReactNode }) {
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="flex flex-col items-start gap-2 border border-dashed border-ink p-12">
+    <div className="flex flex-col items-start gap-2 rounded-3xl border border-dashed border-line bg-surface/50 p-12">
       <p className="heading text-2xl">{title}</p>
       {children && <p className="max-w-xl text-subtle">{children}</p>}
     </div>
   );
 }
 
-// ---- forms (pills) ---------------------------------------------------------------------------
+// ---- forms -----------------------------------------------------------------------------------
 
 export function Field({
   label,
@@ -177,7 +145,7 @@ export function Field({
       <input
         id={id}
         aria-describedby={hint ? `${id}-hint` : undefined}
-        className="rounded-full border border-ink bg-paper px-5 py-3"
+        className="rounded-xl border border-line bg-paper px-4 py-3 text-ink focus:border-accent"
         {...p}
       />
       {hint && (
@@ -200,7 +168,7 @@ export function Select({
       <label htmlFor={id} className="text-sm font-bold">
         {label}
       </label>
-      <select id={id} className="rounded-full border border-ink bg-paper px-5 py-2.5" {...p}>
+      <select id={id} className="rounded-xl border border-line bg-paper px-4 py-3 text-ink focus:border-accent" {...p}>
         {children}
       </select>
     </div>
@@ -212,7 +180,7 @@ export function Select({
 export type Crumb = { to?: string; label: string };
 export function Breadcrumbs({ items }: { items: Crumb[] }) {
   return (
-    <nav aria-label="You are here">
+    <nav aria-label={copy.aria.breadcrumbs}>
       <ol className="m-0 flex list-none flex-wrap items-center gap-x-2 gap-y-1 p-0 text-sm text-subtle">
         {items.map((c, i) => (
           <li key={i} className="flex min-w-0 items-center gap-2">
@@ -265,7 +233,8 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T
     setSt((s) => ({ ...s, loading: true, error: null }));
     fn().then(
       (data) => alive && setSt({ data, error: null, loading: false }),
-      (e: unknown) => alive && setSt({ data: null, error: e instanceof Error ? e.message : "Error.", loading: false }),
+      (e: unknown) =>
+        alive && setSt({ data: null, error: e instanceof Error ? e.message : copy.common.errorFallback, loading: false }),
     );
     return () => {
       alive = false;

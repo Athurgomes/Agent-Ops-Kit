@@ -1,30 +1,41 @@
 @import "tailwindcss";
 
-/* Design tokens. To change the visual identity, edit this block only.
-   Rule: text is black on white; the single vivid blue is only for the main call to action,
-   links, focus, the active-item marker and small accents. */
+/* Design tokens for Farol.
+   Rule: crisp ink on white paper, subtle hairline surfaces, vivid blue reserved for primary CTAs,
+   links, focus rings, the brand dot, and active states. */
 :root {
-  --ink: #000000;
+  --ink: #0a0a0a;
   --paper: #ffffff;
-  --subtle: #595959; /* secondary text (7:1 on white) */
-  --hair: #d9d9d9; /* very light fill for skeleton loaders */
+  --surface: #fafafa;
+  --subtle: #525252; /* >7:1 contrast on #ffffff */
+  --hair: #e5e7eb;
   --accent: #2563eb;
   --accent-hover: #1d4fd8;
-  --line: #000000; /* thin black rules */
+  --accent-soft: rgba(37, 99, 235, 0.08);
+  --line: rgba(10, 10, 10, 0.10);
+  --panel-border: rgba(10, 10, 10, 0.06);
+  --radius-panel: 24px;
+  --radius-control: 12px;
+  --radius-pill: 9999px;
+  --shadow-panel: 0 20px 50px -20px rgba(37, 99, 235, 0.14), 0 4px 16px -4px rgba(10, 10, 10, 0.10);
+  --shadow-btn: 0 8px 24px -8px rgba(37, 99, 235, 0.35), 0 2px 6px -2px rgba(10, 10, 10, 0.12);
+  --shadow-btn-hover: 0 12px 28px -8px rgba(37, 99, 235, 0.45), 0 4px 10px -2px rgba(10, 10, 10, 0.14);
   --focus: #2563eb;
-  --hard-shadow: 4px 4px 0 0 #000;
   --container: 1200px;
   --header-h: 72px;
-  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-body: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
 @theme inline {
   --color-ink: var(--ink);
   --color-paper: var(--paper);
+  --color-surface: var(--surface);
   --color-subtle: var(--subtle);
   --color-hair: var(--hair);
   --color-accent: var(--accent);
+  --color-line: var(--line);
+  --color-accent-soft: var(--accent-soft);
   --font-sans: var(--font-body);
   --font-mono: var(--font-mono);
   --text-sm: 0.9375rem;
@@ -42,6 +53,7 @@
   body {
     margin: 0;
     min-height: 100vh;
+    overflow-x: clip;
     font-size: 1.0625rem; /* 17px */
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
@@ -84,18 +96,26 @@
     margin-inline: auto;
     padding-inline: 24px;
   }
-  /* Titles: very heavy, black, tight. */
   .heading {
     color: var(--ink);
-    font-weight: 900;
+    font-weight: 800;
     letter-spacing: -0.035em;
-    line-height: 1.02;
+    line-height: 1.05;
     overflow-wrap: anywhere;
   }
-  /* Main containers: thin black border, square corners. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--subtle);
+  }
   .box {
-    border: 1px solid var(--line);
+    border: 1.5px solid var(--panel-border);
+    border-radius: var(--radius-panel);
     background: var(--paper);
+    box-shadow: var(--shadow-panel);
   }
   .rule-t {
     border-top: 1px solid var(--line);
@@ -103,7 +123,6 @@
   .rule-b {
     border-bottom: 1px solid var(--line);
   }
-  /* Links in the accent color. */
   .link {
     color: var(--accent);
     font-weight: 600;
@@ -112,22 +131,21 @@
   .link:hover {
     text-decoration: underline;
   }
-  /* Buttons: pills. Primary = vivid blue with a hard black offset shadow. */
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
     border: 1px solid var(--line);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     padding: 10px 22px;
-    font-weight: 700;
+    font-weight: 600;
     line-height: 1.2;
     color: var(--ink);
     background: var(--paper);
     text-decoration: none;
     cursor: pointer;
-    transition: transform 80ms, box-shadow 80ms, background-color 80ms;
+    transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease, border-color 160ms ease;
   }
   .btn-sm {
     padding: 7px 16px;
@@ -140,41 +158,36 @@
   .btn-primary {
     background: var(--accent);
     color: #fff;
-    box-shadow: var(--hard-shadow);
+    border-color: transparent;
+    box-shadow: var(--shadow-btn);
   }
   .btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
     background: var(--accent-hover);
-    transform: translate(-1px, -1px);
-    box-shadow: 5px 5px 0 0 #000;
+    box-shadow: var(--shadow-btn-hover);
   }
   .btn-primary:active:not(:disabled) {
-    transform: translate(4px, 4px);
-    box-shadow: none;
+    transform: translateY(0);
+    box-shadow: var(--shadow-btn);
+  }
+  .btn-secondary {
+    border-color: rgba(10, 10, 10, 0.16);
   }
   .btn-secondary:hover:not(:disabled) {
-    background: var(--ink);
-    color: #fff;
+    background: var(--surface);
+    border-color: var(--ink);
   }
   .btn-dark {
     background: var(--ink);
     color: #fff;
+    border-color: transparent;
+  }
+  .btn-dark:hover:not(:disabled) {
+    background: #1f1f1f;
   }
   .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-  /* Placeholder for features that are not ready yet: not clickable, default cursor. */
-  .soon {
-    cursor: default;
-    user-select: none;
-  }
-  .soon-badge {
-    border: 1px solid currentColor;
-    font-size: 0.6875rem;
-    font-weight: 700;
-    line-height: 1;
-    padding: 2px 5px;
-    letter-spacing: 0.02em;
   }
   .navlink {
     display: inline-block;
@@ -183,24 +196,26 @@
     font-weight: 600;
     text-decoration: none;
     border-bottom: 2px solid transparent;
+    transition: color 140ms ease;
   }
   .navlink:hover {
     color: var(--accent);
   }
-  /* Sidebar item: the active one gets an accent bar on the left. */
   .side-item {
     display: block;
-    padding: 6px 12px 6px 16px;
+    padding: 8px 14px;
+    border-radius: 10px;
     font-weight: 500;
     text-decoration: none;
-    border-left: 3px solid transparent;
+    transition: background-color 140ms ease, color 140ms ease;
   }
   .side-item:hover {
-    text-decoration: underline;
+    background: var(--surface);
   }
   .side-item.active {
-    border-left-color: var(--accent);
-    font-weight: 800;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 700;
   }
   /* sr-only cells inside wide tables must be clipped by the scroll box, not stretch the page */
   .overflow-x-auto,
@@ -227,8 +242,12 @@
     top: 0;
     z-index: 1;
     background: var(--paper);
-    font-size: 0.875rem;
-    font-weight: 800;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--subtle);
     white-space: nowrap;
   }
   .data-table tbody th {
@@ -242,7 +261,7 @@
     display: none;
   }
   .faq .plus {
-    transition: transform 120ms;
+    transition: transform 140ms ease;
   }
   .faq[open] .plus {
     transform: rotate(45deg);

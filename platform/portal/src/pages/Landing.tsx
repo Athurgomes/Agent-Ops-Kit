@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import { BRAND, BRAND_TAGLINE } from "../brand";
+import { BRAND, BRAND_TAGLINE, CONTACT_URL } from "../brand";
+import { copy } from "../copy";
 import { LIMITS_TEXT, SELF_DECLARED_TEXT } from "../format";
-import { LinkButton, SoonButton } from "../ui";
+import { LinkButton } from "../ui";
 import { BeforeAfter, Proof, Showcase } from "./LandingSections";
 
 // ---- plain line icons (no containers) --------------------------------------------------------
@@ -55,7 +56,7 @@ function AgentFlow() {
     <figure className="m-0">
       <div className="box">
         <p className="rule-b px-6 py-4 text-sm font-extrabold">AI agent → tested → report</p>
-        <ol className="m-0 list-none divide-y divide-ink p-0 px-6">
+        <ol className="m-0 list-none divide-y divide-line p-0 px-6">
           <FlowRow n="01" icon={<AgentIcon />} title="Your AI agent" text="Runs where your team runs it." />
           <FlowRow n="02" icon={<TestIcon />} title="Tested" text="Quality evaluation and red-team attacks." />
           <FlowRow n="03" icon={<ReportIcon />} title="Report" text="Published here, with its caveats." />
@@ -173,11 +174,11 @@ function HowItWorks() {
         <h2 className="heading text-4xl lg:text-5xl">How it works</h2>
         <ol className="m-0 mt-12 grid list-none grid-cols-1 p-0 md:grid-cols-3">
           {STEPS.map((s, i) => (
-            <li key={s.title} className="rule-t flex flex-col items-start gap-3 py-8 md:border-l md:border-t md:border-ink md:px-8 md:first:border-l-0 md:first:pl-0">
+            <li key={s.title} className="rule-t flex flex-col items-start gap-3 py-8 md:border-l md:border-t md:border-line md:px-8 md:first:border-l-0 md:first:pl-0">
               <span className="heading text-7xl">{i + 1}</span>
               <h3 className="heading text-xl">{s.title}</h3>
               <p className="text-subtle">{s.text}</p>
-              {s.code && <code className="border border-ink px-3 py-1 font-mono text-sm">{s.code}</code>}
+              {s.code && <code className="rounded-lg border border-line bg-surface px-3 py-1 font-mono text-sm">{s.code}</code>}
             </li>
           ))}
         </ol>
@@ -209,7 +210,7 @@ function Limits() {
 const FAQ: { q: string; a: ReactNode }[] = [
   {
     q: `What is ${BRAND}?`,
-    a: `${BRAND} is a provisional, fictional name for the portal of agent-ops-kit, an open-source layer of observability, evaluation and security for AI agents. It stores the test reports that agent teams publish and shows them by area to the people who need to read them.`,
+    a: `${BRAND} is the portal of agent-ops-kit, an open-source layer of observability, evaluation and security for AI agents. It stores the test reports that agent teams publish and shows them by area to the people who need to read them.`,
   },
   {
     q: `Does ${BRAND} run or host my agent?`,
@@ -228,7 +229,7 @@ const FAQ: { q: string; a: ReactNode }[] = [
     a: (
       <>
         An admin registers the agent and issues a token, shown once. The team puts it in an environment variable and
-        runs <code className="border border-ink px-1.5 font-mono text-sm">aok check --publish</code> with the platform
+        runs <code className="rounded border border-line bg-surface px-1.5 font-mono text-sm">aok check --publish</code> with the platform
         URL. The token can only publish reports for that agent, and it can be revoked.
       </>
     ),
@@ -260,7 +261,7 @@ function Faq() {
         </div>
         <div className="col-span-12 lg:col-span-8">
           {FAQ.map((f) => (
-            <details key={f.q} className="faq rule-t first:border-t last:border-b last:border-ink">
+            <details key={f.q} className="faq rule-t first:border-t last:border-b last:border-line">
               <summary className="flex items-center justify-between gap-4 py-5 text-lg font-extrabold hover:text-accent">
                 {f.q}
                 <span aria-hidden="true" className="plus text-2xl font-normal leading-none">
@@ -277,6 +278,7 @@ function Faq() {
 }
 
 function FinalCta() {
+  const hasContact = CONTACT_URL.trim().length > 0;
   return (
     <section className="rule-t">
       <div className="container-page grid grid-cols-12 items-end gap-x-0 gap-y-8 py-24 lg:gap-x-12">
@@ -287,7 +289,11 @@ function FinalCta() {
             <LinkButton to="/login" variant="primary" size="lg">
               Log In
             </LinkButton>
-            <SoonButton size="lg">Sign Up</SoonButton>
+            {hasContact && (
+              <a href={CONTACT_URL} className="btn btn-secondary btn-lg">
+                {copy.nav.contact}
+              </a>
+            )}
           </div>
         </div>
       </div>

@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ApiError, api } from "../api";
 import { useAuth } from "../auth";
-import { Button, ErrorBox, Field, Logo, SoonText } from "../ui";
+import { Button, ErrorBox, Field, Logo } from "../ui";
 
 export function Login() {
   const { me, loading, login } = useAuth();
@@ -13,7 +13,7 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // null = still asking the server; true = the real link; false = the "Soon" placeholder
+  // null = still asking the server; true = show password reset link; false = hide link
   const [canReset, setCanReset] = useState<boolean | null>(null);
   useEffect(() => {
     let alive = true;
@@ -70,8 +70,6 @@ export function Login() {
                 <Link to="/forgot-password" className="link text-sm">
                   Forgot password?
                 </Link>
-              ) : canReset === false ? (
-                <SoonText className="text-sm text-subtle">Forgot password?</SoonText>
               ) : undefined
             }
           />
@@ -80,9 +78,6 @@ export function Login() {
             {busy ? "Logging in…" : "Log In"}
           </Button>
         </form>
-        <p className="mt-8 flex flex-wrap items-center gap-2 text-sm text-subtle">
-          Don't have an account? <SoonText className="font-semibold text-ink">Sign up</SoonText>
-        </p>
       </div>
     </main>
   );

@@ -3,11 +3,12 @@ import type { ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useParams } from "react-router-dom";
 import type { AreaNode } from "./api";
 import { areaPath, CatalogProvider, RequireAuth, useAuth, useCatalog } from "./auth";
-import { BRAND, REPO_URL } from "./brand";
-import { Button, cx, LinkButton, Logo, SoonButton, SoonText } from "./ui";
+import { CONTACT_URL } from "./brand";
+import { copy } from "./copy";
+import { Button, cx, LinkButton, Logo } from "./ui";
 
 // ---------------------------------------------------------------------------------------------
-// Public layout: fixed 72px header (logo, centered nav, actions), content and full footer.
+// Public layout: fixed 72px header (logo, centered nav, actions), content and clean footer.
 
 function PublicNavItems({ onNavigate }: { onNavigate?: () => void }) {
   const a = (href: string, label: string) => (
@@ -17,10 +18,9 @@ function PublicNavItems({ onNavigate }: { onNavigate?: () => void }) {
   );
   return (
     <>
-      {a("/#features", "Features")}
-      {a("/#how-it-works", "How it works")}
-      <SoonText className="font-semibold text-subtle">Pricing</SoonText>
-      {a("/#faq", "FAQ")}
+      {a("/#features", copy.nav.features)}
+      {a("/#how-it-works", copy.nav.howItWorks)}
+      {a("/#faq", copy.nav.faq)}
     </>
   );
 }
@@ -30,53 +30,74 @@ export function PublicLayout({ children }: { children?: ReactNode } = {}) {
   const [open, setOpen] = useState(false);
   const loc = useLocation();
   useEffect(() => setOpen(false), [loc.pathname]);
+  const hasContact = CONTACT_URL.trim().length > 0;
 
   return (
     <div className="flex min-h-screen flex-col">
       <a href="#content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-paper focus:p-4">
-        Skip to content
+        {copy.common.skipToContent}
       </a>
-      <header className="rule-b sticky top-0 z-40 bg-paper">
+      <header className="rule-b sticky top-0 z-40 bg-paper/90 backdrop-blur-md">
         <div className="container-page grid h-[72px] grid-cols-[auto_1fr] items-center gap-6 lg:grid-cols-[1fr_auto_1fr]">
           <Logo />
-          <nav aria-label="Main" className="hidden items-center justify-center gap-8 lg:flex">
+          <nav aria-label={copy.aria.mainNav} className="hidden items-center justify-center gap-8 lg:flex">
             <PublicNavItems />
           </nav>
           <div className="flex items-center justify-end gap-3">
             {me ? (
               <LinkButton to="/app" variant="primary" size="sm">
-                Open portal
+                {copy.nav.openPortal}
               </LinkButton>
             ) : (
               <>
-                <LinkButton to="/login" size="sm" className="hidden sm:inline-flex">
-                  Log In
+                {hasContact && (
+                  <a href={CONTACT_URL} className="btn btn-secondary btn-sm hidden sm:inline-flex">
+                    {copy.nav.contact}
+                  </a>
+                )}
+                <LinkButton to="/login" variant="primary" size="sm" className="hidden sm:inline-flex">
+                  {copy.nav.login}
                 </LinkButton>
-                <SoonButton className="hidden sm:inline-flex">Sign Up</SoonButton>
               </>
             )}
-            <Button size="sm" className="lg:hidden" aria-expanded={open} aria-controls="public-menu" onClick={() => setOpen((v) => !v)}>
-              Menu
+            <Button
+              size="sm"
+              className="lg:hidden"
+              aria-expanded={open}
+              aria-controls="public-menu"
+              onClick={() => setOpen((v) => !v)}
+            >
+              {open ? copy.common.close : copy.common.menu}
             </Button>
           </div>
         </div>
         {open && (
-          <nav id="public-menu" aria-label="Menu" className="rule-t bg-paper lg:hidden">
+          <nav id="public-menu" aria-label={copy.aria.mobileMenu} className="rule-t bg-paper lg:hidden">
             <div className="container-page flex flex-col items-start gap-4 py-6">
               <PublicNavItems onNavigate={() => setOpen(false)} />
-              {!me && (
-                <div className="flex flex-wrap gap-3 pt-2">
-                  <LinkButton to="/login" size="sm">
-                    Log In
+              {me ? (
+                <div className="pt-2">
+                  <LinkButton to="/app" variant="primary" size="sm">
+                    {copy.nav.openPortal}
                   </LinkButton>
-                  <SoonButton>Sign Up</SoonButton>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-3 pt-2">
+                  <LinkButton to="/login" variant="primary" size="sm">
+                    {copy.nav.login}
+                  </LinkButton>
+                  {hasContact && (
+                    <a href={CONTACT_URL} className="btn btn-secondary btn-sm">
+                      {copy.nav.contact}
+                    </a>
+                  )}
                 </div>
               )}
             </div>
           </nav>
         )}
       </header>
-      <main id="content" className="flex-1">
+      <main id="content" className="w-full min-w-0 flex-1 overflow-x-clip">
         {children ?? <Outlet />}
       </main>
       <Footer />
@@ -85,49 +106,44 @@ export function PublicLayout({ children }: { children?: ReactNode } = {}) {
 }
 
 function Footer() {
+  const { me } = useAuth();
+  const hasContact = CONTACT_URL.trim().length > 0;
   const col = "flex flex-col items-start gap-3 text-sm";
   const h = "font-extrabold";
   const link = "text-subtle hover:text-accent";
   return (
     <footer className="rule-t">
-      <div className="container-page grid grid-cols-2 gap-x-6 gap-y-12 py-24 lg:grid-cols-[2fr_1fr_1fr_1fr]">
+      <div className="container-page grid grid-cols-2 gap-x-6 gap-y-12 py-24 lg:grid-cols-[2fr_1fr_1fr]">
         <div className="col-span-2 flex flex-col items-start gap-4 lg:col-span-1">
           <Logo />
-          <p className="max-w-xs text-sm text-subtle">
-            Reports for AI agents, organized by area. {BRAND} is the portal of the open-source agent-ops-kit.
-          </p>
-          <div className="flex flex-wrap gap-4 pt-2 text-sm text-subtle">
-            <SoonText>Instagram</SoonText>
-            <SoonText>LinkedIn</SoonText>
-            <SoonText>X</SoonText>
-          </div>
+          <p className="max-w-xs text-sm text-subtle">{copy.footer.description}</p>
         </div>
         <div className={col}>
-          <p className={h}>Product</p>
-          <a href="/#features" className={link}>Features</a>
-          <a href="/#how-it-works" className={link}>How it works</a>
-          <a href="/#faq" className={link}>FAQ</a>
-          <SoonText className="text-subtle">Pricing</SoonText>
-        </div>
-        <div className={col}>
-          <p className={h}>Resources</p>
-          <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className={link}>
-            GitHub
+          <p className={h}>{copy.footer.productHeading}</p>
+          <a href="/#features" className={link}>
+            {copy.nav.features}
           </a>
-          <SoonText className="text-subtle">Docs</SoonText>
-          <SoonText className="text-subtle">Blog</SoonText>
+          <a href="/#how-it-works" className={link}>
+            {copy.nav.howItWorks}
+          </a>
+          <a href="/#faq" className={link}>
+            {copy.nav.faq}
+          </a>
         </div>
         <div className={col}>
-          <p className={h}>Company</p>
-          <SoonText className="text-subtle">Contact</SoonText>
-          <SoonText className="text-subtle">Terms</SoonText>
-          <SoonText className="text-subtle">Privacy</SoonText>
+          <p className={h}>{copy.footer.portalHeading}</p>
+          <Link to={me ? "/app" : "/login"} className={link}>
+            {me ? copy.nav.openPortal : copy.nav.login}
+          </Link>
+          {hasContact && (
+            <a href={CONTACT_URL} className={link}>
+              {copy.nav.contact}
+            </a>
+          )}
         </div>
       </div>
       <div className="rule-t">
-        <p className="container-page py-6 text-sm text-subtle">
-          {BRAND} is a provisional, fictional name. Reports are self-reported and do not guarantee safety.
-        </p>
+        <p className="container-page py-6 text-sm text-subtle">{copy.footer.disclaimer}</p>
       </div>
     </footer>
   );
@@ -169,7 +185,7 @@ function TreeNode({ node, selected, trail }: { node: AreaNode; selected: number 
         </Link>
       </div>
       {has && open && (
-        <ul className="m-0 ml-3 list-none border-l border-ink p-0 pl-2">
+        <ul className="m-0 ml-3 list-none border-l border-line p-0 pl-2">
           {node.children.map((c) => (
             <TreeNode key={c.id} node={c} selected={selected} trail={trail} />
           ))}
@@ -266,18 +282,18 @@ function Shell() {
   return (
     <div className="min-h-screen">
       <a href="#content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-paper focus:p-4">
-        Skip to content
+        {copy.common.skipToContent}
       </a>
       <div className="rule-b sticky top-0 z-40 flex h-16 items-center justify-between bg-paper px-6 lg:hidden">
         <Logo to="/app" />
         <Button size="sm" aria-expanded={open} aria-controls="app-menu" onClick={() => setOpen((v) => !v)}>
-          {open ? "Close" : "Menu"}
+          {open ? copy.common.close : copy.common.menu}
         </Button>
       </div>
       <aside
         id="app-menu"
         className={cx(
-          "z-30 bg-paper lg:fixed lg:inset-y-0 lg:left-0 lg:block lg:w-72 lg:border-r lg:border-ink",
+          "z-30 bg-paper lg:fixed lg:inset-y-0 lg:left-0 lg:block lg:w-72 lg:border-r lg:border-line",
           open ? "fixed inset-x-0 bottom-0 top-16 block" : "hidden",
         )}
       >
