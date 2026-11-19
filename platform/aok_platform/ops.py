@@ -223,16 +223,31 @@ def _operator_from_request(request: Request, s: Session) -> PlatformOperator | N
 
 
 def _org_stats(s: Session, org_ids: list[int]) -> dict[int, dict]:
+    if not org_ids:
+        return {}
+
     def counts(q):
         return dict(s.execute(q).all())
 
-    areas = counts(select(Area.org_id, func.count(Area.id)).group_by(Area.org_id))
-    agents = counts(select(Agent.org_id, func.count(Agent.id)).group_by(Agent.org_id))
-    users = counts(select(User.org_id, func.count(User.id)).group_by(User.org_id))
+    areas = counts(
+        select(Area.org_id, func.count(Area.id))
+        .where(Area.org_id.in_(org_ids))
+        .group_by(Area.org_id)
+    )
+    agents = counts(
+        select(Agent.org_id, func.count(Agent.id))
+        .where(Agent.org_id.in_(org_ids))
+        .group_by(Agent.org_id)
+    )
+    users = counts(
+        select(User.org_id, func.count(User.id))
+        .where(User.org_id.in_(org_ids))
+        .group_by(User.org_id)
+    )
     tokens = counts(
         select(Agent.org_id, func.count(AgentCredential.id))
         .join(Agent, Agent.id == AgentCredential.agent_id)
-        .where(AgentCredential.revoked_at.is_(None))
+        .where(Agent.org_id.in_(org_ids), AgentCredential.revoked_at.is_(None))
         .group_by(Agent.org_id)
     )
     reports = {
@@ -240,6 +255,7 @@ def _org_stats(s: Session, org_ids: list[int]) -> dict[int, dict]:
         for org, n, last in s.execute(
             select(Agent.org_id, func.count(ReportVersion.id), func.max(ReportVersion.published_at))
             .join(Agent, Agent.id == ReportVersion.agent_id)
+            .where(Agent.org_id.in_(org_ids))
             .group_by(Agent.org_id)
         ).all()
     }
@@ -327,8 +343,23 @@ def build_ops_router(get_session, throttle: LoginThrottle) -> APIRouter:
     # ---- organizações ------------------------------------------------------------------------
 
     @r.get("/organizations", response_model=list[OrgListItem])
-    def list_orgs(op: PlatformOperator = Depends(current_operator), s: Session = Depends(get_session)):
-        orgs = list(s.scalars(select(Organization).order_by(Organization.name, Organization.id)))
+    def list_orgs(
+        response: Response,
+        limit: int | None = Query(default=None, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        op: PlatformOperator = Depends(current_operator),
+        s: Session = Depends(get_session),
+    ):
+        total = s.scalar(select(func.count(Organization.id))) or 0
+        response.headers["X-Total-Count"] = str(total)
+        stmt = select(Organization).order_by(Organization.name, Organization.id)
+        if offset > 0:
+            stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        orgs = list(s.scalars(stmt))
+        if not orgs:
+            return []
         stats = _org_stats(s, [o.id for o in orgs])
         return [
             OrgListItem(id=o.id, slug=o.slug, name=o.name, active=o.active, created_at=o.created_at, **stats[o.id])
@@ -424,7 +455,9 @@ def build_ops_router(get_session, throttle: LoginThrottle) -> APIRouter:
     @r.get("/organizations/{org_id}", response_model=OrgDetail)
     def org_detail(
         org_id: int,
+        response: Response,
         limit: int = Query(200, ge=1, le=500),
+        offset: int = Query(0, ge=0),
         op: PlatformOperator = Depends(current_operator),
         s: Session = Depends(get_session),
     ):
@@ -439,28 +472,32 @@ def build_ops_router(get_session, throttle: LoginThrottle) -> APIRouter:
 
         agents = list(s.scalars(select(Agent).where(Agent.org_id == org.id).order_by(Agent.name, Agent.id)))
         agent_ids = [a.id for a in agents]
-        tokens = dict(
-            s.execute(
-                select(AgentCredential.agent_id, func.count(AgentCredential.id))
-                .where(AgentCredential.agent_id.in_(agent_ids), AgentCredential.revoked_at.is_(None))
-                .group_by(AgentCredential.agent_id)
-            ).all()
-        )
-        # Último relatório de cada agente: consulta própria, só as colunas necessárias (sem summary_json).
-        newest = (
-            select(ReportVersion.agent_id, func.max(ReportVersion.seq).label("seq"))
-            .where(ReportVersion.agent_id.in_(agent_ids))
-            .group_by(ReportVersion.agent_id)
-            .subquery()
-        )
-        latest = {
-            agent_id: (semaforo, published)
-            for agent_id, semaforo, published in s.execute(
-                select(ReportVersion.agent_id, ReportVersion.status_semaforo, ReportVersion.published_at).join(
-                    newest, (newest.c.agent_id == ReportVersion.agent_id) & (newest.c.seq == ReportVersion.seq)
-                )
-            ).all()
-        }
+        if agent_ids:
+            tokens = dict(
+                s.execute(
+                    select(AgentCredential.agent_id, func.count(AgentCredential.id))
+                    .where(AgentCredential.agent_id.in_(agent_ids), AgentCredential.revoked_at.is_(None))
+                    .group_by(AgentCredential.agent_id)
+                ).all()
+            )
+            # Último relatório de cada agente: consulta própria, só as colunas necessárias (sem summary_json).
+            newest = (
+                select(ReportVersion.agent_id, func.max(ReportVersion.seq).label("seq"))
+                .where(ReportVersion.agent_id.in_(agent_ids))
+                .group_by(ReportVersion.agent_id)
+                .subquery()
+            )
+            latest = {
+                agent_id: (semaforo, published)
+                for agent_id, semaforo, published in s.execute(
+                    select(ReportVersion.agent_id, ReportVersion.status_semaforo, ReportVersion.published_at).join(
+                        newest, (newest.c.agent_id == ReportVersion.agent_id) & (newest.c.seq == ReportVersion.seq)
+                    )
+                ).all()
+            }
+        else:
+            tokens = {}
+            latest = {}
         slug_of = {a.id: a.slug for a in agents}
         agent_meta = [
             AgentMeta(
@@ -478,44 +515,55 @@ def build_ops_router(get_session, throttle: LoginThrottle) -> APIRouter:
 
         users = list(s.scalars(select(User).where(User.org_id == org.id).order_by(User.email, User.id)))
         access: dict[int, list[AccessMeta]] = {}
-        for m in s.scalars(
-            select(Membership).where(Membership.user_id.in_([u.id for u in users])).order_by(Membership.id)
-        ):
-            access.setdefault(m.user_id, []).append(AccessMeta(role=m.role, area_name=area_name.get(m.area_id)))
+        if users:
+            for m in s.scalars(
+                select(Membership).where(Membership.user_id.in_([u.id for u in users])).order_by(Membership.id)
+            ):
+                access.setdefault(m.user_id, []).append(AccessMeta(role=m.role, area_name=area_name.get(m.area_id)))
         user_meta = [
             UserMeta(id=u.id, email=u.email, active=u.active, access=access.get(u.id, [])) for u in users
         ]
 
-        # Versões: LIMIT no SQL; a data de geração é extraída do JSON no banco (não carrega o resumo inteiro).
-        generated = ReportVersion.summary_json["generated_at"].as_string()
-        report_rows = s.execute(
-            select(
-                ReportVersion.id,
-                ReportVersion.agent_id,
-                ReportVersion.seq,
-                ReportVersion.status_semaforo,
-                generated,
-                ReportVersion.published_at,
-                ReportVersion.n_cases,
-                ReportVersion.model,
+        if agent_ids:
+            total_reports = (
+                s.scalar(select(func.count(ReportVersion.id)).where(ReportVersion.agent_id.in_(agent_ids)))
+                or 0
             )
-            .where(ReportVersion.agent_id.in_(agent_ids))
-            .order_by(ReportVersion.published_at.desc(), ReportVersion.id.desc())
-            .limit(limit)
-        ).all()
-        reports = [
-            ReportMeta(
-                id=rid,
-                agent_slug=slug_of[agent_id],
-                seq=seq,
-                status_semaforo=semaforo,
-                generated_at=gen,
-                published_at=published,
-                n_cases=n_cases,
-                model=model,
-            )
-            for rid, agent_id, seq, semaforo, gen, published, n_cases, model in report_rows
-        ]
+            # Versões: LIMIT/OFFSET no SQL; a data de geração é extraída do JSON no banco (não carrega o resumo inteiro).
+            generated = ReportVersion.summary_json["generated_at"].as_string()
+            report_rows = s.execute(
+                select(
+                    ReportVersion.id,
+                    ReportVersion.agent_id,
+                    ReportVersion.seq,
+                    ReportVersion.status_semaforo,
+                    generated,
+                    ReportVersion.published_at,
+                    ReportVersion.n_cases,
+                    ReportVersion.model,
+                )
+                .where(ReportVersion.agent_id.in_(agent_ids))
+                .order_by(ReportVersion.published_at.desc(), ReportVersion.id.desc())
+                .offset(offset)
+                .limit(limit)
+            ).all()
+            reports = [
+                ReportMeta(
+                    id=rid,
+                    agent_slug=slug_of[agent_id],
+                    seq=seq,
+                    status_semaforo=semaforo,
+                    generated_at=gen,
+                    published_at=published,
+                    n_cases=n_cases,
+                    model=model,
+                )
+                for rid, agent_id, seq, semaforo, gen, published, n_cases, model in report_rows
+            ]
+        else:
+            total_reports = 0
+            reports = []
+        response.headers["X-Total-Count"] = str(total_reports)
         return OrgDetail(
             id=org.id,
             slug=org.slug,

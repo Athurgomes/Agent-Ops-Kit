@@ -118,7 +118,9 @@ exemplo do repositório.
 Só leitura, para `org_admin` (sessão) ou chave de bootstrap, sempre limitadas à organização de quem
 chama: `GET /v1/admin/areas` (com `agent_count`), `/agents` (inclui inativos, `tokens_active_count`,
 `last_report_at`), `/agents/{id}/tokens` (só metadados: nunca o token nem o hash), `/users`
-(vínculos resumidos; nunca a senha nem o hash) e `/memberships`. Não há exclusão de áreas.
+(vínculos resumidos; nunca a senha nem o hash) e `/memberships`. Todas suportam paginação
+retrocompatível via `limit` opcional (1 a 500) e `offset` (padrão `0`), devolvendo a lista completa
+quando `limit` não é informado e o cabeçalho `X-Total-Count` com o total da organização. Não há exclusão de áreas.
 Toda escrita admin (criar/alterar área, agente, usuário, vínculo; emitir/revogar token; trocar
 senha; ativar/desativar) grava um `admin_event` (quando, quem, ação, alvo; sem segredos; imutável).
 `GET /v1/admin/events` (só sessão de `org_admin`; a chave de bootstrap não lê) devolve os mais
@@ -184,7 +186,7 @@ python -m aok_platform.create_operator --email ops@example.com --reset-password 
 continua barrado até rodar de novo com `--activate` (que só vale junto com `--reset-password`).
 
 Rotas (todas com sessão de operador; escritas vão para `operator_event`): `POST /v1/ops/auth/login|logout`,
-`GET /v1/ops/auth/me`, `GET|POST /v1/ops/organizations`, `GET|PATCH /v1/ops/organizations/{id}` (sem DELETE),
+`GET /v1/ops/auth/me`, `GET|POST /v1/ops/organizations` (`GET` aceita `limit` opcional de 1 a 500, `offset` e envia `X-Total-Count`), `GET|PATCH /v1/ops/organizations/{id}` (sem DELETE; no `GET`, `reports` aceita `limit` de 1 a 500, padrão 200, e `offset`, com `X-Total-Count` igual ao total de versões da organização),
 `POST /v1/ops/organizations/{id}/admins` e `.../admins/{user_id}/reset-password` (a senha gerada volta
 uma única vez), `GET /v1/ops/organizations/{id}/events` e `GET /v1/ops/events`. O operador só vê
 metadados: nenhuma rota devolve conteúdo de relatório, download, token, hash ou senha (ADR-010).

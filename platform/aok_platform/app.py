@@ -281,23 +281,48 @@ def _revoke_sessions(s: Session, user_id: int) -> None:
         row.revoked_at = now
 
 
+def _paginate(stmt, limit: int | None, offset: int):
+    if offset > 0:
+        stmt = stmt.offset(offset)
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    return stmt
+
+
 def build_admin_router(get_session, require_admin, current_org_admin) -> APIRouter:
     r = APIRouter(prefix="/v1/admin", dependencies=[Depends(require_admin)])
 
     # ---- listagens (somente leitura, escopo na organização) ------------------------------------
 
     @r.get("/areas", response_model=list[AreaListItem])
-    def list_areas(actor: Actor = Depends(require_admin), s: Session = Depends(get_session)):
+    def list_areas(
+        response: Response,
+        limit: int | None = Query(default=None, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        actor: Actor = Depends(require_admin),
+        s: Session = Depends(get_session),
+    ):
+        total = s.scalar(select(func.count(Area.id)).where(Area.org_id == actor.org_id)) or 0
+        response.headers["X-Total-Count"] = str(total)
+        areas = list(
+            s.scalars(
+                _paginate(
+                    select(Area).where(Area.org_id == actor.org_id).order_by(Area.name, Area.id),
+                    limit,
+                    offset,
+                )
+            )
+        )
+        if not areas:
+            return []
+        area_ids = [a.id for a in areas]
         counts = dict(
             s.execute(
                 select(Agent.area_id, func.count(Agent.id))
                 .join(Area, Area.id == Agent.area_id)
-                .where(Area.org_id == actor.org_id)
+                .where(Area.org_id == actor.org_id, Agent.area_id.in_(area_ids))
                 .group_by(Agent.area_id)
             ).all()
-        )
-        areas = s.scalars(
-            select(Area).where(Area.org_id == actor.org_id).order_by(Area.name, Area.id)
         )
         return [
             AreaListItem(id=a.id, name=a.name, parent_id=a.parent_id, agent_count=counts.get(a.id, 0))
@@ -305,25 +330,47 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
         ]
 
     @r.get("/agents", response_model=list[AgentListItem])
-    def list_agents(actor: Actor = Depends(require_admin), s: Session = Depends(get_session)):
+    def list_agents(
+        response: Response,
+        limit: int | None = Query(default=None, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        actor: Actor = Depends(require_admin),
+        s: Session = Depends(get_session),
+    ):
+        total = (
+            s.scalar(
+                select(func.count(Agent.id))
+                .join(Area, Area.id == Agent.area_id)
+                .where(Area.org_id == actor.org_id)
+            )
+            or 0
+        )
+        response.headers["X-Total-Count"] = str(total)
         rows = s.execute(
-            select(Agent, Area.name)
-            .join(Area, Area.id == Agent.area_id)
-            .where(Area.org_id == actor.org_id)
-            .order_by(Agent.name, Agent.id)
+            _paginate(
+                select(Agent, Area.name)
+                .join(Area, Area.id == Agent.area_id)
+                .where(Area.org_id == actor.org_id)
+                .order_by(Agent.name, Agent.id),
+                limit,
+                offset,
+            )
         ).all()
+        if not rows:
+            return []
+        agent_ids = [a.id for a, _ in rows]
         tokens = dict(
             s.execute(
                 select(AgentCredential.agent_id, func.count(AgentCredential.id))
-                .where(AgentCredential.revoked_at.is_(None))
+                .where(AgentCredential.agent_id.in_(agent_ids), AgentCredential.revoked_at.is_(None))
                 .group_by(AgentCredential.agent_id)
             ).all()
         )
         last = dict(
             s.execute(
-                select(ReportVersion.agent_id, func.max(ReportVersion.published_at)).group_by(
-                    ReportVersion.agent_id
-                )
+                select(ReportVersion.agent_id, func.max(ReportVersion.published_at))
+                .where(ReportVersion.agent_id.in_(agent_ids))
+                .group_by(ReportVersion.agent_id)
             ).all()
         )
         return [
@@ -342,13 +389,29 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
 
     @r.get("/agents/{agent_id}/tokens", response_model=list[TokenMeta])
     def list_tokens(
-        agent_id: int, actor: Actor = Depends(require_admin), s: Session = Depends(get_session)
+        agent_id: int,
+        response: Response,
+        limit: int | None = Query(default=None, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        actor: Actor = Depends(require_admin),
+        s: Session = Depends(get_session),
     ):
         _agent_or_404(s, agent_id, actor.org_id)
+        total = (
+            s.scalar(
+                select(func.count(AgentCredential.id)).where(AgentCredential.agent_id == agent_id)
+            )
+            or 0
+        )
+        response.headers["X-Total-Count"] = str(total)
         rows = s.scalars(
-            select(AgentCredential)
-            .where(AgentCredential.agent_id == agent_id)
-            .order_by(AgentCredential.id.desc())
+            _paginate(
+                select(AgentCredential)
+                .where(AgentCredential.agent_id == agent_id)
+                .order_by(AgentCredential.id.desc()),
+                limit,
+                offset,
+            )
         )
         return [
             TokenMeta(
@@ -361,10 +424,26 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
         ]
 
     @r.get("/users", response_model=list[UserListItem])
-    def list_users(actor: Actor = Depends(require_admin), s: Session = Depends(get_session)):
+    def list_users(
+        response: Response,
+        limit: int | None = Query(default=None, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        actor: Actor = Depends(require_admin),
+        s: Session = Depends(get_session),
+    ):
+        total = s.scalar(select(func.count(User.id)).where(User.org_id == actor.org_id)) or 0
+        response.headers["X-Total-Count"] = str(total)
         users = list(
-            s.scalars(select(User).where(User.org_id == actor.org_id).order_by(User.email, User.id))
+            s.scalars(
+                _paginate(
+                    select(User).where(User.org_id == actor.org_id).order_by(User.email, User.id),
+                    limit,
+                    offset,
+                )
+            )
         )
+        if not users:
+            return []
         area_names = dict(
             s.execute(select(Area.id, Area.name).where(Area.org_id == actor.org_id)).all()
         )
@@ -391,16 +470,46 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
         ]
 
     @r.get("/memberships", response_model=list[MembershipListItem])
-    def list_memberships(actor: Actor = Depends(require_admin), s: Session = Depends(get_session)):
-        area_names = dict(
-            s.execute(select(Area.id, Area.name).where(Area.org_id == actor.org_id)).all()
+    def list_memberships(
+        response: Response,
+        limit: int | None = Query(default=None, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        actor: Actor = Depends(require_admin),
+        s: Session = Depends(get_session),
+    ):
+        total = (
+            s.scalar(
+                select(func.count(Membership.id))
+                .join(User, User.id == Membership.user_id)
+                .where(User.org_id == actor.org_id)
+            )
+            or 0
         )
+        response.headers["X-Total-Count"] = str(total)
         rows = s.execute(
-            select(Membership, User.email)
-            .join(User, User.id == Membership.user_id)
-            .where(User.org_id == actor.org_id)
-            .order_by(Membership.id)
+            _paginate(
+                select(Membership, User.email)
+                .join(User, User.id == Membership.user_id)
+                .where(User.org_id == actor.org_id)
+                .order_by(Membership.id),
+                limit,
+                offset,
+            )
         ).all()
+        if not rows:
+            return []
+        area_ids = {m.area_id for m, _ in rows if m.area_id is not None}
+        area_names = (
+            dict(
+                s.execute(
+                    select(Area.id, Area.name).where(
+                        Area.org_id == actor.org_id, Area.id.in_(area_ids)
+                    )
+                ).all()
+            )
+            if area_ids
+            else {}
+        )
         return [
             MembershipListItem(
                 id=m.id,
