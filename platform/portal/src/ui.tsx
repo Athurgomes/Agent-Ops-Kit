@@ -47,32 +47,32 @@ export function LinkButton({
 
 // ---- blocks ----------------------------------------------------------------------------------
 
-/** Rounded panel surface with subtle border and shadow. */
+/** Flat logbook panel with 1px ink border. */
 export function Box({ className, children }: { className?: string; children: ReactNode }) {
   return <div className={cx("box p-6", className)}>{children}</div>;
 }
 
-/** Small pill label. */
+/** Uppercase mono stamp with 1px border. */
 export function Tag({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-block rounded-full border border-line bg-surface px-2.5 py-0.5 font-mono text-xs font-semibold">
+    <span className="inline-block rounded-[2px] border border-ink bg-surface px-2 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-ink">
       {children}
     </span>
   );
 }
 
-/** Traffic-light label: color + dot + text (never color alone). Colors only ever mean the result. */
+/** Traffic-light label: color + square mark + text (never color alone). Colors only ever mean the result. */
 export function SemaforoBadge({ value, size = "md" }: { value: string; size?: "md" | "lg" }) {
   const s = semaforoOf(value);
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-line font-bold",
+        "inline-flex items-center gap-2 whitespace-nowrap rounded-[2px] border border-ink/40 font-mono font-semibold uppercase tracking-[0.04em]",
         s.cls,
-        size === "lg" ? "px-4 py-2 text-lg" : "px-2.5 py-0.5 text-sm",
+        size === "lg" ? "px-4 py-2 text-base" : "px-2.5 py-0.5 text-xs",
       )}
     >
-      <span aria-hidden="true" className={cx("size-2.5 rounded-full", s.dot)} />
+      <span aria-hidden="true" className={cx("size-2.5 shrink-0", s.dot)} />
       <span className="sr-only">{copy.aria.trafficLightPrefix}</span>
       {s.label}
     </span>
@@ -98,18 +98,18 @@ export function Loading({ label = copy.common.loading }: { label?: string }) {
   return (
     <div role="status" className="flex animate-pulse flex-col gap-4" aria-live="polite">
       <span className="sr-only">{label}</span>
-      <div className="h-8 w-1/3 rounded-xl bg-hair" />
-      <div className="h-20 w-full rounded-xl bg-hair/60" />
-      <div className="h-20 w-full rounded-xl bg-hair/60" />
+      <div className="h-8 w-1/3 border border-line bg-hair" />
+      <div className="h-20 w-full border border-line bg-surface" />
+      <div className="h-20 w-full border border-line bg-surface" />
     </div>
   );
 }
 
 export function ErrorBox({ children }: { children: ReactNode }) {
   return (
-    <div role="alert" className="flex items-start gap-3 rounded-2xl border border-[#fecaca] bg-[#fef2f2] p-4 text-[#991b1b]">
-      <span aria-hidden="true" className="font-black">
-        !
+    <div role="alert" className="flex items-start gap-3 border border-[#991b1b] bg-[#fef2f2] p-4 text-[#991b1b]">
+      <span aria-hidden="true" className="font-mono font-semibold">
+        [!]
       </span>
       <div>{children}</div>
     </div>
@@ -118,7 +118,7 @@ export function ErrorBox({ children }: { children: ReactNode }) {
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="flex flex-col items-start gap-2 rounded-3xl border border-dashed border-line bg-surface/50 p-12">
+    <div className="flex flex-col items-start gap-2 border border-dashed border-ink/40 bg-surface p-10">
       <p className="heading text-2xl">{title}</p>
       {children && <p className="max-w-xl text-subtle">{children}</p>}
     </div>
@@ -145,7 +145,7 @@ export function Field({
       <input
         id={id}
         aria-describedby={hint ? `${id}-hint` : undefined}
-        className="rounded-xl border border-line bg-paper px-4 py-3 text-ink focus:border-accent"
+        className="rounded-[2px] border border-ink/35 bg-paper px-4 py-3 text-ink focus:border-accent"
         {...p}
       />
       {hint && (
@@ -168,7 +168,11 @@ export function Select({
       <label htmlFor={id} className="text-sm font-bold">
         {label}
       </label>
-      <select id={id} className="rounded-xl border border-line bg-paper px-4 py-3 text-ink focus:border-accent" {...p}>
+      <select
+        id={id}
+        className="rounded-[2px] border border-ink/35 bg-paper px-4 py-3 text-ink focus:border-accent"
+        {...p}
+      >
         {children}
       </select>
     </div>
@@ -181,7 +185,7 @@ export type Crumb = { to?: string; label: string };
 export function Breadcrumbs({ items }: { items: Crumb[] }) {
   return (
     <nav aria-label={copy.aria.breadcrumbs}>
-      <ol className="m-0 flex list-none flex-wrap items-center gap-x-2 gap-y-1 p-0 text-sm text-subtle">
+      <ol className="m-0 flex list-none flex-wrap items-center gap-x-2 gap-y-1 p-0 font-mono text-xs uppercase tracking-[0.06em] text-subtle">
         {items.map((c, i) => (
           <li key={i} className="flex min-w-0 items-center gap-2">
             {i > 0 && <span aria-hidden="true">/</span>}
@@ -205,16 +209,25 @@ export function PageHeader({
   crumbs,
   title,
   lead,
+  stamp,
   children,
 }: {
   crumbs: Crumb[];
   title: string;
   lead?: ReactNode;
+  stamp?: string;
   children?: ReactNode;
 }) {
   return (
-    <header className="rule-b mb-12 flex flex-col gap-4 pb-8">
-      <Breadcrumbs items={crumbs} />
+    <header className="mb-10 flex flex-col gap-4 border-b border-ink pb-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Breadcrumbs items={crumbs} />
+        {stamp && (
+          <span className="border border-ink bg-surface px-2.5 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-ink">
+            {stamp}
+          </span>
+        )}
+      </div>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <Title className="min-w-0 max-w-3xl">{title}</Title>
         {children}

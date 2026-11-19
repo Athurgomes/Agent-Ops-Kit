@@ -31,7 +31,7 @@ export function Modal({
       aria-labelledby={id}
       onClose={onClose}
       className={cx(
-        "box m-auto w-[calc(100%-32px)] p-8 backdrop:bg-ink/40 backdrop:backdrop-blur-[2px]",
+        "box m-auto w-[calc(100%-32px)] p-8 backdrop:bg-ink/45",
         wide ? "max-w-2xl" : "max-w-lg",
       )}
     >
@@ -145,7 +145,7 @@ export function OneTimeSecret({
       </p>
       <p className="heading text-xl">{title}</p>
       <p className="mt-2 font-semibold">{copy.dialogs.secretWarning}</p>
-      <p className="mt-4 break-all rounded-xl border border-line bg-surface p-3 font-mono text-sm select-all">{secret}</p>
+      <p className="mt-4 break-all border border-ink bg-surface p-3 font-mono text-sm select-all">{secret}</p>
       <div className="mt-4 flex flex-wrap items-center gap-4">
         <CopyButton text={secret} />
         <Button size="sm" variant="primary" onClick={onDismiss}>

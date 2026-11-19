@@ -69,7 +69,7 @@ function drawAsciiFrame(
   }
 
   const fontSize = Math.max(10, Math.round(cell * 0.78));
-  ctx.font = `600 ${fontSize}px "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, Consolas, monospace`;
+  ctx.font = `600 ${fontSize}px "IBM Plex Mono", ui-monospace, monospace`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 

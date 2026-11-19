@@ -49,15 +49,3 @@ export function Reveal({
     </div>
   );
 }
-
-export function SectionDivider() {
-  return (
-    <div aria-hidden="true" className="container-page">
-      <div className="flex items-center gap-3 text-subtle/60">
-        <span className="select-none font-mono text-xs leading-none">+</span>
-        <div className="h-px flex-1" style={{ backgroundColor: "var(--line)" }} />
-        <span className="select-none font-mono text-xs leading-none">+</span>
-      </div>
-    </div>
-  );
-}

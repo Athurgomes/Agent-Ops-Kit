@@ -14,7 +14,7 @@ export function Logo({
   className?: string;
 }) {
   const cls = [
-    "inline-flex items-baseline font-extrabold leading-none tracking-[-0.04em] no-underline",
+    "font-display inline-flex items-baseline font-extrabold leading-none tracking-[-0.04em] no-underline",
     size,
     className,
   ]

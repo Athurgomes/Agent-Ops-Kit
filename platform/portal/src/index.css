@@ -1,30 +1,27 @@
 @import "tailwindcss";
 
-/* Design tokens for Farol.
-   Rule: crisp ink on white paper, subtle hairline surfaces, vivid blue reserved for primary CTAs,
-   links, focus rings, the brand dot, and active states. */
+/* Tokens do Diário de Bordo / Carta Náutica do Farol.
+   Papel #ffffff, tinta #0a0a0a, superfície #f7f7f5, azul #2563eb reservado para
+   CTAs primários, links, foco, o ponto da marca e estados ativos. */
 :root {
   --ink: #0a0a0a;
   --paper: #ffffff;
-  --surface: #fafafa;
-  --subtle: #525252; /* >7:1 contrast on #ffffff */
-  --hair: #e5e7eb;
+  --surface: #f7f7f5;
+  --subtle: #4a4a4a; /* > 8:1 sobre #ffffff e #f7f7f5 */
+  --hair: #e2e2dd;
   --accent: #2563eb;
   --accent-hover: #1d4fd8;
   --accent-soft: rgba(37, 99, 235, 0.08);
-  --line: rgba(10, 10, 10, 0.10);
-  --panel-border: rgba(10, 10, 10, 0.06);
-  --radius-panel: 24px;
-  --radius-control: 12px;
-  --radius-pill: 9999px;
-  --shadow-panel: 0 20px 50px -20px rgba(37, 99, 235, 0.14), 0 4px 16px -4px rgba(10, 10, 10, 0.10);
-  --shadow-btn: 0 8px 24px -8px rgba(37, 99, 235, 0.35), 0 2px 6px -2px rgba(10, 10, 10, 0.12);
-  --shadow-btn-hover: 0 12px 28px -8px rgba(37, 99, 235, 0.45), 0 4px 10px -2px rgba(10, 10, 10, 0.14);
+  --rule: #0a0a0a;
+  --line: rgba(10, 10, 10, 0.16);
+  --radius-panel: 0px;
+  --radius-control: 2px;
   --focus: #2563eb;
   --container: 1200px;
   --header-h: 72px;
-  --font-body: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-display: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 
 @theme inline {
@@ -34,8 +31,10 @@
   --color-subtle: var(--subtle);
   --color-hair: var(--hair);
   --color-accent: var(--accent);
+  --color-rule: var(--rule);
   --color-line: var(--line);
   --color-accent-soft: var(--accent-soft);
+  --font-display: var(--font-display);
   --font-sans: var(--font-body);
   --font-mono: var(--font-mono);
   --text-sm: 0.9375rem;
@@ -54,7 +53,7 @@
     margin: 0;
     min-height: 100vh;
     overflow-x: clip;
-    font-size: 1.0625rem; /* 17px */
+    font-size: 1.0625rem;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
   }
@@ -101,10 +100,11 @@
     padding-inline: 24px;
   }
   .heading {
+    font-family: var(--font-display);
     color: var(--ink);
     font-weight: 800;
     letter-spacing: -0.035em;
-    line-height: 1.05;
+    line-height: 1.02;
     overflow-wrap: anywhere;
   }
   .eyebrow {
@@ -116,16 +116,37 @@
     color: var(--subtle);
   }
   .box {
-    border: 1.5px solid var(--panel-border);
+    border: 1px solid var(--ink);
     border-radius: var(--radius-panel);
     background: var(--paper);
-    box-shadow: var(--shadow-panel);
   }
   .rule-t {
     border-top: 1px solid var(--line);
   }
   .rule-b {
     border-bottom: 1px solid var(--line);
+  }
+  .ruler-x {
+    height: 8px;
+    width: 100%;
+    background-image:
+      repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 10px),
+      repeating-linear-gradient(to right, var(--ink) 0 1px, transparent 1px 50px);
+    background-size: 10px 4px, 50px 8px;
+    background-repeat: repeat-x;
+    background-position: bottom left;
+    border-bottom: 1px solid var(--ink);
+  }
+  .ruler-x-light {
+    height: 8px;
+    width: 100%;
+    background-image:
+      repeating-linear-gradient(to right, rgba(255, 255, 255, 0.32) 0 1px, transparent 1px 10px),
+      repeating-linear-gradient(to right, rgba(255, 255, 255, 0.85) 0 1px, transparent 1px 50px);
+    background-size: 10px 4px, 50px 8px;
+    background-repeat: repeat-x;
+    background-position: bottom left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.55);
   }
   .link {
     color: var(--accent);
@@ -140,8 +161,8 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-pill);
+    border: 1px solid var(--ink);
+    border-radius: var(--radius-control);
     padding: 10px 22px;
     font-weight: 600;
     line-height: 1.2;
@@ -149,7 +170,7 @@
     background: var(--paper);
     text-decoration: none;
     cursor: pointer;
-    transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease, border-color 160ms ease;
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
   }
   .btn-sm {
     padding: 7px 16px;
@@ -161,42 +182,37 @@
   }
   .btn-primary {
     background: var(--accent);
-    color: #fff;
-    border-color: transparent;
-    box-shadow: var(--shadow-btn);
+    color: #ffffff;
+    border-color: var(--accent);
   }
   .btn-primary:hover:not(:disabled) {
-    transform: translateY(-1px);
     background: var(--accent-hover);
-    box-shadow: var(--shadow-btn-hover);
-  }
-  .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
-    box-shadow: var(--shadow-btn);
+    border-color: var(--accent-hover);
   }
   .btn-secondary {
-    border-color: rgba(10, 10, 10, 0.16);
+    border-color: var(--ink);
+    background: var(--paper);
+    color: var(--ink);
   }
   .btn-secondary:hover:not(:disabled) {
     background: var(--surface);
-    border-color: var(--ink);
   }
   .btn-dark {
     background: var(--ink);
-    color: #fff;
-    border-color: transparent;
+    color: #ffffff;
+    border-color: var(--ink);
   }
   .btn-dark:hover:not(:disabled) {
     background: #1f1f1f;
   }
   .btn-ghost-dark {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.04);
     color: #ffffff;
-    border-color: rgba(255, 255, 255, 0.24);
+    border-color: rgba(255, 255, 255, 0.48);
   }
   .btn-ghost-dark:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.14);
-    border-color: rgba(255, 255, 255, 0.52);
+    border-color: #ffffff;
   }
   .btn:disabled {
     opacity: 0.5;
@@ -217,7 +233,7 @@
   .navlink-dark {
     display: inline-block;
     padding: 4px 0;
-    color: rgba(255, 255, 255, 0.84);
+    color: rgba(255, 255, 255, 0.88);
     font-weight: 600;
     text-decoration: none;
     border-bottom: 2px solid transparent;
@@ -236,21 +252,6 @@
       will-change: auto;
     }
   }
-  .aura-light {
-    position: relative;
-    background-color: var(--paper);
-  }
-  .aura-light::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background:
-      radial-gradient(46% 54% at 82% 24%, rgba(37, 99, 235, 0.22), transparent 72%),
-      radial-gradient(42% 48% at 16% 78%, rgba(10, 10, 10, 0.045), transparent 70%),
-      radial-gradient(38% 42% at 62% 84%, rgba(10, 10, 10, 0.035), transparent 70%);
-    filter: blur(28px);
-  }
   .reveal {
     opacity: 0;
     transform: translateY(18px);
@@ -265,22 +266,19 @@
   @keyframes closing-dot-enter {
     0% {
       opacity: 0.4;
-      transform: scale(0.75);
-      box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.35);
+      transform: scale(0.78);
     }
     60% {
       opacity: 1;
       transform: scale(1.06);
-      box-shadow: 0 0 0 12px rgba(37, 99, 235, 0);
     }
     100% {
       opacity: 1;
       transform: scale(1);
-      box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
     }
   }
   .is-visible .closing-dot {
-    animation: closing-dot-enter 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: closing-dot-enter 850ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
   @media (prefers-reduced-motion: reduce) {
     .reveal {
@@ -295,16 +293,18 @@
   .side-item {
     display: block;
     padding: 8px 14px;
-    border-radius: 10px;
+    border-left: 2px solid transparent;
+    border-radius: 0px;
     font-weight: 500;
     text-decoration: none;
-    transition: background-color 140ms ease, color 140ms ease;
+    transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
   }
   .side-item:hover {
     background: var(--surface);
   }
   .side-item.active {
     background: var(--accent-soft);
+    border-left-color: var(--accent);
     color: var(--accent);
     font-weight: 700;
   }
@@ -332,13 +332,14 @@
     position: sticky;
     top: 0;
     z-index: 1;
-    background: var(--paper);
+    background: var(--surface);
+    border-bottom: 1px solid var(--ink);
     font-family: var(--font-mono);
     font-size: 0.75rem;
-    font-weight: 700;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--subtle);
+    letter-spacing: 0.06em;
+    color: var(--ink);
     white-space: nowrap;
   }
   .data-table tbody th {

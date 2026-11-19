@@ -19,8 +19,8 @@ function PublicNavItems({ dark = false, onNavigate }: { dark?: boolean; onNaviga
   );
   return (
     <>
-      {a("/#features", copy.nav.features)}
       {a("/#how-it-works", copy.nav.howItWorks)}
+      {a("/#features", copy.nav.features)}
       {a("/#faq", copy.nav.faq)}
     </>
   );
@@ -95,8 +95,8 @@ export function PublicLayout({ children }: { children?: ReactNode } = {}) {
         className={cx(
           "sticky top-0 z-40 backdrop-blur-md transition-colors duration-200",
           effectiveDark
-            ? "border-b border-white/10 bg-ink/90 text-white"
-            : "rule-b bg-paper/90 text-ink",
+            ? "border-b border-white/15 bg-ink/95 text-white"
+            : "border-b border-ink bg-paper/95 text-ink",
         )}
       >
         <div className="container-page grid h-[72px] grid-cols-[auto_1fr] items-center gap-6 lg:grid-cols-[1fr_auto_1fr]">
@@ -144,7 +144,7 @@ export function PublicLayout({ children }: { children?: ReactNode } = {}) {
             aria-label={copy.aria.mobileMenu}
             className={cx(
               "lg:hidden",
-              effectiveDark ? "border-t border-white/10 bg-ink/95 text-white" : "rule-t bg-paper text-ink",
+              effectiveDark ? "border-t border-white/15 bg-ink text-white" : "border-t border-ink bg-paper text-ink",
             )}
           >
             <div className="container-page flex flex-col items-start gap-4 py-6">
@@ -186,22 +186,22 @@ function Footer() {
   const { me } = useAuth();
   const hasContact = CONTACT_URL.trim().length > 0;
   const col = "flex flex-col items-start gap-3 text-sm";
-  const h = "font-extrabold";
+  const h = "font-mono text-xs font-semibold uppercase tracking-[0.08em] text-ink";
   const link = "text-subtle hover:text-accent";
   return (
-    <footer className="rule-t">
-      <div className="container-page grid grid-cols-2 gap-x-6 gap-y-12 py-24 lg:grid-cols-[2fr_1fr_1fr]">
+    <footer className="border-t border-ink bg-paper text-ink">
+      <div className="container-page grid grid-cols-2 gap-x-6 gap-y-12 py-20 lg:grid-cols-[2fr_1fr_1fr]">
         <div className="col-span-2 flex flex-col items-start gap-4 lg:col-span-1">
           <Logo />
           <p className="max-w-xs text-sm text-subtle">{copy.footer.description}</p>
         </div>
         <div className={col}>
           <p className={h}>{copy.footer.productHeading}</p>
-          <a href="/#features" className={link}>
-            {copy.nav.features}
-          </a>
           <a href="/#how-it-works" className={link}>
             {copy.nav.howItWorks}
+          </a>
+          <a href="/#features" className={link}>
+            {copy.nav.features}
           </a>
           <a href="/#faq" className={link}>
             {copy.nav.faq}
@@ -219,17 +219,27 @@ function Footer() {
           )}
         </div>
       </div>
-      <div className="rule-t">
-        <p className="container-page py-6 text-sm text-subtle">{copy.footer.disclaimer}</p>
+      <div className="border-t border-line">
+        <p className="container-page py-6 font-mono text-xs text-subtle">{copy.footer.disclaimer}</p>
       </div>
     </footer>
   );
 }
 
 // ---------------------------------------------------------------------------------------------
-// Logged-in area: fixed sidebar on desktop; on mobile it becomes a menu.
+// Logged-in area: fixed logbook sidebar on desktop; on mobile it becomes a menu.
 
-function TreeNode({ node, selected, trail }: { node: AreaNode; selected: number | null; trail: Set<number> }) {
+function TreeNode({
+  node,
+  selected,
+  trail,
+  isChild = false,
+}: {
+  node: AreaNode;
+  selected: number | null;
+  trail: Set<number>;
+  isChild?: boolean;
+}) {
   const [open, setOpen] = useState(true);
   const has = node.children.length > 0;
   const active = node.id === selected;
@@ -239,22 +249,24 @@ function TreeNode({ node, selected, trail }: { node: AreaNode; selected: number 
         {has ? (
           <button
             type="button"
-            className="flex size-7 shrink-0 items-center justify-center font-bold text-subtle hover:text-accent"
+            className="flex size-7 shrink-0 items-center justify-center font-mono text-xs font-semibold text-subtle hover:text-accent"
             aria-expanded={open}
-            aria-label={`${open ? "Collapse" : "Expand"} ${node.name}`}
+            aria-label={`${open ? copy.app.collapse : copy.app.expand} ${node.name}`}
             onClick={() => setOpen((v) => !v)}
           >
             {open ? "−" : "+"}
           </button>
         ) : (
-          <span className="size-7 shrink-0" aria-hidden="true" />
+          <span className="flex w-7 shrink-0 items-center justify-center font-mono text-xs text-subtle" aria-hidden="true">
+            {isChild ? "├──" : "·"}
+          </span>
         )}
         <Link
           to={`/app/areas/${node.id}`}
           aria-current={active ? "page" : undefined}
           className={cx(
-            "min-w-0 flex-1 truncate border-l-[3px] py-1 pl-2 no-underline hover:underline",
-            active ? "border-accent font-extrabold" : "border-transparent font-medium",
+            "min-w-0 flex-1 truncate border-l-2 py-1.5 pl-2.5 text-sm no-underline hover:bg-surface hover:underline",
+            active ? "border-accent bg-accent-soft font-bold text-accent" : "border-transparent font-medium text-ink",
             !active && trail.has(node.id) && "font-bold",
           )}
         >
@@ -262,9 +274,9 @@ function TreeNode({ node, selected, trail }: { node: AreaNode; selected: number 
         </Link>
       </div>
       {has && open && (
-        <ul className="m-0 ml-3 list-none border-l border-line p-0 pl-2">
+        <ul className="m-0 ml-3 list-none border-l border-ink/25 p-0 pl-2">
           {node.children.map((c) => (
-            <TreeNode key={c.id} node={c} selected={selected} trail={trail} />
+            <TreeNode key={c.id} node={c} selected={selected} trail={trail} isChild />
           ))}
         </ul>
       )}
@@ -279,52 +291,56 @@ function SidebarContent() {
   const selected = params.areaId ? Number(params.areaId) : null;
   const [logoutError, setLogoutError] = useState(false);
   const trail = new Set(selected ? areaPath(cat.areas, selected).map((a) => a.id) : []);
-  const itemCls = ({ isActive }: { isActive: boolean }) => cx("side-item", isActive && "active");
-  const label = "px-4 pb-2 pt-8 text-sm font-extrabold";
+  const itemCls = ({ isActive }: { isActive: boolean }) => cx("side-item text-sm", isActive && "active");
+  const sectionLabel =
+    "mt-6 border-t border-ink/20 px-4 pb-2 pt-4 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-subtle";
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="hidden h-[72px] shrink-0 items-center px-4 lg:flex">
+    <div className="flex h-full flex-col bg-paper">
+      <div className="hidden h-[72px] shrink-0 items-center justify-between border-b border-ink px-4 lg:flex">
         <Logo to="/app" />
+        <span className="border border-ink bg-surface px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-ink">
+          {copy.app.logbookTag}
+        </span>
       </div>
-      <nav aria-label="Main" className="rule-t flex-1 overflow-y-auto pb-4 pt-4">
+      <nav aria-label={copy.aria.appNav} className="flex-1 overflow-y-auto pb-4 pt-3">
         <NavLink to="/app" end className={itemCls}>
-          All areas
+          {copy.app.allAreas}
         </NavLink>
-        <p className={label}>Areas</p>
-        {cat.ready && cat.tree.length === 0 && <p className="px-4 text-sm text-subtle">No areas available.</p>}
+        <p className={sectionLabel}>{copy.app.areasHeading}</p>
+        {cat.ready && cat.tree.length === 0 && <p className="px-4 text-sm text-subtle">{copy.app.noAreas}</p>}
         <ul className="m-0 list-none px-2 p-0">
           {cat.tree.map((n) => (
             <TreeNode key={n.id} node={n} selected={selected} trail={trail} />
           ))}
         </ul>
-        <p className={label}>Downloads</p>
+        <p className={sectionLabel}>{copy.app.downloadsHeading}</p>
         <NavLink to="/app/downloads" className={itemCls}>
-          My downloads
+          {copy.app.myDownloads}
         </NavLink>
         {me?.is_org_admin && (
           <>
-            <p className={label}>Administration</p>
+            <p className={sectionLabel}>{copy.app.adminHeading}</p>
             <NavLink to="/app/admin/areas" className={itemCls}>
-              Areas
+              {copy.app.adminAreas}
             </NavLink>
             <NavLink to="/app/admin/agents" className={itemCls}>
-              Agents
+              {copy.app.adminAgents}
             </NavLink>
             <NavLink to="/app/admin/users" className={itemCls}>
-              Users
+              {copy.app.adminUsers}
             </NavLink>
             <NavLink to="/app/admin/activity" className={itemCls}>
-              Activity
+              {copy.app.adminActivity}
             </NavLink>
             <NavLink to="/app/admin/downloads" className={itemCls}>
-              All downloads
+              {copy.app.adminDownloads}
             </NavLink>
           </>
         )}
       </nav>
-      <div className="rule-t shrink-0 p-4">
-        <p className="mb-3 truncate text-sm text-subtle" title={me?.email}>
+      <div className="shrink-0 border-t border-ink p-4">
+        <p className="mb-3 truncate font-mono text-xs text-subtle" title={me?.email}>
           {me?.email}
         </p>
         <Button
@@ -333,17 +349,17 @@ function SidebarContent() {
           onClick={async () => {
             setLogoutError(false);
             try {
-              await logout(); // clears local state only after the server confirmed; then RequireAuth sends us home
+              await logout();
             } catch {
-              setLogoutError(true); // never pretend the session ended
+              setLogoutError(true);
             }
           }}
         >
-          Log out
+          {copy.app.logout}
         </Button>
         {logoutError && (
           <p role="alert" className="mt-3 text-sm font-semibold">
-            Could not end the session on the server; try again.
+            {copy.app.logoutError}
           </p>
         )}
       </div>
@@ -357,12 +373,17 @@ function Shell() {
   useEffect(() => setOpen(false), [loc.pathname]);
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-paper text-ink">
       <a href="#content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-paper focus:p-4">
         {copy.common.skipToContent}
       </a>
-      <div className="rule-b sticky top-0 z-40 flex h-16 items-center justify-between bg-paper px-6 lg:hidden">
-        <Logo to="/app" />
+      <div className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-ink bg-paper px-6 lg:hidden">
+        <div className="flex items-center gap-3">
+          <Logo to="/app" />
+          <span className="border border-ink bg-surface px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.06em] text-ink">
+            {copy.app.logbookTag}
+          </span>
+        </div>
         <Button size="sm" aria-expanded={open} aria-controls="app-menu" onClick={() => setOpen((v) => !v)}>
           {open ? copy.common.close : copy.common.menu}
         </Button>
@@ -370,14 +391,14 @@ function Shell() {
       <aside
         id="app-menu"
         className={cx(
-          "z-30 bg-paper lg:fixed lg:inset-y-0 lg:left-0 lg:block lg:w-72 lg:border-r lg:border-line",
+          "z-30 bg-paper lg:fixed lg:inset-y-0 lg:left-0 lg:block lg:w-72 lg:border-r lg:border-ink",
           open ? "fixed inset-x-0 bottom-0 top-16 block" : "hidden",
         )}
       >
         <SidebarContent />
       </aside>
       <main id="content" className="lg:pl-72">
-        <div className="mx-auto max-w-[1200px] px-6 py-12 lg:px-12">
+        <div className="mx-auto max-w-[1200px] px-5 py-10 sm:px-6 lg:px-12 lg:py-12">
           <Outlet />
         </div>
       </main>

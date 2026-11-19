@@ -11,21 +11,21 @@ function HeroDarkContent({ showScrollHint }: { showScrollHint: boolean }) {
 
   return (
     <div className="container-page relative z-10 flex h-full flex-col justify-between pb-8 pt-[calc(var(--header-h)+1.75rem)] sm:pb-10 sm:pt-[calc(var(--header-h)+3rem)]">
-      <div className="my-auto flex max-w-4xl flex-col items-start gap-5 sm:gap-7">
+      <div className="my-auto flex max-w-5xl flex-col items-start gap-5 sm:gap-7">
         <div className="flex flex-wrap items-center gap-4">
-          <span className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-white/60">
+          <span className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-white/75">
             {copy.hero.eyebrow}
           </span>
           <Logo to={null} inverted size="text-2xl sm:text-3xl" />
         </div>
 
-        <h1 className="text-[2.5rem] font-extrabold leading-[1.03] tracking-[-0.035em] text-white sm:text-6xl lg:text-[4.75rem]">
-          <span className="font-medium text-white/75">{copy.hero.titlePrefix}</span>
+        <h1 className="font-display text-[2.75rem] font-extrabold leading-[0.98] tracking-[-0.035em] text-white sm:text-6xl lg:text-[6.25rem]">
+          <span className="font-medium text-white/80">{copy.hero.titlePrefix}</span>
           <span className="font-extrabold text-white">{copy.hero.titleHighlight}</span>
           <span className="font-extrabold text-accent">{copy.hero.titleDot}</span>
         </h1>
 
-        <p className="max-w-xl text-lg leading-relaxed text-white/75 sm:text-xl">{copy.hero.subtitle}</p>
+        <p className="max-w-xl text-lg leading-relaxed text-white/85 sm:text-xl">{copy.hero.subtitle}</p>
 
         <div className="flex flex-wrap items-center gap-3 pt-1 sm:gap-4">
           <LinkButton to={me ? "/app" : "/login"} variant="primary" size="lg">
@@ -42,11 +42,16 @@ function HeroDarkContent({ showScrollHint }: { showScrollHint: boolean }) {
         </div>
       </div>
 
-      {showScrollHint && (
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-white/55">
-          {copy.hero.scrollHint}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/20 pt-4">
+        <p className="font-mono text-xs font-medium uppercase tracking-[0.1em] text-white/75">
+          {copy.hero.coordinate}
         </p>
-      )}
+        {showScrollHint && (
+          <p className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-white/75">
+            {copy.hero.scrollHint}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -58,14 +63,19 @@ function ProblemLightContent({ insetHeader = true }: { insetHeader?: boolean }) 
         insetHeader ? "pt-[var(--header-h)]" : ""
       }`}
     >
-      <div className="flex max-w-4xl flex-col items-start gap-6 sm:gap-8">
-        <p className="eyebrow flex items-center gap-2.5">
-          <span aria-hidden="true" className="size-2.5 rounded-full bg-accent" />
-          {copy.problem.eyebrow}
-        </p>
+      <div className="flex max-w-4xl flex-col items-start gap-6 border-t border-ink pt-8 sm:gap-8">
+        <div className="flex w-full flex-wrap items-center justify-between gap-3">
+          <p className="eyebrow flex items-center gap-2.5">
+            <span aria-hidden="true" className="size-2 bg-accent" />
+            {copy.problem.eyebrow}
+          </p>
+          <span className="font-mono text-xs uppercase tracking-[0.08em] text-subtle">{copy.problem.coordinate}</span>
+        </div>
 
-        <h2 className="text-[2rem] leading-[1.06] tracking-[-0.035em] text-ink sm:text-5xl lg:text-[3.75rem]">
-          <span className="font-medium text-ink/70">{copy.problem.titlePrefix}</span>
+        <div aria-hidden="true" className="ruler-x" />
+
+        <h2 className="font-display text-[2.125rem] leading-[1.03] tracking-[-0.035em] text-ink sm:text-5xl lg:text-[4.25rem]">
+          <span className="font-medium text-subtle">{copy.problem.titlePrefix}</span>
           <span className="font-extrabold text-accent">{copy.problem.titleHighlight}</span>
           <span className="font-extrabold text-ink">{copy.problem.titleSuffix}</span>
         </h2>
@@ -157,7 +167,7 @@ export function HeroIris() {
           <HeroDarkContent showScrollHint={false} />
         </div>
 
-        <div className="aura-light relative overflow-hidden bg-paper py-20 text-ink sm:py-28">
+        <div className="relative overflow-hidden border-b border-ink bg-paper py-20 text-ink sm:py-28">
           <ProblemLightContent insetHeader={false} />
         </div>
       </section>
@@ -196,7 +206,7 @@ export function HeroIris() {
         {/* Scene 2: Light world revealed by circular iris */}
         <div
           ref={scene2Ref}
-          className="iris-layer aura-light pointer-events-none absolute inset-0 overflow-hidden bg-paper text-ink"
+          className="iris-layer pointer-events-none absolute inset-0 overflow-hidden bg-paper text-ink"
         >
           <ProblemLightContent />
         </div>
