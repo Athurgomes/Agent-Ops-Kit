@@ -390,20 +390,92 @@ def _chain_text(res) -> str:
     return f"Cadeia QUEBRADA {where}: {res.reason}"
 
 
+def _resolve_hmac_env(env_name: str | None) -> str | None:
+    if not env_name:
+        return None
+    val = os.environ.get(env_name)
+    if not val:
+        raise ValueError(f"variável de ambiente {env_name} ausente ou vazia")
+    return val
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
-    """`aok audit verify|report|anchor` sobre um log de auditoria."""
-    from agent_ops_kit import audit
+    """`aok audit verify|report|anchor|keygen|sign` sobre um log de auditoria."""
+    from agent_ops_kit import audit, audit_sign
 
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    if args.audit_cmd == "verify":
+
+    if args.audit_cmd == "keygen":
         try:
+            info = audit_sign.generate_ed25519_keypair(
+                args.private_out, args.public_out, overwrite=args.overwrite
+            )
+        except (FileExistsError, ValueError, OSError) as exc:
+            print(f"erro: {exc}", file=sys.stderr)
+            return 2
+        print(f"Par Ed25519 gerado ({info['algorithm']})")
+        print(f"Fingerprint: {info['key_fingerprint']}")
+        print(f"Chave privada: {info['private_path']}")
+        print(f"Chave pública: {info['public_path']}")
+        return 0
+
+    if args.audit_cmd == "sign":
+        try:
+            hmac_key = _resolve_hmac_env(args.hmac_key_env)
+            receipt = audit_sign.sign_anchor(
+                args.log,
+                private_key_path=args.private_key,
+                hmac_key=hmac_key,
+                out_path=args.out,
+            )
+        except audit.AuditChainError as exc:
+            print(f"erro: {exc}", file=sys.stderr)
+            return 1
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            print(f"erro: {exc}", file=sys.stderr)
+            return 2
+        print(
+            f"Âncora assinada ({receipt['algorithm']}, {receipt['n_events']} eventos, "
+            f"fingerprint {receipt['key_fingerprint']}) -> {args.out}"
+        )
+        return 0
+
+    if args.audit_cmd == "verify":
+        if args.public_key and args.hmac_key_env:
+            print("erro: informe apenas --public-key ou --hmac-key-env", file=sys.stderr)
+            return 2
+        if (args.public_key or args.hmac_key_env) and not args.signature:
+            print("erro: --public-key/--hmac-key-env exige --signature", file=sys.stderr)
+            return 2
+        if args.signature and not (args.public_key or args.hmac_key_env):
+            print("erro: --signature exige --public-key ou --hmac-key-env", file=sys.stderr)
+            return 2
+        try:
+            hmac_key = _resolve_hmac_env(args.hmac_key_env) if args.signature else None
             res = audit.verify(args.log, args.anchor, args.expected_n)
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, ValueError) as exc:
             print(f"erro: {exc}", file=sys.stderr)
             return 2
         print(_chain_text(res))
-        return 0 if res.ok else 1
+        if not res.ok:
+            return 1
+        if args.signature:
+            sres = audit_sign.verify_signature(
+                args.log,
+                args.signature,
+                public_key_path=args.public_key,
+                hmac_key=hmac_key,
+            )
+            if sres.ok:
+                print(
+                    f"Assinatura válida ({sres.algorithm}, fingerprint {sres.key_fingerprint}, "
+                    f"{sres.n_events} eventos)"
+                )
+                return 0
+            print(f"Assinatura INVÁLIDA: {sres.reason}")
+            return 1
+        return 0
 
     if args.audit_cmd == "anchor":
         try:
@@ -436,7 +508,21 @@ def _write_package(args: argparse.Namespace) -> dict:
     """Gera relatorio.{json,md,html} em args.out (compartilhado por `report build` e `check`)."""
     import json
 
+    from agent_ops_kit.redteam.report import ReportError
     from agent_ops_kit.report import build, render
+
+    if args.audit_public_key and args.audit_hmac_key_env:
+        raise ReportError("informe apenas --audit-public-key ou --audit-hmac-key-env")
+    if (args.audit_signature or args.audit_public_key or args.audit_hmac_key_env) and not args.audit:
+        raise ReportError("--audit-signature exige --audit")
+    if (args.audit_public_key or args.audit_hmac_key_env) and not args.audit_signature:
+        raise ReportError("--audit-public-key/--audit-hmac-key-env exige --audit-signature")
+    if args.audit_signature and not (args.audit_public_key or args.audit_hmac_key_env):
+        raise ReportError("--audit-signature exige --audit-public-key ou --audit-hmac-key-env")
+    try:
+        hmac_key = _resolve_hmac_env(args.audit_hmac_key_env)
+    except ValueError as exc:
+        raise ReportError(str(exc)) from exc
 
     cwd = os.getcwd()  # o runner importa examples.rag_agent, na raiz do repositório
     if cwd not in sys.path:
@@ -453,6 +539,9 @@ def _write_package(args: argparse.Namespace) -> dict:
         redteam_guardrails=args.redteam_guardrails,
         fp_dir=args.fp_dir,
         audit_path=args.audit,
+        audit_signature=args.audit_signature,
+        audit_public_key=args.audit_public_key,
+        audit_hmac_key=hmac_key,
         previous=args.previous,
     )
     blocks = render.build_blocks(data)
@@ -641,18 +730,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func=cmd_redteam)
 
-    p = sub.add_parser("audit", help="log de auditoria: verifica a cadeia, gera relatório, âncora")
+    p = sub.add_parser("audit", help="log de auditoria: verifica a cadeia, gera relatório, âncora e assinatura")
     asub = p.add_subparsers(dest="audit_cmd", required=True)
     a = asub.add_parser("verify", help="recalcula a cadeia de hashes (código 1 se quebrada)")
     a.add_argument("log")
     a.add_argument("--anchor", default=None, help="último hash esperado (guardado fora do arquivo)")
     a.add_argument("--expected-n", type=int, default=None, help="número de eventos esperado")
+    a.add_argument("--signature", default=None, help="recibo JSON da assinatura da âncora")
+    vg = a.add_mutually_exclusive_group()
+    vg.add_argument("--public-key", default=None, help="chave pública Ed25519 em PEM")
+    vg.add_argument("--hmac-key-env", default=None, help="variável de ambiente com a chave HMAC")
     a = asub.add_parser("report", help="relatório markdown do log")
     a.add_argument("log")
     a.add_argument("--output", default=None, help="grava o markdown neste caminho")
     a.add_argument("--title", default="Relatório de auditoria")
     a = asub.add_parser("anchor", help="imprime o último hash (para guardar fora do arquivo)")
     a.add_argument("log")
+    a = asub.add_parser("keygen", help="gera par de chaves Ed25519 em PEM (PKCS8) para assinar âncoras")
+    a.add_argument("--private-out", required=True, help="caminho de saída da chave privada PEM")
+    a.add_argument("--public-out", required=True, help="caminho de saída da chave pública PEM")
+    a.add_argument("--overwrite", action="store_true", help="permite sobrescrever arquivos existentes")
+    a = asub.add_parser("sign", help="assina a âncora do log e grava recibo JSON")
+    a.add_argument("log")
+    a.add_argument("--out", required=True, help="caminho de saída do recibo de assinatura (.sig.json)")
+    sg = a.add_mutually_exclusive_group(required=True)
+    sg.add_argument("--private-key", default=None, help="chave privada Ed25519 em PEM")
+    sg.add_argument("--hmac-key-env", default=None, help="variável de ambiente com a chave HMAC")
     p.set_defaults(func=cmd_audit)
 
     def add_package_args(r, config_default):
@@ -667,6 +770,9 @@ def build_parser() -> argparse.ArgumentParser:
         r.add_argument("--redteam-guardrails", default="redteam/results/guardrails.jsonl")
         r.add_argument("--fp-dir", default="redteam/results", help="pasta com fp_dataset.jsonl e fp_benign.jsonl")
         r.add_argument("--audit", default=None, help="log de auditoria (só o resultado da cadeia e a âncora entram)")
+        r.add_argument("--audit-signature", default=None, help="recibo JSON da assinatura da âncora de auditoria")
+        r.add_argument("--audit-public-key", default=None, help="chave pública Ed25519 em PEM para verificar a assinatura")
+        r.add_argument("--audit-hmac-key-env", default=None, help="variável de ambiente com a chave HMAC para verificar a assinatura")
         r.add_argument("--previous", default=None, help="relatorio.json anterior, para comparar")
         r.add_argument("--out", default="reports/pacote", help="pasta de saída")
 

@@ -40,8 +40,20 @@ Estes comandos não chamam o Ollama; leem execuções gravadas no repositório (
 aok eval --baseline v1 --candidate v2 --reuse --summary
 aok redteam report --baseline redteam/results/baseline.jsonl \
   --guardrails redteam/results/guardrails.jsonl --fp-dir redteam/results --summary
-aok audit verify caminho/do/log.jsonl     # também: audit report, audit anchor
+aok audit verify caminho/do/log.jsonl     # também: audit report, audit anchor, keygen, sign
 bash scripts/demo.sh                      # roteiro completo, com log de auditoria fictício
+```
+
+Assinatura opcional da âncora de auditoria (Ed25519 ou HMAC via variável de ambiente):
+
+```bash
+aok audit keygen --private-out audit.key --public-out audit.pub
+aok audit sign caminho/do/log.jsonl --out audit.sig.json --private-key audit.key
+aok audit verify caminho/do/log.jsonl --signature audit.sig.json --public-key audit.pub
+# alternativa com HMAC-SHA256 (chave sempre em variável de ambiente, nunca literal na CLI):
+export AOK_AUDIT_HMAC_KEY="<sua-chave-secreta>"
+aok audit sign caminho/do/log.jsonl --out audit.sig.json --hmac-key-env AOK_AUDIT_HMAC_KEY
+aok audit verify caminho/do/log.jsonl --signature audit.sig.json --hmac-key-env AOK_AUDIT_HMAC_KEY
 ```
 
 `--reuse` confere o manifesto das respostas gravadas (prompt, dataset e modelo); se divergirem, o comando falha com código 2.
@@ -50,7 +62,7 @@ bash scripts/demo.sh                      # roteiro completo, com log de auditor
 
 ```bash
 aok report build --out reports/pacote
-aok check --publish reports/publicados --agent-id meu-agente   # opcional: --audit LOG, --previous relatorio.json
+aok check --publish reports/publicados --agent-id meu-agente   # opcional: --audit LOG [--audit-signature SIG (--audit-public-key PUB | --audit-hmac-key-env VAR)], --previous relatorio.json
 ```
 
 Saída real de ambos neste repositório: `Pacote gravado em reports/pacote/ (relatorio.md, relatorio.html, relatorio.json)` e `Semáforo (regras provisórias): AMARELO`; o `--publish` acrescentou `Publicado em reports/publicados/meu-agente/<timestamp UTC> (semáforo: yellow)`.
@@ -231,7 +243,7 @@ Ressalvas: pelas checagens, a diferença não é distinguível de zero a 5%. O j
 - Dataset de 50 casos e 40 ataques: intervalos de confiança largos, uma execução por configuração.
 - Os guardrails são heurísticas (padrões de texto, allowlist, canary) e são contornáveis por paráfrase, outros idiomas ou ofuscação não prevista. Não são proteção garantida.
 - A suíte de ataques não é reservada nem cega.
-- A auditoria usa hash encadeado sem assinatura: detecta edição parcial, mas não é imutabilidade; apagar o fim do arquivo ou reescrever toda a cadeia não é detectado sem uma âncora guardada fora do arquivo (ADR-004).
+- A auditoria usa hash encadeado, com assinatura digital opcional da âncora (Ed25519 ou HMAC-SHA256, ADR-004 e ADR-018): sem assinatura, apagar o fim do arquivo ou reescrever toda a cadeia não é detectado sem uma âncora externa; mesmo com assinatura, depende de arquivar o recibo `.sig.json` fora do log e não inclui carimbo de tempo externo confiável (RFC 3161 TSA).
 - O CI valida respostas gravadas e o manifesto; não reexecuta o modelo (ADR-001).
 - O gate do eval foi exercitado em 2 PRs de teste, fechados sem mesclar ([#1](https://github.com/Athurgomes/Agent-Ops-Kit/pull/1) e [#2](https://github.com/Athurgomes/Agent-Ops-Kit/pull/2)); resultados em [docs/resultados.md](docs/resultados.md). Ele usa respostas gravadas, o prompt piorado foi degradado de propósito e foi uma execução por PR: é um teste de mecanismo, não uma medida de qualidade.
 - O agente de referência usa documentos fictícios; nada aqui foi validado com dados reais.

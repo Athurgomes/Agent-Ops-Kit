@@ -314,3 +314,11 @@ def report(
         "",
     ]
     return "\n".join(out)
+
+
+from agent_ops_kit.audit_sign import (  # noqa: F401
+    SignatureVerifyResult,
+    generate_ed25519_keypair,
+    sign_anchor,
+    verify_signature,
+)

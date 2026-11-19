@@ -84,9 +84,16 @@ def _fp_totals(rt: dict) -> tuple[int, float]:
 def _audit_status_short(au: dict | None) -> str:
     if au is None:
         return "não informada neste pacote"
-    if au["ok"]:
-        return f"cadeia íntegra ({au['n_events']} eventos verificados)"
-    return f"cadeia inválida (falha na linha {au['first_bad_line'] or '-'})"
+    if not au["ok"]:
+        return f"cadeia inválida (falha na linha {au['first_bad_line'] or '-'})"
+    sig = au.get("signature")
+    if isinstance(sig, dict) and sig.get("checked"):
+        alg = sig.get("algorithm")
+        alg_suffix = f" {alg}" if alg else ""
+        if sig.get("ok"):
+            return f"cadeia íntegra ({au['n_events']} eventos verificados) e assinatura{alg_suffix} válida"
+        return f"cadeia íntegra ({au['n_events']} eventos), porém assinatura{alg_suffix} inválida"
+    return f"cadeia íntegra ({au['n_events']} eventos verificados)"
 
 
 def _pretextual_blocks(d: dict, doc_code: str) -> list[Block]:
@@ -246,18 +253,33 @@ def _business_indicator_rows(d: dict) -> list[list[str]]:
             "Sem arquivo de auditoria anexado a este pacote; limita a conferência posterior "
             "dos eventos."
         )
-    elif au["ok"]:
-        au_ind = f"Cadeia íntegra ({au['n_events']} eventos)"
-        au_read = (
-            "Registros encadeados consistentes com a âncora criptográfica informada, "
-            "permitindo verificação de integridade."
-        )
-    else:
+    elif not au["ok"]:
         au_ind = f"Cadeia inválida (linha {au['first_bad_line'] or '-'})"
         au_read = (
             "Inconsistência detectada no encadeamento de registros; bloqueia aprovação até "
             "apuração técnica."
         )
+    else:
+        sig = au.get("signature")
+        if isinstance(sig, dict) and sig.get("checked"):
+            if sig.get("ok"):
+                au_ind = f"Cadeia íntegra e assinada ({sig.get('algorithm')}, {au['n_events']} eventos)"
+                au_read = (
+                    "Registros encadeados e assinatura da âncora válidos, sujeitos à guarda "
+                    "protegida da chave e sem carimbo de tempo RFC 3161."
+                )
+            else:
+                au_ind = f"Assinatura inválida ({au['n_events']} eventos)"
+                au_read = (
+                    "Assinatura criptográfica da âncora inválida ou incompatível; bloqueia "
+                    "aprovação até apuração técnica."
+                )
+        else:
+            au_ind = f"Cadeia íntegra ({au['n_events']} eventos)"
+            au_read = (
+                "Registros encadeados consistentes com a âncora criptográfica informada, "
+                "permitindo verificação de integridade."
+            )
 
     return [
         [
@@ -445,8 +467,52 @@ def _risk_analysis_blocks(rt: dict) -> list[Block]:
     return blocks
 
 
+def _audit_signature_summary(au: dict | None) -> str | None:
+    if not isinstance(au, dict):
+        return None
+    sig = au.get("signature")
+    if not (isinstance(sig, dict) and sig.get("checked")):
+        return "Assinatura da âncora de auditoria: não informada (cadeia de hashes sem assinatura)."
+    status = "válida" if sig.get("ok") else "inválida"
+    alg = sig.get("algorithm") or "-"
+    fp = sig.get("key_fingerprint") or "-"
+    signed_at = sig.get("signed_at_utc") or "-"
+    msg = (
+        f"Assinatura da âncora de auditoria: {status} (algoritmo: {alg}, "
+        f"key_fingerprint: {fp}, carimbo no recibo: {signed_at})."
+    )
+    if not sig.get("ok") and sig.get("reason"):
+        msg += f" Motivo: {sig['reason']}."
+    return msg
+
+
+def _audit_signature_limitation(sig: dict | None) -> str:
+    if not (isinstance(sig, dict) and sig.get("checked")):
+        return (
+            "A âncora criptográfica (sem assinatura) só garante detecção de alteração quando "
+            "guardada fora do arquivo de auditoria."
+        )
+    alg = sig.get("algorithm")
+    if alg == "ed25519":
+        return (
+            "Assinatura Ed25519 cobre integridade autenticada e não-repúdio sujeito à custódia "
+            "protegida da chave privada; não inclui carimbo de tempo externo confiável "
+            "(RFC 3161 TSA) e depende do arquivamento do arquivo .sig.json fora do log."
+        )
+    if alg == "hmac-sha256":
+        return (
+            "Assinatura HMAC-SHA256 cobre integridade autenticada por chave simétrica compartilhada "
+            "(sem não-repúdio perante terceiros sem a chave); não inclui carimbo de tempo externo "
+            "confiável (RFC 3161 TSA) e depende do arquivamento do arquivo .sig.json fora do log."
+        )
+    return (
+        "A assinatura não pôde ser validada; o arquivo .sig.json deve ser arquivado fora do log "
+        "e não inclui carimbo de tempo externo confiável (RFC 3161 TSA)."
+    )
+
+
 def _traceability_blocks(d: dict) -> list[Block]:
-    return [
+    blocks: list[Block] = [
         ("h2", _SECTIONS[4]),
         (
             "p",
@@ -459,9 +525,15 @@ def _traceability_blocks(d: dict) -> list[Block]:
                 "Apêndice A."
             ),
         ),
+    ]
+    sig_line = _audit_signature_summary(d.get("audit"))
+    if sig_line is not None:
+        blocks.append(("p", sig_line))
+    blocks += [
         ("p", "Limitações e ressalvas metodológicas aplicáveis a este parecer:"),
         ("ul", list(d["limitations"])),
     ]
+    return blocks
 
 
 def _conclusion_blocks(d: dict) -> list[Block]:
@@ -478,7 +550,7 @@ def _conclusion_blocks(d: dict) -> list[Block]:
         ),
         "audit_invalid": (
             "Bloquear a aprovação e apurar a inconsistência apontada na cadeia de auditoria "
-            "(Apêndice A.6)."
+            "ou na assinatura da âncora (Apêndice A.6)."
         ),
         "no_audit": (
             "Anexar e validar o log de auditoria encadeado nas próximas execuções para "
@@ -494,11 +566,19 @@ def _conclusion_blocks(d: dict) -> list[Block]:
         ),
     }
     recommendations = [actions_map[k] for k in triggered if k in actions_map]
-    if au is not None and au["ok"]:
-        recommendations.append(
-            "Arquivar a âncora criptográfica (hash final da cadeia de auditoria) fora do arquivo "
-            "de log para preservar a capacidade de detecção de alterações."
-        )
+    sig = au.get("signature") if isinstance(au, dict) else None
+    sig_ok = not (isinstance(sig, dict) and sig.get("checked") and not sig.get("ok"))
+    if au is not None and au["ok"] and sig_ok:
+        if isinstance(sig, dict) and sig.get("checked"):
+            recommendations.append(
+                "Arquivar o recibo de assinatura (.sig.json) e a chave verificadora fora do "
+                "arquivo de log para preservar a verificação autenticada de alterações."
+            )
+        else:
+            recommendations.append(
+                "Arquivar a âncora criptográfica (hash final da cadeia de auditoria) fora do "
+                "arquivo de log para preservar a capacidade de detecção de alterações."
+            )
     recommendations.append(
         f"Validar formalmente os limiares provisórios da regra de classificação "
         f"(versão {d['semaphore']['rules_version']}) com as áreas de Riscos e Auditoria Interna."
@@ -645,28 +725,26 @@ def _appendix_blocks(d: dict) -> list[Block]:
     if au is None:
         blocks.append(("p", "Nenhum log de auditoria informado neste pacote."))
     else:
-        blocks.append(
-            (
-                "table",
-                ["Item", "Valor"],
-                [
-                    ["Cadeia", "íntegra" if au["ok"] else "inválida"],
-                    ["Eventos", str(au["n_events"])],
-                    ["Hash âncora (último hash)", str(au["anchor"])],
-                    ["Primeira linha com problema", str(au["first_bad_line"] or "-")],
-                    ["Motivo", str(au["reason"] or "-")],
-                ],
-            )
-        )
-        blocks.append(
-            (
-                "p",
-                (
-                    "A âncora criptográfica só garante detecção de alteração quando guardada fora "
-                    "do arquivo de auditoria."
-                ),
-            )
-        )
+        rows = [
+            ["Cadeia", "íntegra" if au["ok"] else "inválida"],
+            ["Eventos", str(au["n_events"])],
+            ["Hash âncora (último hash)", str(au["anchor"])],
+            ["Primeira linha com problema", str(au["first_bad_line"] or "-")],
+            ["Motivo", str(au["reason"] or "-")],
+        ]
+        sig = au.get("signature")
+        if isinstance(sig, dict) and sig.get("checked"):
+            rows += [
+                ["Assinatura da âncora", "válida" if sig.get("ok") else "inválida"],
+                ["Algoritmo da assinatura", str(sig.get("algorithm") or "-")],
+                ["Key fingerprint", str(sig.get("key_fingerprint") or "-")],
+                ["Assinado em (UTC, recibo)", str(sig.get("signed_at_utc") or "-")],
+                ["Motivo da assinatura", str(sig.get("reason") or "-")],
+            ]
+        else:
+            rows.append(["Assinatura da âncora", "não informada (sem assinatura)"])
+        blocks.append(("table", ["Item", "Valor"], rows))
+        blocks.append(("p", _audit_signature_limitation(sig if isinstance(sig, dict) else None)))
     return blocks
 
 

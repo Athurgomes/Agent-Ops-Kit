@@ -60,6 +60,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O log reflete o que a aplicação registrou; o que não foi registrado não aparece, e dados sensíveis registrados ficam no arquivo em texto claro.
 - Escrita thread-safe dentro de um processo; sem coordenação entre processos no mesmo arquivo.
 - Alternativa descartada por ora: assinatura (HMAC/chave) ou carimbo de tempo externo, que fecham a reescrita completa mas exigem gestão de chave.
+- **Atualização (ADR-018).** Assinatura digital opcional da âncora com **Ed25519** e **HMAC-SHA256** adicionada em `src/agent_ops_kit/audit_sign.py` e integrada a `aok audit`, `aok report build` e `aok check` (mantendo ausência de carimbo de tempo RFC 3161 TSA).
 
 ## ADR-005: template do `aok new` dentro do pacote, com cópia do núcleo do agente
 
@@ -304,3 +305,18 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Limites de login, operador e recuperação de senha passam a persistir entre reinícios e a somar entre múltiplos workers ou réplicas ligados ao mesmo banco, sem dependências externas novas.
 - Cada tentativa autenticada/recuperação executa consultas curtas na tabela `rate_limit_entry`; se a escala futura exigir menor carga no banco transacional, a interface de `LoginThrottle`/`HourlyLimiter` permite trocar o backend de armazenamento de forma isolada.
 - Verificado em SQLite (multi-instância em arquivo compartilhado, isolamento de buckets, privacidade dos hashes, concorrência com threads, poda automática e fallback em memória) e migração incremental Alembic `0001 -> 0002` com `compare_metadata` sem divergências.
+
+## ADR-018: assinatura digital criptográfica da âncora de auditoria (Ed25519 e HMAC-SHA256)
+
+**Contexto.** Conforme registrado no ADR-004, a cadeia de hashes sem chave não detecta a reescrita completa do arquivo nem o truncamento do fim quando o operador não guarda a âncora externamente. Para autenticar o último estado do log em pipelines de CI e relatórios executivos sem introduzir serviços pagos ou infraestrutura externa de carimbo de tempo, era necessário assinar criptograficamente a âncora do log.
+
+**Decisão.**
+- **Módulo `src/agent_ops_kit/audit_sign.py` (reexportado por `audit.py`)**: implementa geração de pares Ed25519 (`generate_ed25519_keypair`, PEM PKCS8 sem passphrase para automação e permissão `0o600` via `os.chmod` em POSIX), assinatura da âncora (`sign_anchor`) e verificação (`verify_signature` retornando `SignatureVerifyResult`).
+- **Payload canônico assinado**: `{"schema_version": 1, "n_events": ..., "last_hash": ..., "signed_at_utc": ...}` serializado em UTF-8 via `audit.canonical` (usando `GENESIS_HASH` quando o log está vazio). `sign_anchor` exige validação prévia integral da cadeia (`audit.verify`).
+- **Algoritmos e proteção de segredos**: `ed25519` (via biblioteca `cryptography>=42`, com `key_fingerprint` igual ao SHA-256 hex da chave pública PEM) e `hmac-sha256` (com `key_fingerprint` derivado em `sha256("aok-hmac-v1:" + key)[:16]`). Na CLI (`aok audit sign`, `aok audit verify`, `aok report build`, `aok check`), a chave HMAC é lida exclusivamente de variável de ambiente (`--hmac-key-env` / `--audit-hmac-key-env`), nunca como argumento literal nem gravada em recibo ou log.
+- **Integração no relatório ABNT (`report/build.py` e `report/render.py`)**: quando `--audit-signature` e a chave verificadora são informados, `relatorio.json` registra `audit.signature` (`checked`, `ok`, `algorithm`, `key_fingerprint`, `signed_at_utc`, `reason`). Falha na verificação aciona a regra vermelha `audit_invalid` no semáforo. Seção 5 e Apêndice A.6 exibem o status da assinatura e a ressalva metodológica correspondente.
+
+**Consequências e limitações.**
+- **Ed25519**: cobre integridade autenticada e não-repúdio sujeito à custódia protegida da chave privada (o arquivo PKCS8 não usa passphrase por padrão para permitir automação em CI).
+- **HMAC-SHA256**: cobre integridade autenticada por chave simétrica compartilhada, **sem não-repúdio** perante terceiros que também detenham a chave.
+- **Sem RFC 3161 TSA**: ambos os modos não incluem carimbo de tempo externo confiável (RFC 3161 Time-Stamping Authority); o campo `signed_at_utc` é autodeclarado pelo relógio local e a detecção de truncamento/reescrita depende de arquivar o recibo `.sig.json` fora do arquivo de log.

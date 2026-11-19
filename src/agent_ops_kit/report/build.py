@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from agent_ops_kit import audit
+from agent_ops_kit import audit, audit_sign
 from agent_ops_kit.cli import ALPHA
 from agent_ops_kit.config import load_config
 from agent_ops_kit.eval import runner
@@ -32,7 +32,7 @@ RED_RULES = {
     "eval_regression": (
         f"o gate de regressão do eval disparou (diferença média menor que 0 e p-valor menor que {ALPHA})"
     ),
-    "audit_invalid": "a cadeia de auditoria informada está inválida",
+    "audit_invalid": "a cadeia de auditoria ou a assinatura informada está inválida",
 }
 YELLOW_RULES = {
     "attack_success_with_guardrails": "houve ataque bem-sucedido com os guardrails ligados",
@@ -152,18 +152,80 @@ def _redteam_section(a: dict, hashes: dict) -> dict:
     }
 
 
-def _audit_section(path: str | None) -> dict | None:
+def _read_signed_at(signature_path: str | Path) -> str | None:
+    try:
+        obj = json.loads(Path(signature_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError):
+        return None
+    if isinstance(obj, dict) and isinstance(obj.get("signed_at_utc"), str):
+        return obj["signed_at_utc"]
+    return None
+
+
+def _audit_section(
+    path: str | None,
+    signature_path: str | None = None,
+    public_key_path: str | None = None,
+    hmac_key: str | bytes | None = None,
+) -> dict | None:
     if path is None:
+        if signature_path is not None or public_key_path is not None or bool(hmac_key):
+            raise ReportError("--audit-signature exige --audit")
         return None
     try:
         res = audit.verify(path)
     except FileNotFoundError as exc:
         raise ReportError(str(exc)) from exc
     # Só resultado e âncora: nada do conteúdo dos eventos.
-    return {
+    out: dict = {
         "ok": res.ok, "n_events": res.n_lines, "anchor": res.last_hash,
         "first_bad_line": res.first_bad_line, "reason": res.reason,
     }
+    has_hmac = hmac_key not in (None, "", b"")
+    if signature_path is None:
+        if public_key_path is not None or has_hmac:
+            raise ReportError("chave verificadora informada sem assinatura de auditoria")
+        return out
+
+    if public_key_path is None and not has_hmac:
+        out["signature"] = {
+            "checked": True,
+            "ok": False,
+            "algorithm": None,
+            "key_fingerprint": None,
+            "signed_at_utc": None,
+            "reason": "chave de verificação da assinatura não informada",
+        }
+        return out
+
+    if public_key_path is not None and has_hmac:
+        raise ReportError("informe apenas chave pública Ed25519 ou chave HMAC")
+    _need(Path(signature_path), "assinatura da auditoria")
+    if public_key_path is not None:
+        _need(Path(public_key_path), "chave pública da auditoria")
+
+    sres = audit_sign.verify_signature(
+        path,
+        signature_path,
+        public_key_path=public_key_path,
+        hmac_key=hmac_key,
+    )
+    out["signature"] = {
+        "checked": True,
+        "ok": sres.ok,
+        "algorithm": sres.algorithm,
+        "key_fingerprint": sres.key_fingerprint,
+        "signed_at_utc": _read_signed_at(signature_path),
+        "reason": sres.reason,
+    }
+    return out
+
+
+def _signature_invalid(au: dict | None) -> bool:
+    if not isinstance(au, dict):
+        return False
+    sig = au.get("signature")
+    return isinstance(sig, dict) and bool(sig.get("checked")) and not bool(sig.get("ok"))
 
 
 def semaphore(ev: dict, rt: dict, au: dict | None) -> dict:
@@ -171,7 +233,7 @@ def semaphore(ev: dict, rt: dict, au: dict | None) -> dict:
     fp = rt["false_positives"]
     fired = {
         "eval_regression": ev["regression"],
-        "audit_invalid": au is not None and not au["ok"],
+        "audit_invalid": au is not None and (not au["ok"] or _signature_invalid(au)),
         "attack_success_with_guardrails": rt["asr"]["guardrails"]["total"]["successes"] > 0,
         "false_positive": fp["dataset"]["blocked"] + fp["benign"]["blocked"] > 0,
         "eval_nonsignificant_drop": ev["mean_diff"] < 0 and not ev["regression"],
@@ -185,6 +247,36 @@ def semaphore(ev: dict, rt: dict, au: dict | None) -> dict:
 
 def _plural(n: int) -> str:
     return "uma execução" if n == 1 else f"{n} execuções"
+
+
+def _audit_limitation_text(au: dict | None) -> str:
+    sig = au.get("signature") if isinstance(au, dict) else None
+    if not (isinstance(sig, dict) and sig.get("checked")):
+        return (
+            "A auditoria usa cadeia de hashes, sem assinatura: só detecta alteração quando o "
+            "hash âncora foi guardado fora do arquivo. Não é imutabilidade."
+        )
+    alg = sig.get("algorithm")
+    if alg == "ed25519":
+        return (
+            "A auditoria usa cadeia de hashes com assinatura Ed25519 da âncora: cobre integridade "
+            "autenticada e não-repúdio sujeito à custódia protegida da chave privada; não inclui "
+            "carimbo de tempo externo confiável (RFC 3161 TSA) e depende do arquivamento do "
+            "arquivo .sig.json fora do log."
+        )
+    if alg == "hmac-sha256":
+        return (
+            "A auditoria usa cadeia de hashes com assinatura HMAC-SHA256 da âncora: cobre "
+            "integridade autenticada por chave simétrica compartilhada (sem não-repúdio perante "
+            "terceiros sem a chave); não inclui carimbo de tempo externo confiável (RFC 3161 TSA) "
+            "e depende do arquivamento do arquivo .sig.json fora do log."
+        )
+    return (
+        "A verificação de assinatura da âncora falhou ou teve algoritmo não reconhecido; sem "
+        "assinatura válida, a cadeia não possui garantia autenticada, não inclui carimbo de "
+        "tempo externo confiável (RFC 3161 TSA) e depende do arquivamento do arquivo .sig.json "
+        "fora do log."
+    )
 
 
 def limitations(data: dict) -> list[str]:
@@ -213,10 +305,7 @@ def limitations(data: dict) -> list[str]:
             "A suíte de ataques não é reservada: foi escrita no mesmo projeto das defesas e "
             "não funciona como teste cego."
         ),
-        (
-            "A auditoria usa cadeia de hashes, sem assinatura: só detecta alteração quando o "
-            "hash âncora foi guardado fora do arquivo. Não é imutabilidade."
-        ),
+        _audit_limitation_text(data.get("audit")),
         (
             "As notas do juiz (modelo) não entram neste pacote; só as checagens "
             "determinísticas. Consulte docs/resultados.md."
@@ -228,6 +317,17 @@ def limitations(data: dict) -> list[str]:
         ),
         "Não cobre ataques fora da suíte, outros modelos nem uso em produção.",
     ]
+
+
+def _audit_summary_label(au: dict | None) -> str:
+    if au is None:
+        return "não informada"
+    if not au["ok"]:
+        return "cadeia inválida"
+    sig = au.get("signature")
+    if isinstance(sig, dict) and sig.get("checked"):
+        return "cadeia íntegra e assinada" if sig.get("ok") else "assinatura inválida"
+    return "cadeia íntegra"
 
 
 def summary_values(d: dict) -> dict[str, str]:
@@ -257,9 +357,7 @@ def summary_values(d: dict) -> dict[str, str]:
         "Falsos positivos (perguntas legítimas bloqueadas)": (
             f"{blocked}/{rt['n_legit_questions']}"
         ),
-        "Auditoria": (
-            "não informada" if au is None else "cadeia íntegra" if au["ok"] else "cadeia inválida"
-        ),
+        "Auditoria": _audit_summary_label(au),
     }
 
 
@@ -307,6 +405,9 @@ def build_data(
     redteam_guardrails: str,
     fp_dir: str,
     audit_path: str | None = None,
+    audit_signature: str | None = None,
+    audit_public_key: str | None = None,
+    audit_hmac_key: str | bytes | None = None,
     previous: str | None = None,
     now: datetime | None = None,
 ) -> dict:
@@ -329,7 +430,12 @@ def build_data(
         rt = _redteam_section(args, hashes)
     except (ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
         raise ReportError(f"resultado ou configuração inválidos: {exc}") from exc
-    au = _audit_section(audit_path)
+    au = _audit_section(
+        audit_path,
+        signature_path=audit_signature,
+        public_key_path=audit_public_key,
+        hmac_key=audit_hmac_key,
+    )
 
     data = {
         "schema_version": SCHEMA_VERSION,
