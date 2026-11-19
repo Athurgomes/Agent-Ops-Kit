@@ -83,7 +83,7 @@ aok check --publish https://sua-plataforma --agent-id meu-agente   # ou platform
 ```
 
 - Só agregados e hashes sobem; o log de auditoria não. O relatório é autodeclarado: a plataforma não reexecuta o teste (ADR-007).
-- Estado da implantação (docker compose, Postgres, CI), com datas e o que não foi reconfirmado: ver o ADR-007 em [docs/decisoes.md](docs/decisoes.md). Dívidas conhecidas: sem Alembic (o `ensure_schema` só adiciona colunas e tabelas); em bancos SQLite antigos a restrição UNIQUE(slug) global do agente continua.
+- Estado da implantação (docker compose, Postgres, CI), com datas e o que não foi reconfirmado: ver o ADR-007 em [docs/decisoes.md](docs/decisoes.md). Migrações formais de esquema usam Alembic (ADR-016, removendo a restrição `UNIQUE(slug)` global inclusive em bancos SQLite legados) e os limitadores de tentativa usam tabela compartilhada no banco (ADR-017).
 
 ### Plataforma (fase 3: portal)
 
@@ -103,8 +103,8 @@ Para subir tudo com um comando (dados de demonstração, operador e organizaçã
 - Identidade e interface: 100% em `pt-BR` (centralizada em `platform/portal/src/copy.ts`), com direção visual de diário de bordo / carta náutica (papel `#ffffff`, tinta `#0a0a0a`, superfície `#f7f7f5` e azul `#2563eb` reservado a CTAs primários, links, foco, ponto da marca e estados ativos), tipografia autohospedada via `@fontsource` (sem CDN externo), foco B2B sem cadastro aberto nem página de preços (`CONTACT_URL` opcional em `platform/portal/src/brand.ts`) e semáforo com glifos distintos além da cor (`●` Verde, `◐` Amarelo, `✕` Vermelho) sempre ao lado das ressalvas ("Verde não significa seguro" e autodeclaração).
 - Cada pessoa vê só as áreas do seu perfil (com sub-áreas); área fora do alcance responde 404. O download grava em `download_log`.
 - O seed cria dados de demonstração com agentes fictícios; o conteúdo dos relatórios vem do exemplo do repositório.
-- Verificado com o design atual: build (`tsc --noEmit && vite build`) e checagens em Edge headless/CDP a `1440x900` e `375x812` (zero erros de console, `scrollWidth <= innerWidth`, foco por teclado `:focus-visible` e `prefers-reduced-motion: reduce` em `/`, `/login` e `/app` com API simulada via CDP `Fetch`), além de capturas inspecionadas das telas. O fluxo funcional autenticado contra o backend real foi exercitado na versão anterior da interface e não foi reexecutado após o redesenho (os contratos de API e autenticação não mudaram).
-- Limitações: throttle de login em memória (reinicia no deploy, não vale com vários workers e permite travar a conta de outra pessoa por 5 min); CSRF só por SameSite; tabelas sem migração.
+- Verificado com o design atual (**Farol.**, incluindo o commit `308aee0`) em 19/11/2026: build (`tsc --noEmit && vite build`) e fluxo completo ponta a ponta contra o `platform/docker-compose.yml` (Postgres 16) no navegador Edge headless/CDP em desktop (`1440x900`) e mobile (`375x812` via `Emulation.setDeviceMetricsOverride`): zero erros de console ou exceções JS, `scrollWidth <= innerWidth` em `/`, `/login`, `/app`, detalhe do relatório e `relatorio.html` ABNT baixado (este sem viewport próprio, `innerWidth = scrollWidth = 981`), login real, navegação completa e persistência após reinício do container `api`. Não exercitados: leitor de tela, verificação automática completa de contraste e outros navegadores fora de Edge/Chromium.
+- Limitações: o bloqueio de login por e-mail (5 falhas travam por 5 minutos) ainda permite que terceiros travem a conta de outra pessoa; CSRF apenas por cookie `SameSite=Strict`. (O throttle em memória e a ausência de migrações foram substituídos por `rate_limit_entry` no ADR-017 e pelo Alembic no ADR-016.)
 - Não existe: SSO, dark mode, geração direta de binário PDF no servidor (o `relatorio.html` já sai formatado em A4 pela ABNT NBR 10719 para impressão/PDF pelo navegador) e cadastro aberto (multiempresa e operador: ver a seção seguinte; recuperação de senha: ver "Plataforma: recuperação de senha").
 - Testes: ver a seção "Estado e testes" abaixo.
 
@@ -117,7 +117,7 @@ Para `org_admin`, o menu "Administração" do portal (ADR-009) permite ao time d
 - **Usuários e acessos**: criar usuários, redefinir senha (gerada, exibida uma vez), vincular a áreas e desativar.
 - **Atividade** (eventos administrativos: quem mudou o quê, sem segredos) e **Todos os downloads** (tela separada).
 
-Regras: leituras e escritas ficam na organização de quem chama; o admin não desativa a própria conta e ninguém remove o último `org_admin` ativo. Verificado no navegador, com banco temporário: criar área e sub-área, registrar agente, emitir token, publicar com `aok check --publish`, ver o relatório, revogar o token (a publicação seguinte falhou com 401), criar usuário viewer só da área, desativar e ver o login falhar, ver os eventos. Não exercitados na interface: redefinir senha, editar ou reativar agente, conceder ou revogar acesso depois da criação. Limitações: listagens sem paginação (só os eventos); `admin_event` pode ser alterado por quem opera o banco; `docker build` não foi reverificado após as telas de administração.
+Regras: leituras e escritas ficam na organização de quem chama; o admin não desativa a própria conta e ninguém remove o último `org_admin` ativo. Verificado no navegador (Edge CDP): criar área e sub-área, registrar agente, emitir token, publicar com `aok check --publish`, ver o relatório, revogar o token (a publicação seguinte falhou com 401), criar usuário viewer só da área, desativar e ver o login falhar, ver os eventos; e, em 19/11/2026 contra `platform/docker-compose.yml`, editar e desativar/reativar agente, conceder e revogar acesso posterior de área e redefinir senha pelo admin (exibição única validada por login com a nova senha). Limitações: no backend todas as listagens admin suportam paginação via `limit`/`offset` com cabeçalho `X-Total-Count`, mas no portal atualmente apenas a tela de Atividade consome paginação via API (áreas, agentes, tokens e usuários ainda carregam a lista completa); `admin_event` pode ser alterado por quem opera o banco. (O `platform/docker-compose.yml` foi revalidado ponta a ponta após o redesenho Farol., Alembic e `/v1/health`.)
 
 ### Plataforma: várias organizações e operador
 
@@ -131,8 +131,8 @@ python -m aok_platform.create_operator --email ops@example.com       # imprime a
 
 - Com 2 ou mais organizações, a chave de bootstrap exige o cabeçalho `X-Org-Slug`. Pelo console, o operador cria o primeiro admin (senha exibida uma vez).
 - O operador vê só metadados: organizações, contagens, agentes, versões, semáforo, datas e trilhas. Não vê conteúdo de relatório, ressalvas, arquivos, tokens nem hashes, e não baixa nada. Quem opera o banco ou o servidor continua podendo ler tudo.
-- Verificado no navegador, com banco temporário: fluxo completo com 2 organizações, publicação real com `aok check --publish`, desativar e reativar organização, reset de senha, sessões separadas. Não exercitados: slug de organização duplicado na interface, leitor de tela e contraste, outros navegadores.
-- Limitações: e-mail único globalmente; em bancos SQLite antigos o slug de agente segue global até recriar a tabela (o 409 pode revelar que o slug existe em outra organização); sem Alembic; throttle em memória.
+- Verificado no navegador (Edge CDP), com banco temporário: fluxo completo com 2 organizações, publicação real com `aok check --publish`, desativar e reativar organização, reset de senha, sessões separadas e, em 19/11/2026, tentativa de criar organização com slug duplicado na interface `/ops` (exibindo `409` sem stack trace). Não exercitados: leitor de tela, verificação automática completa de contraste e outros navegadores fora de Edge/Chromium.
+- Limitações: e-mail único globalmente. (A restrição global de `slug` de agente em SQLite legado, a ausência de Alembic e o throttle em memória foram substituídos pelos ADRs 016 e 017.)
 
 ### Plataforma: recuperação de senha
 
@@ -140,8 +140,8 @@ Opcional (ADR-012). Fica ativa só com `AOK_SMTP_HOST` e `AOK_PUBLIC_URL` defini
 
 - O usuário pede em `/forgot-password` e vê a mesma resposta para e-mail existente ou não; só o existente recebe o e-mail, com link `#token` válido por 30 min e de uso único.
 - Em `/reset-password` define a senha nova (12+ caracteres). Todas as sessões são revogadas, não há login automático e chega um aviso de troca.
-- Verificado no navegador (Edge) com servidor SMTP local (Mailpit), e em `postgres:16` local em 17/11/2026 (suíte completa de plataforma: `254 passed, 0 skipped` em 266.37s (0:04:26), commit `79f1d01`, incluindo recuperação de senha e banco legado; ver ADR-007 em [docs/decisoes.md](docs/decisoes.md)). Não exercitados: provedor SMTP real (STARTTLS, entregabilidade), 429 do reset na interface, leitor de tela, contraste e outros navegadores. O CI do commit 0b196eb passou (test, portal e postgres).
-- Limitações: limites de pedidos em memória (por processo, reiniciam no deploy); atrás de proxy reverso, é preciso configurar `AOK_TRUSTED_PROXIES` com os IPs/CIDRs confiáveis (sem essa variável, o IP visto é o do proxy e o bloqueio por tentativas inválidas pode atingir quem compartilha o IP); operadores seguem com reset só pela CLI.
+- Verificado no navegador (Edge CDP) com servidor SMTP local (Mailpit e servidor SMTP local em 19/11/2026): fluxo completo `/forgot-password` -> `/reset-password#token=...` e `429` na interface após mais de 10 tentativas inválidas (tokens válidos continuam aceitos após o limite do IP, ADR-017). Em `postgres:16` efêmero via `AOK_TEST_DATABASE_URL`, a suíte completa de plataforma passou em 19/11/2026 (`286 passed, 0 skipped` em 281.87s, commit `fff746f`; ver ADR-007 em [docs/decisoes.md](docs/decisoes.md)) e o CI run #45 (`fff746f`) passou nos três jobs (`test`, `portal` e `postgres`). Não exercitados: provedor SMTP externo real (STARTTLS, entregabilidade), leitor de tela, verificação automática completa de contraste e outros navegadores fora de Edge/Chromium.
+- Limitações: atrás de proxy reverso, é preciso configurar `AOK_TRUSTED_PROXIES` com os IPs/CIDRs confiáveis (sem essa variável, o IP visto é o do proxy); operadores seguem com reset só pela CLI. (Os limitadores em memória foram substituídos por `rate_limit_entry` no banco pelo ADR-017.)
 
 ### Plataforma: operação online
 
@@ -150,7 +150,7 @@ A plataforma está preparada para operação online em **instância única** atr
 - `GET /v1/health` verifica o banco (`SELECT 1`) e o acesso a `AOK_DATA_DIR` (`200` ou `503`, `Cache-Control: no-store`), usado também no `healthcheck` de `platform/docker-compose.yml`.
 - `AOK_DOCS_ENABLED=false` desliga `/docs`, `/redoc` e `/openapi.json` (inclusive no fallback SPA), e o middleware HTTP aplica `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` e `Strict-Transport-Security` opcional (`AOK_HSTS_ENABLED=true`).
 - `AOK_TRUSTED_PROXIES` habilita leitura controlada (direita para esquerda) de `X-Forwarded-For` na recuperação de senha atrás de proxies confiáveis.
-- Limitação conhecida: preparado para instância única; múltiplas réplicas ou vários workers ainda exigem Alembic (migração formal) e store compartilhado fora da memória do processo para os limitadores de tentativas.
+- Limitação conhecida: validado localmente e em CI como instância única; embora migrações formais com Alembic (ADR-016) e store compartilhado no banco para os limitadores de tentativas (ADR-017) já existam, múltiplas réplicas exigem volume compartilhado para `AOK_DATA_DIR` e ainda não houve teste de carga nem validação em nuvem.
 
 ### Com o modelo (usa o Ollama)
 
@@ -198,9 +198,9 @@ Para desligar o tracing: `AOK_TRACING=off`.
 
 ## Estado e testes
 
-Conferido em 18/11/2026 sobre o código do commit `fd5c698`: `python -m pytest -q` deu `635 passed, 2 skipped` (105.17s); `python -m ruff check .` passou (`All checks passed!`). Os 2 skips são ambientais: um teste do demo que precisa criar link simbólico (sem privilégio no Windows) e o teste de banco legado, que só roda com `AOK_TEST_DATABASE_URL` apontando para um Postgres. Os testes não usam Ollama nem Docker. Dos 635 que passam localmente em SQLite, 261 são da suíte de plataforma (`tests/test_platform_*.py`, de um total de 262 incluindo o teste de banco legado); com `AOK_TEST_DATABASE_URL` a suíte de plataforma roda em Postgres (ver [platform/README.md](platform/README.md)).
+Conferido em 19/11/2026 sobre o código do commit `8a2e3be`: `python -m pytest -q` deu `719 passed, 5 skipped` (135.35s); `python -m ruff check .` passou (`All checks passed!`). Os 5 skips são ambientais no Windows: verificação de permissões POSIX `0o600` na assinatura de auditoria, um teste do demo que precisa criar link simbólico sem privilégio neste sistema e 3 testes que só rodam com `AOK_TEST_DATABASE_URL` apontando para um Postgres. Os testes locais não usam Ollama nem Docker. Em `postgres:16` efêmero via `AOK_TEST_DATABASE_URL`, a suíte completa de plataforma passou em 19/11/2026 (`286 passed, 0 skipped` em 281.87s, commit `fff746f`; ver [platform/README.md](platform/README.md)).
 
-Workflows (`.github/workflows/`): `ci.yml` (jobs `test`, `portal` e `postgres`) e `eval.yml` (gate de prompts com respostas gravadas). Além do run #20 (`88dc3fc`, em [evidencias/03-ci-github/](evidencias/03-ci-github/)), o run #25, do commit `669633a` (conferido em 17/11/2026), passou nos três jobs (`test`, `portal` e `postgres`) em `ubuntu-latest`, onde o teste de link simbólico de `tests/test_demo_plataforma.py` roda sem skip (também reconfirmado localmente em `python:3.11-slim`).
+Workflows (`.github/workflows/`): `ci.yml` (jobs `test`, `portal` e `postgres`) e `eval.yml` (gate de prompts com respostas gravadas). Além do run #20 (`88dc3fc`, em [evidencias/03-ci-github/](evidencias/03-ci-github/)), o run #45, do commit `fff746f` (conferido em 19/11/2026), passou nos três jobs (`test`, `portal` e `postgres`) em `ubuntu-latest`, onde os testes POSIX e de link simbólico rodam sem skip.
 
 ## Resultados medidos
 
@@ -281,7 +281,7 @@ Nada disto existe ainda:
 - Exportar métricas para Prometheus e Grafana.
 - Execução em AWS/Bedrock.
 - Publicar o pacote (hoje só instala a partir do repositório).
-- Na plataforma: Alembic (migração formal), SSO, paginação das listagens do admin e limites de tentativa compartilhados entre processos.
+- Na plataforma: SSO e validação de carga em nuvem.
 
 ## Estrutura do repositório
 

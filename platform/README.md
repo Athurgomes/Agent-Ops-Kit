@@ -207,10 +207,21 @@ python -m pytest tests/test_platform_*.py -q      # inclui test_platform_pg_lega
 docker rm -f aok-pg-test
 ```
 
-A suíte em Postgres é bem mais lenta (um schema por teste): localmente em `postgres:16` efêmero, em 17/11/2026 (commit
-`79f1d01`), a suíte completa passou com `254 passed, 0 skipped` em 266.37s (0:04:26) (incluindo `test_platform_pg_legacy.py`).
-O CI também tem o job `postgres` com o mesmo teste; ele passou no GitHub até o run #25 (commit 669633a, conferido em
-17/11/2026).
+A suíte em Postgres é bem mais lenta (um schema por teste): localmente em `postgres:16` efêmero, em 19/11/2026 (commit
+`fff746f`), a suíte completa passou com `286 passed, 0 skipped` em 281.87s (incluindo `test_platform_pg_legacy.py`).
+O CI também tem o job `postgres` com o mesmo teste; o run #45 (commit `fff746f`, conferido em 19/11/2026) passou nos três
+jobs (`test`, `portal` e `postgres`).
+
+Revalidação ponta a ponta em 19/11/2026: `platform/docker-compose.yml` (Postgres 16 + API + portal **Farol.** incluindo o
+commit `308aee0`, Alembic e `/v1/health`) foi verificado com build, subida, `GET /v1/health`, `/`,
+`/v1/auth/capabilities`, criação de áreas/agente/token/usuários, `aok report build`, `aok check --publish`, downloads
+(`md`, `html`, `json`), persistência nos volumes após reinício do container `api`, conferência no Edge headless CDP em
+desktop (`1440x900`) e mobile (`375x812`, `0` erros de console/exceções JS, `scrollWidth <= innerWidth`), e fluxos de
+administração na UI (editar e desativar/reativar agente, conceder e revogar acesso posterior de área e redefinição de
+senha pelo admin), além de slug de organização duplicado (`409`) em `/ops` e recuperação de senha com `429` em
+`/reset-password` contra servidor local temporário SQLite/SMTP. Seguem não exercitados: leitor de tela, verificação
+automática completa de contraste, outros navegadores fora de Edge/Chromium, provedor SMTP externo real (STARTTLS) e
+teste de carga em nuvem.
 
 ## Recuperação de senha (e-mail, opcional)
 

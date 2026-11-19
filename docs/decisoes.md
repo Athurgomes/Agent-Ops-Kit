@@ -93,7 +93,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Só o relatório, os agregados e os hashes vão à plataforma (`aok check --publish URL`); o log de auditoria completo nunca sobe.
 - O token de agente só publica e é guardado como hash (sha256); aparece uma única vez na emissão e pode ser revogado.
 - As rotas admin usam uma chave de bootstrap lida de `AOK_ADMIN_BOOTSTRAP_KEY`; sem a variável, respondem 503. Não há chave padrão.
-- O slug do agente é único globalmente.
+- O slug do agente é único globalmente (alterado nos ADRs 011 e 016 para único por organização, inclusive em bancos SQLite legados).
 - Cada versão publicada recebe `seq` por agente; a API não tem update nem delete.
 
 **Consequências e limitações.**
@@ -101,11 +101,11 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - A imutabilidade das versões vale só pela API: quem opera o banco ou o disco pode alterar ou apagar.
 - A chave de bootstrap é única e compartilhada entre admins; não há login, papéis nem SSO na fase 2; login e papéis chegam na ADR-008.
 - Estado da implantação (verificações com data; o que não foi reconfirmado está dito):
-  - `docker compose` (API e postgres:16): reconfirmado localmente em 17/11/2026 no commit e76164d (build, subida, healthcheck de `db` e `api`, portal em `/`, `/v1/auth/capabilities`, cadastro admin, login por sessão, `aok check --publish`, leitura do relatório e download `md`/`html`/`json`, reinício da API com persistência nos volumes nomeados `pg_data` e `aok_data`, e `down -v`).
-  - CI: os runs dos commits 0b196eb, 88dc3fc (run #20, `evidencias/03-ci-github/`), 0c8c6b8 (run #24) e 669633a (run #25, conferido em 17/11/2026) terminaram com sucesso nos três jobs em `ubuntu-latest` (`test`, onde `test_reset_recusa_link_simbolico` roda sem skip; `portal`; e `postgres`, com service container `postgres:16` rodando os 254 testes de plataforma).
-  - Postgres real: verificado localmente em 17/11/2026 (commit 79f1d01) em `postgres:16` efêmero via `AOK_TEST_DATABASE_URL`: a suíte completa de plataforma (`254 passed, 0 skipped`, em 266.37s (0:04:26), incluindo `test_platform_pg_legacy.py`) passou, além de rodar no job `postgres` do CI. Os testes usam SQLite por padrão; com `AOK_TEST_DATABASE_URL`, rodam em Postgres.
-  - Não verificados: carga e desempenho em Postgres; `seed_demo` dentro do container do compose (a imagem não leva os resultados gravados do repositório).
-  - Dívidas: em bancos SQLite antigos a restrição UNIQUE(slug) global do agente continua; o Alembic não existe.
+  - `docker compose` (API e postgres:16): reconfirmado localmente ponta a ponta em 19/11/2026 após o redesenho **Farol.** (incluindo o commit 308aee0), Alembic e `/v1/health`: build, subida, healthcheck de `db` e `api`, `GET /v1/health`, portal em `/`, `/v1/auth/capabilities`, cadastro admin, login por sessão, `aok report build`, `aok check --publish`, leitura do relatório e download `md`/`html`/`json`, reinício da API com persistência nos volumes nomeados `pg_data` e `aok_data`, conferência no Edge headless CDP em desktop (`1440x900`) e mobile (`375x812`, `0` erros de console/exceções JS, `scrollWidth <= innerWidth`), fluxos da UI admin (editar e desativar/reativar agente, conceder e revogar acesso posterior de área, redefinição de senha pelo admin) e `down -v`. Também exercitados em servidor local temporário SQLite/SMTP via Edge CDP em 19/11/2026: criação de organização com slug duplicado (`409` sem stack trace) em `/ops` e fluxo completo de recuperação de senha incluindo `429` em `/reset-password`.
+  - CI: os runs dos commits 0b196eb, 88dc3fc (run #20, `evidencias/03-ci-github/`), 0c8c6b8 (run #24), 669633a (run #25) e fff746f (run #45, conferido em 19/11/2026) terminaram com sucesso nos três jobs em `ubuntu-latest` (`test`, onde `test_reset_recusa_link_simbolico` roda sem skip; `portal`; e `postgres`, com service container `postgres:16`).
+  - Postgres real: verificado localmente em 19/11/2026 (commit fff746f) em `postgres:16` efêmero via `AOK_TEST_DATABASE_URL`: a suíte completa de plataforma (`286 passed, 0 skipped`, em 281.87s, incluindo `test_platform_pg_legacy.py`) passou, além de rodar no job `postgres` do CI. Os testes usam SQLite por padrão; com `AOK_TEST_DATABASE_URL`, rodam em Postgres.
+  - Não verificados: leitor de tela, verificação automática completa de contraste, outros navegadores fora de Edge/Chromium, provedor SMTP externo real (STARTTLS), carga/desempenho em nuvem e `seed_demo` dentro do container do compose (a imagem não leva os resultados gravados do repositório).
+  - Dívidas resolvidas nos ADRs posteriores: migrações formais com Alembic e remoção da restrição `UNIQUE(slug)` global em bancos SQLite legados (ADR-016), paginação das listagens admin/operador com `X-Total-Count` e store compartilhado de rate limiting no banco (`rate_limit_entry`, ADR-017).
 - Alternativa descartada: enviar o log de auditoria (expõe conteúdo das interações).
 
 ## ADR-008: portal e login de usuários (fase 3)
@@ -129,6 +129,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - A trilha cobre só o download (as escritas administrativas passaram a ter trilha no ADR-009); não há registro de login nem de leitura.
 - Não há SSO, multiempresa, dark mode nem PDF (superado em parte pelos ADR-010 e ADR-011).
 - Estado do `docker compose`, do Postgres e do CI (com datas e o que não foi reconfirmado): ver o ADR-007. Dívidas: sem Alembic; UNIQUE(slug) global em bancos SQLite antigos.
+- **Atualização (ADR-016 e ADR-017):** as dívidas acima foram resolvidas posteriormente — migrações formais com Alembic e remoção da restrição `UNIQUE(slug)` global inclusive em bancos SQLite legados entraram no ADR-016, e o throttle de login migrou da memória para a tabela compartilhada `rate_limit_entry` no banco pelo ADR-017.
 
 ## ADR-009: administração do portal e trilha de eventos
 
@@ -153,6 +154,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Verificado no navegador, com banco temporário: criar área e sub-área, registrar agente, emitir token (aparece uma vez), publicar um relatório real com `aok check --publish`, ver o relatório no portal, revogar o token e a publicação seguinte falhar com 401, criar usuário viewer com acesso só à área, desativar o usuário e o login falhar, ver os eventos.
 - Não exercitados na interface: redefinir senha, editar ou reativar agente, conceder ou revogar acesso depois da criação.
 - Postgres real verificado localmente (postgres:16 efêmero em Docker) e no CI (job postgres, run do commit 4f3e5a7): a suíte de plataforma (235 testes) passou, incluindo a migração de um banco legado. Estado do `docker compose`: ver o ADR-007. Não verificados: carga e desempenho em Postgres, `seed_demo` dentro do container do compose, Alembic (dívida), UNIQUE(slug) global em bancos SQLite antigos (dívida).
+- **Atualização (paginação, ADR-016 e verificação em 19/11/2026):** todas as listagens de admin no backend passaram a suportar paginação retrocompatível (`limit`/`offset` + `X-Total-Count`), sendo que no portal atualmente apenas a tela de Atividade consome paginação via API (áreas, agentes, tokens e usuários ainda carregam a lista completa); os fluxos antes marcados como não exercitados (redefinir senha pelo admin, editar e desativar/reativar agente, conceder e revogar acesso depois da criação) foram exercitados via Edge CDP em `19/11/2026` (ADR-007); Alembic e remoção de `UNIQUE(slug)` global inclusive em bancos SQLite legados foram entregues no ADR-016 e deixaram de ser dívida.
 
 ## ADR-010: operador da plataforma (visão multiempresa, só metadados)
 
@@ -174,6 +176,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O reset de senha devolve a senha ao operador porque não há envio de e-mail; ela precisa chegar ao admin por um canal seguro, fora da plataforma.
 - Desativar uma organização corta login, sessões e tokens dela, mas não apaga nada; reativar devolve tudo.
 - O throttle de login do operador é em memória, como o dos usuários.
+- **Atualização (paginação e ADR-017):** o throttle de login do operador migrou da memória para a tabela compartilhada `rate_limit_entry` no banco no ADR-017, e `GET /v1/ops/organizations` e a lista `reports` de `GET /v1/ops/organizations/{id}` passaram a suportar paginação via `limit`/`offset` com cabeçalho `X-Total-Count`.
 
 ## ADR-011: isolamento multi-organização
 
@@ -197,6 +200,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O throttle de login é em memória.
 - Verificado no navegador, com banco temporário e `AOK_OPS_ENABLED=true`: operador criado pela CLI, login em `/ops`, 2 organizações, admin criado (senha exibida uma vez), admin entra no portal e vê só a própria organização, cadastra área, agente e token, publica um relatório real com `aok check --publish` e o vê no portal; o operador vê só metadados; desativar uma organização barra o admin dela e a outra segue intacta; reativar; reset de senha; sessões de operador e de usuário não se misturam; `/ops` é um 404 comum com o console desligado.
 - Não exercitados: erro de slug de organização duplicado na interface, leitor de tela e contraste, outros navegadores.
+- **Atualização (ADR-016, ADR-017 e verificação em 19/11/2026):** Alembic e a remoção da restrição `UNIQUE(slug)` global de `agent` inclusive em bancos SQLite legados foram entregues no ADR-016; o throttle de login migrou para a tabela compartilhada `rate_limit_entry` no banco no ADR-017; e o erro `409` de slug de organização duplicado na interface `/ops` foi exercitado em `19/11/2026` sem stack trace (ADR-007).
 
 ## ADR-012: recuperação de senha por e-mail
 
@@ -218,7 +222,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - E-mail ausente ou com mais de 254 caracteres responde 422, não 202.
 - Verificado especificamente neste fluxo: 8 `/reset` simultâneos por token em Postgres local deram exatamente 1 sucesso por token (verificação manual, fora do repositório); no navegador (Edge) com servidor SMTP local real (Mailpit): link real no login com o recurso ativo e placeholder "Soon" com ele desligado; UI idêntica para e-mail existente e inexistente (e-mail só para o existente); e-mail com link `#token` sem a senha; fragmento removido da URL; senha curta recusada; senha nova funciona e a antiga falha; sessão anterior revogada; link reusado inválido; novo pedido invalida o anterior; aviso de troca recebido; 4º pedido seguido sem e-mail.
 - Não exercitados: envio por provedor SMTP real (STARTTLS, entregabilidade), 429 do reset na interface, leitor de tela, contraste e outros navegadores. Verificações gerais de Postgres, CI e contagem atual de testes: ver ADR-007 e a seção "Estado e testes" do [README](../README.md).
-- **Atualização (ADR-017).** Os contadores de `/forgot` e `/reset` foram movidos da memória para a tabela compartilhada `rate_limit_entry` (chave em SHA-256), e `POST /v1/auth/password/reset` passou a validar e consumir o token antes de aplicar o bloqueio por IP — eliminando o risco de negação de serviço sobre tokens válidos sob IP compartilhado/NAT.
+- **Atualização (ADR-017 e verificação em 19/11/2026):** os contadores de `/forgot` e `/reset` foram movidos da memória para a tabela compartilhada `rate_limit_entry` (chave em SHA-256), e `POST /v1/auth/password/reset` passou a validar e consumir o token antes de aplicar o bloqueio por IP — eliminando o risco de negação de serviço sobre tokens válidos sob IP compartilhado/NAT. O bloqueio `429` em `/reset-password` (junto do fluxo completo via `/forgot-password`) também foi exercitado na interface em `19/11/2026` (conforme ADR-007), permanecendo não exercitados envio por provedor SMTP externo real (STARTTLS/entregabilidade), leitor de tela, contraste automático completo e outros navegadores fora de Edge/Chromium.
 
 ## ADR-013: relatório técnico-executivo em linguagem de negócios e estrutura ABNT NBR 10719
 
@@ -276,6 +280,7 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O provisionamento de contas segue sob controle administrativo (`org_admin` ou operador), e alterar `CONTACT_URL` requer recompilar o front-end.
 - O redesenho é restrito à camada de interface: não altera contratos de API, isolamento multi-organização, throttle em memória, regras provisórias do semáforo nem o caráter autodeclarado dos relatórios (ADR-007).
 - Verificado no build (`npm run build`) e via Edge headless/CDP em `1440x900` e `375x812` (zero erros de console, `scrollWidth <= innerWidth`, foco por teclado `:focus-visible` e `prefers-reduced-motion: reduce` em `/`, `/login` e `/app` com API simulada via CDP `Fetch`); não houve validação em leitores de tela nem em navegadores fora do Edge/Chromium.
+- **Atualização (ADR-017 e verificação em 19/11/2026):** os limitadores de tentativas migraram da memória para a tabela compartilhada `rate_limit_entry` no banco no ADR-017, e o portal **Farol.** (incluindo o commit `308aee0`) foi revalidado ponta a ponta contra o `platform/docker-compose.yml` em `19/11/2026` (ADR-007).
 
 ## ADR-016: migrações formais de banco com Alembic (SQLite e Postgres)
 
