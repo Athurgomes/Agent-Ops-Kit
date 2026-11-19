@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link, useParams } from "react-router-dom";
 import { areaPath, useCatalog } from "../auth";
 import { copy } from "../copy";
@@ -9,12 +10,16 @@ export function Areas() {
   const { areaId } = useParams();
   const cat = useCatalog();
   const id = areaId ? Number(areaId) : null;
+  const here = id != null ? cat.areas.find((a) => a.id === id) : null;
+
+  useEffect(() => {
+    document.title = `${copy.areas.pageTitle(here?.name)} · ${copy.brand.full}`;
+  }, [here?.name]);
 
   if (!cat.ready) return <Loading />;
   if (cat.error) return <ErrorBox>{cat.error}</ErrorBox>;
 
   const subareas = cat.areas.filter((a) => a.parent_id === id);
-  const here = id != null ? cat.areas.find((a) => a.id === id) : null;
   const agents = id != null ? cat.agents.filter((a) => a.area_id === id) : [];
   const crumbs =
     id == null

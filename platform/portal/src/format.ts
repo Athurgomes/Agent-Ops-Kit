@@ -1,4 +1,11 @@
+import { ApiError } from "./api";
 import type { Semaforo } from "./api";
+import { copy } from "./copy";
+
+const LOCALE = "pt-BR";
+
+export const NOT_AVAILABLE = copy.format.notAvailable;
+export const NA = copy.format.na;
 
 /** Converts ISO to Date. No time zone in the text = UTC (that is what the API returns). */
 export function parseDate(iso: string | null | undefined): Date | null {
@@ -7,48 +14,73 @@ export function parseDate(iso: string | null | undefined): Date | null {
   const d = new Date(hasZone ? iso : `${iso}Z`);
   return Number.isNaN(d.getTime()) ? null : d;
 }
-/** Date and time in the browser's locale and time zone. */
+
+/** Date and time in pt-BR using the browser's time zone. */
 export function fmtDate(iso: string | null | undefined): string {
   const d = parseDate(iso);
-  return d ? d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "Not available";
-}
-export function fmtDateLong(iso: string | null | undefined): string {
-  const d = parseDate(iso);
-  return d ? d.toLocaleString(undefined, { dateStyle: "long", timeStyle: "long" }) : "Not available";
+  return d ? d.toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" }) : NOT_AVAILABLE;
 }
 
-const NA = "n/a";
+export function fmtDateLong(iso: string | null | undefined): string {
+  const d = parseDate(iso);
+  return d ? d.toLocaleString(LOCALE, { dateStyle: "long", timeStyle: "long" }) : NOT_AVAILABLE;
+}
+
 export const fmtPct = (x: number | undefined | null) =>
-  x == null ? NA : x.toLocaleString(undefined, { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  x == null
+    ? NA
+    : x.toLocaleString(LOCALE, { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
 export const fmtNum = (x: number | undefined | null) =>
-  x == null ? NA : x.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  x == null ? NA : x.toLocaleString(LOCALE, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+
 export const fmtSigned = (x: number | undefined | null) =>
   x == null
     ? NA
-    : x.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3, signDisplay: "exceptZero" });
+    : x.toLocaleString(LOCALE, { minimumFractionDigits: 3, maximumFractionDigits: 3, signDisplay: "exceptZero" });
 
-type Light = { label: string; cls: string; dot: string };
-/** The traffic light colors only ever mean the report result; they are never decoration. */
-const SEMAFORO: Record<Semaforo, Light> = {
-  green: { label: "Green", cls: "bg-[#dcfce7] text-black", dot: "bg-[#16a34a]" },
-  yellow: { label: "Yellow", cls: "bg-[#fef3c7] text-black", dot: "bg-[#d97706]" },
-  red: { label: "Red", cls: "bg-[#fee2e2] text-black", dot: "bg-[#dc2626]" },
+export function fmtApiError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 0) return copy.errors.network;
+    if (err.status === 401) return copy.errors.unauthorized;
+    if (err.status === 404) return copy.errors.notFound;
+    if (err.status === 429) return copy.errors.tooMany;
+    if (err.status >= 500) return copy.errors.server;
+    return copy.errors.generic;
+  }
+  return err instanceof Error && err.message ? err.message : copy.common.errorFallback;
+}
+
+export type Light = { glyph: string; label: string; cls: string; dot: string };
+
+/** Traffic-light colors and distinct Unicode glyphs represent only the report result, never decoration. */
+export const SEMAFORO: Record<Semaforo, Light> = {
+  green: {
+    glyph: copy.format.semaforo.green.glyph,
+    label: copy.format.semaforo.green.label,
+    cls: "bg-[#ecfdf5] text-[#064e3b] border-[#064e3b]",
+    dot: "bg-[#15803d]",
+  },
+  yellow: {
+    glyph: copy.format.semaforo.yellow.glyph,
+    label: copy.format.semaforo.yellow.label,
+    cls: "bg-[#fffbeb] text-[#78350f] border-[#92400e]",
+    dot: "bg-[#b45309]",
+  },
+  red: {
+    glyph: copy.format.semaforo.red.glyph,
+    label: copy.format.semaforo.red.label,
+    cls: "bg-[#fef2f2] text-[#7f1d1d] border-[#991b1b]",
+    dot: "bg-[#b91c1c]",
+  },
 };
+
 export function semaforoOf(s: string): Light {
-  return SEMAFORO[s as Semaforo] ?? { label: s, cls: "bg-white text-black", dot: "bg-black" };
+  return SEMAFORO[s as Semaforo] ?? { glyph: "■", label: s, cls: "bg-surface text-ink border-ink", dot: "bg-ink" };
 }
 
 // Reasons for the traffic light (engine rules, version "provisoria-1").
-export const RULE_TEXT: Record<string, string> = {
-  eval_regression: "the evaluation regression gate fired",
-  audit_invalid: "the reported audit chain is invalid",
-  attack_success_with_guardrails: "an attack succeeded with guardrails on",
-  false_positive: "a legitimate question was blocked by the guardrails (false positive)",
-  eval_nonsignificant_drop: "the evaluation showed a drop in the mean without statistical significance",
-  no_audit: "no audit log was reported",
-};
+export const RULE_TEXT: Record<string, string> = copy.format.rules;
 
-export const LIMITS_TEXT =
-  "Green does not mean safe. It means that, in this test, with this set of attacks and these caveats, the results stayed within the defined limits. It does not cover attacks outside the suite, other models, or production use.";
-export const SELF_DECLARED_TEXT =
-  "Reports are self-reported: they are generated and published by the team that owns the agent. The portal stores them, shows them and logs downloads, but it does not rerun the tests or prove the results are true.";
+export const LIMITS_TEXT = copy.format.limitsText;
+export const SELF_DECLARED_TEXT = copy.format.selfDeclaredText;

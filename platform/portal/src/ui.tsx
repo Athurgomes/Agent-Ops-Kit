@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 import { Link } from "react-router-dom";
 import { copy } from "./copy";
-import { semaforoOf } from "./format";
+import { fmtApiError, semaforoOf } from "./format";
 
 export { Logo } from "./Logo";
 
@@ -61,18 +61,20 @@ export function Tag({ children }: { children: ReactNode }) {
   );
 }
 
-/** Traffic-light label: color + square mark + text (never color alone). Colors only ever mean the result. */
+/** Traffic-light label: color + distinct Unicode glyph + text (never color alone). Colors only ever mean the result. */
 export function SemaforoBadge({ value, size = "md" }: { value: string; size?: "md" | "lg" }) {
   const s = semaforoOf(value);
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-2 whitespace-nowrap rounded-[2px] border border-ink/40 font-mono font-semibold uppercase tracking-[0.04em]",
+        "inline-flex items-center whitespace-nowrap rounded-none border font-mono font-semibold uppercase tracking-[0.06em]",
         s.cls,
-        size === "lg" ? "px-4 py-2 text-base" : "px-2.5 py-0.5 text-xs",
+        size === "lg" ? "gap-2.5 px-4 py-2 text-base" : "gap-2 px-2.5 py-1 text-xs",
       )}
     >
-      <span aria-hidden="true" className={cx("size-2.5 shrink-0", s.dot)} />
+      <span aria-hidden="true" className={cx("shrink-0 leading-none", size === "lg" ? "text-lg" : "text-sm")}>
+        {s.glyph}
+      </span>
       <span className="sr-only">{copy.aria.trafficLightPrefix}</span>
       {s.label}
     </span>
@@ -246,8 +248,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T
     setSt((s) => ({ ...s, loading: true, error: null }));
     fn().then(
       (data) => alive && setSt({ data, error: null, loading: false }),
-      (e: unknown) =>
-        alive && setSt({ data: null, error: e instanceof Error ? e.message : copy.common.errorFallback, loading: false }),
+      (e: unknown) => alive && setSt({ data: null, error: fmtApiError(e), loading: false }),
     );
     return () => {
       alive = false;

@@ -50,6 +50,8 @@ export type ReportDetail = ReportItem & {
   audit_verify_ok: boolean | null;
   audit_anchor: string | null;
   model: string | null;
+  prompt_sha256?: string | null;
+  dataset_sha256?: string | null;
   seed: number | null;
   n_cases: number | null;
   summary: Summary;
