@@ -364,6 +364,13 @@ def _executive_verdict_blocks(d: dict) -> list[Block]:
     return blocks
 
 
+def _has_multirun(ev: dict) -> bool:
+    variance = ev.get("variance") or {}
+    return bool(variance) and (
+        ev["runs_per_config"] > 1 or any(v.get("n_runs", 1) > 1 for v in variance.values())
+    )
+
+
 def _functional_quality_blocks(ev: dict) -> list[Block]:
     diff_pp = ev["mean_diff"] * 100
     if ev["regression"]:
@@ -385,7 +392,7 @@ def _functional_quality_blocks(ev: dict) -> list[Block]:
             "serviço nos critérios verificados."
         )
 
-    return [
+    blocks: list[Block] = [
         ("h2", _SECTIONS[2]),
         (
             "p",
@@ -403,6 +410,22 @@ def _functional_quality_blocks(ev: dict) -> list[Block]:
         ),
         ("p", continuity),
     ]
+    if _has_multirun(ev):
+        variance = ev["variance"]
+        parts = []
+        for v in (ev["baseline"], ev["candidate"]):
+            vs = variance.get(v)
+            if vs:
+                parts.append(
+                    f"{v}: média {_f(vs['mean'])} em {vs['n_runs']} execuções "
+                    f"(desvio-padrão entre execuções {_f(vs['run_stdev'])}, "
+                    f"desvio médio por caso {_f(vs['mean_case_stdev'])}, "
+                    f"consistência exata de score {_pct(vs['exact_score_consistency_rate'])}% "
+                    f"e de resposta {_pct(vs['exact_answer_consistency_rate'])}%)"
+                )
+        if parts:
+            blocks.append(("p", "Variância entre execuções: " + "; ".join(parts) + "."))
+    return blocks
 
 
 def _risk_analysis_blocks(rt: dict) -> list[Block]:
@@ -668,6 +691,40 @@ def _appendix_blocks(d: dict) -> list[Block]:
                 ["Execuções por configuração", str(ev["runs_per_config"])],
             ],
         ),
+    ]
+    if _has_multirun(ev):
+        variance = ev["variance"]
+        var_rows = [
+            [
+                v,
+                str(vs["n_runs"]),
+                _f(vs["mean"]),
+                _f(vs["run_stdev"]),
+                _f(vs["mean_case_stdev"]),
+                f"{_pct(vs['exact_score_consistency_rate'])}%",
+                f"{_pct(vs['exact_answer_consistency_rate'])}%",
+            ]
+            for v in (ev["baseline"], ev["candidate"])
+            if (vs := variance.get(v))
+        ]
+        if var_rows:
+            blocks += [
+                ("h3", "A.1.1 Variância entre execuções por variante"),
+                (
+                    "table",
+                    [
+                        "Variante",
+                        "Execuções",
+                        "Média",
+                        "Desvio-padrão (execuções)",
+                        "Desvio médio por caso",
+                        "Consistência exata (score)",
+                        "Consistência exata (resposta)",
+                    ],
+                    var_rows,
+                ),
+            ]
+    blocks += [
         ("h2", "A.2 Taxa de sucesso de ataques (ASR) por categoria (IC 95% de Wilson)"),
         (
             "table",

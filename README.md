@@ -162,6 +162,12 @@ python -m examples.rag_agent "Quantos dias de férias a Lumina concede por ano?"
 
 Na primeira execução o corpus fictício é indexado em `chroma/`. Só uma pergunta foi executada para confirmar este comando; os demais comandos que usam o modelo (`aok eval` sem `--reuse`, `--judge`, `aok redteam run`) estão em [docs/resultados.md](docs/resultados.md) e não foram reexecutados ao escrever este README.
 
+Para medir variância e consistência entre múltiplas execuções por caso (ex.: 3 execuções usando sementes `seed`, `seed+1`, `seed+2`):
+
+```bash
+aok eval --baseline v1 --candidate v2 --runs 3 --summary
+```
+
 ### Como ver o trace
 
 1. Com o Jaeger de pé e o agente executado (comando acima), abra http://localhost:16686.

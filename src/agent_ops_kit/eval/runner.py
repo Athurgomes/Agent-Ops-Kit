@@ -14,11 +14,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import statistics
 import time
 from collections.abc import Callable
 from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from agent_ops_kit.config import AgentConfig
 from agent_ops_kit.eval.checks import run_checks
@@ -78,30 +80,38 @@ def run_variant(
     limit: int | None = None,
     seed: int = DEFAULT_SEED,
     prompts_dir: str | Path = "evals/prompts",
+    runs: int = 1,
 ) -> list[dict]:
     """Roda o agente em cada caso com o prompt da variante.
 
-    Devolve um registro por caso: case_id, variant, answer, latency_s, input_tokens,
-    output_tokens, error. Erro em um caso é registrado em `error` e a execução segue.
+    Devolve um registro por caso (ou por execução e caso quando `runs > 1`): case_id,
+    variant, answer, latency_s, input_tokens, output_tokens, error (e `run_index` quando
+    `runs > 1`). Erro em um caso é registrado em `error` e a execução segue.
     Com `out_path`, grava um registro por linha (JSONL) à medida que roda.
-    `llm=None` usa o Ollama com temperature 0 e `seed`; um `llm` injetado ignora `seed`.
+    `llm=None` usa o Ollama com temperature 0 e `seed + run_index`; um `llm` injetado
+    ignora `seed`.
     """
+    if runs < 1:
+        raise ValueError("runs deve ser >= 1")
     run_agent_fn = _load_run_agent()
     cfg = config.model_copy(
         update={"system_prompt": load_prompt(variant, prompts_dir), "prompt_version": variant}
     )
-    base_llm = llm or make_ollama_llm(seed)
     cases = dataset[:limit] if limit is not None else dataset
     if out_path is not None:
         Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     records: list[dict] = []
     with open(out_path, "w", encoding="utf-8") if out_path else nullcontext() as out:
-        for case in cases:
-            record = _run_case(case, variant, cfg, base_llm, run_agent_fn)
-            records.append(record)
-            if out:
-                out.write(json.dumps(record, ensure_ascii=False) + "\n")
-                out.flush()
+        for run_index in range(runs):
+            base_llm = llm if llm is not None else make_ollama_llm(seed + run_index)
+            for case in cases:
+                record = _run_case(case, variant, cfg, base_llm, run_agent_fn)
+                if runs > 1:
+                    record["run_index"] = run_index
+                records.append(record)
+                if out:
+                    out.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    out.flush()
     return records
 
 
@@ -156,13 +166,78 @@ def final_answer(answer: str) -> str:
 def score_records(dataset: list[EvalCase], records: list[dict]) -> dict[str, float]:
     """Score determinístico (0 a 1, via run_checks sobre `final_answer`) por case_id.
 
+    Quando houver mais de um registro para o mesmo `case_id`, devolve a média dos scores.
     Registro com erro é pontuado como resposta vazia (não some do cálculo nem é ignorado).
     Registros de casos fora do dataset levantam KeyError; casos sem registro ficam de fora.
     """
     by_id = {c.id: c for c in dataset}
+    grouped: dict[str, list[float]] = {}
+    for r in records:
+        cid = r["case_id"]
+        score = run_checks(by_id[cid], final_answer(r["answer"])).score
+        grouped.setdefault(cid, []).append(score)
+    return {cid: sum(xs) / len(xs) for cid, xs in grouped.items()}
+
+
+def _group_records_by_run(records: list[dict]) -> dict[int, list[dict]]:
+    """Agrupa registros por `run_index`, com fallback sequencial por `case_id` se ausente."""
+    runs: dict[int, list[dict]] = {}
+    seen_per_case: dict[str, int] = {}
+    for rec in records:
+        cid = rec["case_id"]
+        seq = seen_per_case.get(cid, 0)
+        seen_per_case[cid] = seq + 1
+        raw_idx = rec.get("run_index")
+        run_idx = seq if raw_idx is None else int(raw_idx)
+        runs.setdefault(run_idx, []).append(rec)
+    return dict(sorted(runs.items()))
+
+
+def score_runs(dataset: list[EvalCase], records: list[dict]) -> list[dict[str, float]]:
+    """Lista de `{case_id: score}` por execução, agrupada por `run_index` (ou sequencial)."""
+    runs = _group_records_by_run(records)
+    return [score_records(dataset, run_recs) for run_recs in runs.values()]
+
+
+def summarize_runs(dataset: list[EvalCase], records: list[dict]) -> dict[str, Any]:
+    """Resumo de variância e consistência entre execuções para os registros de uma variante."""
+    by_id = {c.id: c for c in dataset}
+    run_scores = score_runs(dataset, records)
+    n_runs = len(run_scores)
+    per_run_means = [statistics.fmean(scores.values()) for scores in run_scores if scores]
+    mean = statistics.fmean(per_run_means) if per_run_means else 0.0
+    run_stdev = statistics.stdev(per_run_means) if len(per_run_means) >= 2 else 0.0
+
+    scores_by_case: dict[str, list[float]] = {}
+    answers_by_case: dict[str, list[str]] = {}
+    for r in records:
+        cid = r["case_id"]
+        fa = final_answer(r["answer"])
+        score = run_checks(by_id[cid], fa).score
+        scores_by_case.setdefault(cid, []).append(score)
+        answers_by_case.setdefault(cid, []).append(fa)
+
+    case_stdevs = [statistics.stdev(xs) for xs in scores_by_case.values() if len(xs) >= 2]
+    mean_case_stdev = statistics.fmean(case_stdevs) if n_runs >= 2 and case_stdevs else 0.0
+    n_cases = len(scores_by_case)
+    exact_score_consistency_rate = (
+        sum(1 for xs in scores_by_case.values() if len(set(xs)) == 1) / n_cases
+        if n_cases
+        else 0.0
+    )
+    exact_answer_consistency_rate = (
+        sum(1 for ans in answers_by_case.values() if len(set(ans)) == 1) / n_cases
+        if n_cases
+        else 0.0
+    )
     return {
-        r["case_id"]: run_checks(by_id[r["case_id"]], final_answer(r["answer"])).score
-        for r in records
+        "n_runs": n_runs,
+        "per_run_means": per_run_means,
+        "mean": mean,
+        "run_stdev": run_stdev,
+        "mean_case_stdev": mean_case_stdev,
+        "exact_score_consistency_rate": exact_score_consistency_rate,
+        "exact_answer_consistency_rate": exact_answer_consistency_rate,
     }
 
 

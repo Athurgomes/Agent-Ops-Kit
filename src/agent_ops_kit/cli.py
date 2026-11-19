@@ -46,6 +46,8 @@ def _reproducible_command(args: argparse.Namespace) -> str:
         tokens.append("--judge")
     if args.limit is not None:
         tokens += ["--limit", str(args.limit)]
+    if getattr(args, "runs", 1) != 1:
+        tokens += ["--runs", str(args.runs)]
     if args.prices:
         tokens += ["--prices", args.prices]
     tokens += ["--seed", str(args.seed)]
@@ -122,13 +124,44 @@ def _ops_table(summaries: dict[str, dict], variants: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _eval_summary(args, ab, n_cases: int, gate: str | None, path: str, defaulted: bool) -> str:
+def _variance_section(variance: dict[str, dict], variants: list[str]) -> list[str]:
+    lines = [
+        "## Variância entre execuções",
+        "",
+        (
+            "| Variante | Execuções | Média | Desvio-padrão (execuções) | "
+            "Desvio médio por caso | Consistência exata (score / resposta) |"
+        ),
+        "|---|---|---|---|---|---|",
+    ]
+    for v in variants:
+        s = variance[v]
+        consistency = (
+            f"{s['exact_score_consistency_rate']:.1%} / "
+            f"{s['exact_answer_consistency_rate']:.1%}"
+        )
+        lines.append(
+            f"| {v} | {s['n_runs']} | {s['mean']:.4f} | {s['run_stdev']:.4f} | "
+            f"{s['mean_case_stdev']:.4f} | {consistency} |"
+        )
+    lines.append("")
+    for v in variants:
+        means = ", ".join(f"{m:.4f}" for m in variance[v]["per_run_means"])
+        lines.append(f"- Médias por execução ({v}): [{means}]")
+    lines.append("")
+    return lines
+
+
+def _eval_summary(
+    args, ab, n_cases: int, gate: str | None, path: str, defaulted: bool, n_runs: int = 1
+) -> str:
     """Placar curto do `aok eval --summary`: só números e o caminho do relatório completo."""
     b, c = args.baseline, args.candidate
+    runs_part = f", {n_runs} execuções" if n_runs > 1 else ""
     lines = [
         (
             f"Avaliação A/B: {b} (baseline) vs {c} (candidate), {n_cases} casos "
-            f"({ab.n} pareados), semente {args.seed}"
+            f"({ab.n} pareados){runs_part}, semente {args.seed}"
         ),
         f"  média {b}: {ab.mean_baseline:.4f}",
         f"  média {c}: {ab.mean_candidate:.4f}",
@@ -173,6 +206,13 @@ def _run_eval(args: argparse.Namespace) -> int:
         raise CliError("--baseline e --candidate devem ser variantes diferentes")
     if args.limit is not None and args.limit < 1:
         raise CliError("--limit deve ser >= 1")
+    if args.runs < 1:
+        raise CliError("--runs deve ser >= 1")
+    if args.reuse and args.runs != 1:
+        raise CliError(
+            "--runs não pode ser usado com --reuse "
+            "(com --reuse são usadas todas as execuções já gravadas)"
+        )
     answers_dir = Path(args.answers_dir)
 
     if not Path(args.dataset).is_file():
@@ -227,6 +267,7 @@ def _run_eval(args: argparse.Namespace) -> int:
                 limit=args.limit,
                 seed=args.seed,
                 prompts_dir=args.prompts_dir,
+                runs=args.runs,
             )
             entry = runner.manifest_entry(
                 v, config, args.dataset, len(records[v]), args.seed, args.prompts_dir
@@ -234,24 +275,40 @@ def _run_eval(args: argparse.Namespace) -> int:
             runner.write_manifest_entry(answers_dir, v, entry)
 
     scores = {v: runner.score_records(dataset, records[v]) for v in variants}
+    variance = {v: runner.summarize_runs(dataset, records[v]) for v in variants}
+    has_multirun = any(s["n_runs"] > 1 for s in variance.values())
     try:
         ab = paired_ab(scores[args.baseline], scores[args.candidate], seed=args.seed)
     except ValueError as exc:
         raise CliError(f"não foi possível comparar: {exc}") from exc
 
-    lines = [
+    meta_lines = [
         "# Relatório de avaliação A/B",
         "",
         f"- Comando: `{_reproducible_command(args)}`",
         f"- Modelo: {config.model}",
         f"- Semente: {args.seed}",
         f"- Casos: {len(cases)}",
+    ]
+    if has_multirun:
+        runs_vals = [variance[v]["n_runs"] for v in variants]
+        runs_label = (
+            str(runs_vals[0])
+            if len(set(runs_vals)) == 1
+            else ", ".join(f"{v}: {variance[v]['n_runs']}" for v in variants)
+        )
+        meta_lines.append(f"- Execuções por configuração: {runs_label}")
+    meta_lines += [
         f"- Respostas: {_answers_source(args)}",
         f"- Data: {datetime.now().astimezone().isoformat(timespec='seconds')}",
         "",
         "## Métrica determinística",
         "",
         format_ab_markdown(ab, args.baseline, args.candidate, "checagens determinísticas"),
+    ]
+    if has_multirun:
+        meta_lines += _variance_section(variance, variants)
+    lines = meta_lines + [
         "## Taxa de aprovação por checagem",
         "",
         "Aprovados/aplicáveis (a checagem não se aplica a todos os casos).",
@@ -328,7 +385,12 @@ def _run_eval(args: argparse.Namespace) -> int:
         gate = None
         if args.fail_on_regression:
             gate = "REGRESSÃO detectada (código 1)" if regression else "sem regressão (código 0)"
-        print(_eval_summary(args, ab, len(cases), gate, out_path, defaulted=not args.report))
+        n_runs_summary = max((s["n_runs"] for s in variance.values()), default=1)
+        print(
+            _eval_summary(
+                args, ab, len(cases), gate, out_path, defaulted=not args.report, n_runs=n_runs_summary
+            )
+        )
         return 1 if args.fail_on_regression and regression else 0
     print(report)
     if args.report:
@@ -691,6 +753,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--judge", action="store_true", help="avalia também com o juiz (usa o modelo)")
     p.add_argument("--limit", type=int, default=None, help="usa só os N primeiros casos")
+    p.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="execuções por caso para medir variância entre execuções (padrão: 1)",
+    )
     p.add_argument("--prices", default=None, help="YAML de preços {modelo: {input, output}} por 1M tokens")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--report", default=None, help="grava o relatório markdown neste caminho")

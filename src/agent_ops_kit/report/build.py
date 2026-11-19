@@ -96,6 +96,7 @@ def _eval_section(a: dict, hashes: dict) -> tuple[dict, dict]:
     dataset = load_dataset(dataset_path)
     records = {v: runner.load_records(answers_dir / f"{v}.jsonl") for v in variants}
     scores = {v: runner.score_records(dataset, records[v]) for v in variants}
+    variance = {v: runner.summarize_runs(dataset, records[v]) for v in variants}
     try:
         ab = paired_ab(scores[variants[0]], scores[variants[1]], seed=a["seed"])
     except ValueError as exc:
@@ -115,6 +116,7 @@ def _eval_section(a: dict, hashes: dict) -> tuple[dict, dict]:
         "metric": "score das checagens determinísticas, de 0 a 1",
         "n_cases": len(dataset), "n_pairs": ab.n, "n_dropped": ab.n_dropped,
         "runs_per_config": min(_runs([r["case_id"] for r in records[v]]) for v in variants),
+        "variance": variance,
         "mean_baseline": ab.mean_baseline, "mean_candidate": ab.mean_candidate,
         "mean_diff": ab.mean_diff, "ci95_low": ab.ci_low, "ci95_high": ab.ci_high,
         "p_value": ab.p_value, "p_method": ab.p_method, "seed": ab.seed,
@@ -279,6 +281,30 @@ def _audit_limitation_text(au: dict | None) -> str:
     )
 
 
+def _runs_limitation(ev: dict, rt: dict) -> str:
+    ev_runs, rt_runs = ev["runs_per_config"], rt["runs_per_config"]
+    if ev_runs <= 1 and rt_runs <= 1:
+        return (
+            f"Eval: {_plural(ev_runs)} por configuração; red team: "
+            f"{_plural(rt_runs)} por configuração. Não há medida da variação "
+            "entre execuções."
+        )
+    if ev_runs > 1 and rt_runs <= 1:
+        return (
+            f"Eval: {_plural(ev_runs)} por configuração (variância medida entre execuções); "
+            f"red team: {_plural(rt_runs)} por configuração, sem medida da variação entre execuções."
+        )
+    if ev_runs <= 1 and rt_runs > 1:
+        return (
+            f"Eval: {_plural(ev_runs)} por configuração (sem medida da variação entre execuções); "
+            f"red team: {_plural(rt_runs)} por configuração."
+        )
+    return (
+        f"Eval: {_plural(ev_runs)} por configuração (variância medida entre execuções); "
+        f"red team: {_plural(rt_runs)} por configuração."
+    )
+
+
 def limitations(data: dict) -> list[str]:
     """Texto fixo do kit; só os números vêm dos resultados."""
     ev, rt = data["eval"], data["redteam"]
@@ -292,11 +318,7 @@ def limitations(data: dict) -> list[str]:
             f"{rt['n_legit_questions']} perguntas legítimas para medir falsos positivos. Com "
             "amostras pequenas, os intervalos de confiança são largos."
         ),
-        (
-            f"Eval: {_plural(ev['runs_per_config'])} por configuração; red team: "
-            f"{_plural(rt['runs_per_config'])} por configuração. Não há medida da variação "
-            "entre execuções."
-        ),
+        _runs_limitation(ev, rt),
         (
             "As defesas são heurísticas (filtros de entrada, ferramentas e saída) e podem ser "
             "contornadas por ataques diferentes dos testados."
