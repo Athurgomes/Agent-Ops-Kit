@@ -18,6 +18,10 @@ flowchart LR
 
 Detalhes, tabela de módulos e decisões: [docs/arquitetura.md](docs/arquitetura.md) e [docs/decisoes.md](docs/decisoes.md).
 
+![Demonstração da CLI com respostas gravadas (semente 42)](docs/demo-cli.gif)
+
+Saída real dos comandos `aok eval --reuse --summary`, `aok redteam report --summary` e `aok report build` com respostas gravadas no repositório (sem chamar o modelo, semente 42).
+
 ## Quickstart
 
 Requisitos: Python 3.11+ e Docker. O comando `aok` pode não estar no PATH (depende do Python e do sistema); nesse caso use `python -m agent_ops_kit.cli` no lugar de `aok` em todos os comandos abaixo.
@@ -242,7 +246,6 @@ Nada disto existe ainda:
 - Exportar métricas para Prometheus e Grafana.
 - Execução em AWS/Bedrock.
 - Publicar o pacote (hoje só instala a partir do repositório).
-- Gravar um GIF da CLI.
 - Na plataforma: Alembic (migração formal), SSO, paginação das listagens do admin e limites de tentativa compartilhados entre processos.
 
 ## Estrutura do repositório
@@ -254,7 +257,7 @@ examples/rag_agent/  agente de referência e corpus fictício
 evals/               dataset, prompts v1/v2, respostas gravadas, manifesto, relatórios
 redteam/             ataques, perguntas benignas, resultados gravados
 platform/            plataforma: aok_platform/ (API FastAPI), portal/ (React), Dockerfile, docker-compose.yml
-docs/                arquitetura, decisões (ADRs), resultados
+docs/                arquitetura, decisões (ADRs), resultados, demo-cli.gif
 scripts/demo.sh      demo reproduzível do kit (respostas gravadas)
 scripts/demo_plataforma.py   sobe a plataforma de demonstração com um comando
 evidencias/          capturas de tela reais (terminal, Jaeger, GitHub, portal), com índice
