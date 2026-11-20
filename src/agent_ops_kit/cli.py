@@ -156,8 +156,29 @@ def _variance_section(variance: dict[str, dict], variants: list[str]) -> list[st
     return lines
 
 
+def _cost_note(model: str, price_table, records: dict[str, list[dict]]) -> str:
+    """Rodapé do custo. Sem tokens registrados (agente que não usa o `llm` do kit) o custo é n/d."""
+    if any(r.get("input_tokens") is None for recs in records.values() for r in recs):
+        return "n/d (tokens não registrados: o agente não recebeu ou não declarou o `llm` do kit)."
+    return f"{price_table.note} " + (
+        "Modelo fora da tabela: n/d."
+        if model not in price_table.prices
+        else "Local = 0.0."
+        if price_table.prices[model] == (0.0, 0.0)
+        else "Preço da tabela informada."
+    )
+
+
+EXTERNAL_VARIANTS_WARNING = (
+    "Aviso: o agente é externo (`target`) e usa o próprio prompt; as variantes de prompt "
+    "({b} e {c}) do kit não se aplicam. A comparação abaixo não mede diferença de prompt: "
+    "a diferença observada vem só da variação do agente."
+)
+
+
 def _eval_summary(
-    args, ab, n_cases: int, gate: str | None, path: str, defaulted: bool, n_runs: int = 1
+    args, ab, n_cases: int, gate: str | None, path: str, defaulted: bool, n_runs: int = 1,
+    external: bool = False,
 ) -> str:
     """Placar curto do `aok eval --summary`: só números e o caminho do relatório completo."""
     b, c = args.baseline, args.candidate
@@ -172,6 +193,8 @@ def _eval_summary(
         f"  diferença ({c} - {b}): {ab.mean_diff:+.4f}",
         f"  IC 95%: [{ab.ci_low:+.4f}; {ab.ci_high:+.4f}]  p-valor: {ab.p_value:.4f} ({ab.p_method})",
     ]
+    if external:
+        lines.append("  AVISO: agente externo; as variantes de prompt não se aplicam (ver o relatório)")
     if gate:
         lines.append(f"  gate (--fail-on-regression): {gate}")
     lines.append(f"Relatório completo: {path}")
@@ -302,6 +325,8 @@ def _run_eval(args: argparse.Namespace) -> int:
         f"- Semente: {args.seed}",
         f"- Casos: {len(cases)}",
     ]
+    if config.target is not None:
+        meta_lines += ["", EXTERNAL_VARIANTS_WARNING.format(b=args.baseline, c=args.candidate), ""]
     if has_multirun:
         runs_vals = [variance[v]["n_runs"] for v in variants]
         runs_label = (
@@ -333,14 +358,7 @@ def _run_eval(args: argparse.Namespace) -> int:
             variants,
         ),
         *[f"- {n}" for n in OPS_NOTES],
-        f"- Custo ({config.model}): {price_table.note} "
-        + (
-            "Modelo fora da tabela: n/d."
-            if config.model not in price_table.prices
-            else "Local = 0.0."
-            if price_table.prices[config.model] == (0.0, 0.0)
-            else "Preço da tabela informada."
-        ),
+        f"- Custo ({config.model}): " + _cost_note(config.model, price_table, records),
         "",
     ]
 
@@ -400,7 +418,8 @@ def _run_eval(args: argparse.Namespace) -> int:
         n_runs_summary = max((s["n_runs"] for s in variance.values()), default=1)
         print(
             _eval_summary(
-                args, ab, len(cases), gate, out_path, defaulted=not args.report, n_runs=n_runs_summary
+                args, ab, len(cases), gate, out_path, defaulted=not args.report,
+                n_runs=n_runs_summary, external=config.target is not None,
             )
         )
         return 1 if args.fail_on_regression and regression else 0

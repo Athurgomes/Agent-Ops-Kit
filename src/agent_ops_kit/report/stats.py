@@ -219,6 +219,16 @@ def target_caveats(data: dict) -> list[str]:
             "Agente não registrado em parte das execuções (origens: " + "; ".join(missing)
             + "). Não é possível afirmar que é o mesmo agente em todas."
         )
+    external_eval = [
+        label for label, t in known
+        if label.startswith("eval ") and t.get("ref") != EXAMPLE_REF
+    ]
+    if external_eval:
+        out.append(
+            "Eval: o agente externo usa o próprio prompt e ignora as variantes do kit; a "
+            "comparação entre variantes de prompt não se aplica (a diferença medida vem só da "
+            "variação do agente)."
+        )
     if any(not t.get("seed_controlled_by_kit") for _, t in known):
         out.append(
             "Semente não controlada pelo kit: o agente externo decide o próprio modelo e "
@@ -239,6 +249,17 @@ def _not_evaluated_caveat(rt: dict) -> list[str]:
         "Métrica de ferramenta não avaliada (o agente externo não declarou `tool_calls`): "
         + "; ".join(parts) + ". Esses casos ficam fora de n e do ASR, o que reduz n."
     ]
+
+
+def _no_guardrails_caveat(data: dict) -> list[str]:
+    ex = ((data.get("provenance") or {}).get("executions") or {}).get("redteam") or {}
+    if (ex.get("guardrails") or {}).get("guardrails_enabled") is not False:
+        return []
+    return [(
+        "A execução do red team 'com guardrails' foi feita sem guardrails do kit (agente "
+        "externo): as duas colunas medem a mesma configuração e o McNemar não mede efeito de "
+        "defesa."
+    )]
 
 
 def statistical_caveats(data: dict) -> list[str]:
@@ -281,6 +302,7 @@ def statistical_caveats(data: dict) -> list[str]:
             )
     out.append(_suite_caveat(rt))
     out += _not_evaluated_caveat(rt)
+    out += _no_guardrails_caveat(data)
     out += target_caveats(data)
 
     rows = _commit_rows(data)

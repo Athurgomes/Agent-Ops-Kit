@@ -311,7 +311,7 @@ def run(request: dict, llm=None) -> dict:
     }
 ```
 
-Rode da raiz do projeto: `aok eval ... --config agent.yaml` e `aok redteam run --config agent.yaml`. Resposta fora do contrato vira erro do caso, sem derrubar a execução. Se `run` tiver o parâmetro `llm`, o kit injeta o LLM e conta os tokens; senão os tokens ficam "não registrados" (nunca zero).
+Rode da raiz do projeto: `aok eval ... --config agent.yaml` e `aok redteam run --config agent.yaml`. Resposta fora do contrato vira erro do caso, sem derrubar a execução. Se `run` tiver o parâmetro `llm`, o kit injeta o LLM e conta os tokens que passam por ele: um agente que aceita `llm` mas não o usa fica com tokens 0 (nenhuma chamada passou pelo kit), e o custo sai 0 sem refletir o consumo real do agente. Só quando `run` não tem o parâmetro `llm` os tokens ficam "não registrados" e o custo `n/d` (nunca zero). As chamadas do kit ao Ollama têm limite de 2048 tokens gerados e timeout de 180 s por chamada; estourar um dos dois vira `error` do caso e a execução segue.
 
 Limitações:
 

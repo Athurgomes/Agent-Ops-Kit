@@ -321,3 +321,26 @@ def test_rel_path_and_resolve_key_roundtrip(tmp_path):
     assert provenance.rel_path(f, repo) == "x.jsonl"  # sem raiz: só o nome (legado)
     with pytest.raises(ValueError):
         provenance.resolve_key(key, None)
+
+
+def test_cost_footer_is_nd_without_tokens_and_local_zero_with_tokens():
+    from agent_ops_kit.metrics import PriceTable
+
+    table = PriceTable.default()
+    none_tokens = {"v1": [{"input_tokens": None, "output_tokens": None}]}
+    zero_tokens = {"v1": [{"input_tokens": 0, "output_tokens": 0}]}
+    assert "Local = 0.0" not in cli._cost_note("llama3.1:8b", table, none_tokens)
+    assert cli._cost_note("llama3.1:8b", table, none_tokens).startswith("n/d")
+    assert "Local = 0.0" in cli._cost_note("llama3.1:8b", table, zero_tokens)
+
+
+def test_external_eval_and_unguarded_redteam_caveats(tmp_path):
+    root = _make_repo(tmp_path, base_target=EXTERNAL, guard_target=EXTERNAL, fp_target=EXTERNAL)
+    for n in ("baseline", "guardrails"):
+        p = root / "rt" / f"{n}.jsonl.meta.json"
+        meta = json.loads(p.read_text(encoding="utf-8"))
+        meta["guardrails_enabled"] = False
+        p.write_text(json.dumps(meta), encoding="utf-8")
+    _, data = _build(root)
+    assert any("mesma configuração" in x for x in data["limitations"])
+    assert set(_checks(root).values()) == {"ok"}
