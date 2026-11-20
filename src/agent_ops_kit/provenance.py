@@ -172,6 +172,23 @@ def environment(cwd: str | Path | None = None) -> dict:
     }
 
 
+def target_info(cfg: object) -> dict:
+    """Proveniência do agente auditado (só lê o config; não importa nem executa o target).
+
+    Sem `target` vale o agente de exemplo, com semente controlada pelo kit. Com `target`
+    externo, o kit não controla a semente nem o modelo do agente."""
+    target = getattr(cfg, "target", None)
+    if target is None:
+        return {"target": {
+            "type": "python", "ref": "examples.rag_agent.agent:run_agent",
+            "seed_controlled_by_kit": True,
+        }}
+    return {"target": {
+        "type": target.type, "ref": target.ref, "seed_controlled_by_kit": False,
+        "note": "semente não controlada pelo kit",
+    }}
+
+
 def execution_info(
     model: str,
     command: str,

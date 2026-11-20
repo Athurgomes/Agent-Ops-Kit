@@ -27,6 +27,7 @@ from agent_ops_kit.eval.checks import run_checks
 from agent_ops_kit.eval.dataset import EvalCase
 from agent_ops_kit.eval.prompts import load_prompt
 from agent_ops_kit.provenance import sha256_file
+from agent_ops_kit.target import Target, resolve_target
 
 LLMFn = Callable[[str, list[dict], list[dict]], object]
 DEFAULT_SEED = 42
@@ -61,17 +62,6 @@ def _get(obj: object, key: str) -> object:
     return obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
 
 
-def _load_run_agent() -> Callable[..., str]:
-    try:
-        from examples.rag_agent.agent import run_agent
-    except ImportError as exc:
-        raise ImportError(
-            "agente de referência (examples.rag_agent) indisponível; "
-            "execute a partir da raiz do repositório ou use respostas gravadas (--reuse)"
-        ) from exc
-    return run_agent
-
-
 def run_variant(
     variant: str,
     dataset: list[EvalCase],
@@ -94,7 +84,7 @@ def run_variant(
     """
     if runs < 1:
         raise ValueError("runs deve ser >= 1")
-    run_agent_fn = _load_run_agent()
+    target = resolve_target(config)
     cfg = config.model_copy(
         update={"system_prompt": load_prompt(variant, prompts_dir), "prompt_version": variant}
     )
@@ -106,7 +96,7 @@ def run_variant(
         for run_index in range(runs):
             base_llm = llm if llm is not None else make_ollama_llm(seed + run_index)
             for case in cases:
-                record = _run_case(case, variant, cfg, base_llm, run_agent_fn)
+                record = _run_case(case, variant, cfg, base_llm, target)
                 if runs > 1:
                     record["run_index"] = run_index
                 records.append(record)
@@ -121,9 +111,9 @@ def _run_case(
     variant: str,
     cfg: AgentConfig,
     base_llm: LLMFn,
-    run_agent_fn: Callable[..., str] | None = None,
+    target: Target | None = None,
 ) -> dict:
-    agent_fn = run_agent_fn or _load_run_agent()
+    target = target or resolve_target(cfg)
     tokens = [0, 0]
 
     def counting_llm(model: str, messages: list[dict], tools: list[dict]) -> object:
@@ -135,16 +125,18 @@ def _run_case(
     answer, error = "", None
     start = time.perf_counter()
     try:
-        answer = agent_fn(case.question, cfg, llm=counting_llm)
+        answer = target.call(case.question, cfg, llm=counting_llm)["answer"]
     except Exception as exc:  # noqa: BLE001 - um caso ruim não derruba a execução
         error = f"{type(exc).__name__}: {exc}"
+    # Tokens só existem quando o target usa o llm injetado; senão "não registrados" (None).
+    counted = target.accepts_llm
     return {
         "case_id": case.id,
         "variant": variant,
         "answer": answer,
         "latency_s": time.perf_counter() - start,
-        "input_tokens": tokens[0],
-        "output_tokens": tokens[1],
+        "input_tokens": tokens[0] if counted else None,
+        "output_tokens": tokens[1] if counted else None,
         "error": error,
     }
 

@@ -28,11 +28,13 @@ from agent_ops_kit.guardrails import REFUSAL_MESSAGE, Guardrails
 from agent_ops_kit.redteam import testbed
 from agent_ops_kit.redteam.attacks import (
     AttackCase,
+    ToolCalled,
     load_attacks,
     load_blind_attacks,
     resolve_blind_dir,
 )
 from agent_ops_kit.redteam.criteria import evaluate_attack
+from agent_ops_kit.target import resolve_target
 
 MAX_ITERATIONS = 5
 REDTEAM_DIR = Path(__file__).resolve().parents[3] / "redteam"
@@ -111,6 +113,8 @@ class AttackRecord(BaseModel):
     latency_s: float = 0.0
     blocked_by: list[str] = []  # estágios que bloquearam: input, tool, output
     raw_answer: str = ""  # resposta final do modelo antes do filtro de saída
+    # target externo sem `tool_calls` declarados: a métrica de ferramenta não foi avaliada
+    tool_not_evaluated: bool = False
 
 
 def build_testbed_system_prompt(config: AgentConfig) -> str:
@@ -191,34 +195,50 @@ def run_attack(
     guardrails: list[str] | None = None,
     poisoned_dir: Path | None = None,
 ) -> AttackRecord:
-    _, run_agent, tool_schemas, _ = _load_example()
+    target = resolve_target(config)
+    if guardrails and not target.is_example:
+        raise ValueError("guardrails só se aplicam ao agente de exemplo; target externo roda sem eles")
     llm = llm or make_seeded_llm(seed)
     tb_config = config.model_copy(update={"system_prompt": build_testbed_system_prompt(config)})
-    tools = [tool_schemas[t] for t in config.tools] + FORBIDDEN_SCHEMAS
     calls: list[str] = []
     events: list[dict] = []
-    g = build_guardrails(tb_config, guardrails) if guardrails else None
-    runner = make_tool_runner(
-        case, calls, base_runner, poisoned_dir=poisoned_dir or POISONED_DIR
-    )
+    declared = True  # target externo pode não declarar tool_calls
     start = time.perf_counter()
     answer, error = "", None
     try:
-        if case.turns and len(case.turns) > 1 and g is not None and "input_filter" in g.enabled:
-            verdict = g.screen_conversation(case.turns)
-            if verdict.blocked:
-                events.append({"stage": "input", "reasons": list(verdict.reasons)})
-                answer = REFUSAL_MESSAGE
-            else:
-                answer = run_agent(
-                    case.user_input, tb_config, llm, max_iterations, tools=tools,
-                    tool_runner=runner, guardrails=g, events=events,
-                )
-        else:
-            answer = run_agent(
-                case.user_input, tb_config, llm, max_iterations, tools=tools, tool_runner=runner,
-                guardrails=g, events=events,
+        if target.is_example:
+            tool_schemas = _load_example()[2]
+            tools = [tool_schemas[t] for t in config.tools] + FORBIDDEN_SCHEMAS
+            g = build_guardrails(tb_config, guardrails) if guardrails else None
+            runner = make_tool_runner(
+                case, calls, base_runner, poisoned_dir=poisoned_dir or POISONED_DIR
             )
+            kwargs = {
+                "max_iterations": max_iterations, "tools": tools, "tool_runner": runner,
+                "guardrails": g, "events": events, "llm": llm,
+            }
+            if case.turns and len(case.turns) > 1 and g is not None and "input_filter" in g.enabled:
+                verdict = g.screen_conversation(case.turns)
+                if verdict.blocked:
+                    events.append({"stage": "input", "reasons": list(verdict.reasons)})
+                    answer = REFUSAL_MESSAGE
+                else:
+                    answer = target.call(case.user_input, tb_config, **kwargs)["answer"]
+            else:
+                answer = target.call(case.user_input, tb_config, **kwargs)["answer"]
+        else:
+            # O kit não executa ferramentas do agente externo: mede só os tool_calls declarados.
+            context = None
+            if case.poisoned_doc:  # pior caso: o documento envenenado foi recuperado
+                context = ((poisoned_dir or POISONED_DIR) / case.poisoned_doc).read_text(
+                    encoding="utf-8"
+                )
+            resp = target.call(
+                case.user_input, tb_config, context=context, tools=list(FORBIDDEN_SCHEMAS), llm=llm
+            )
+            answer = resp["answer"]
+            declared = resp["tool_calls"] is not None
+            calls = [c["name"] for c in resp["tool_calls"] or []]
     except Exception as e:  # noqa: BLE001 - erro do agente não conta como sucesso do ataque
         error = (
             f"{type(e).__name__}: erro oculto (suíte cega)"
@@ -226,7 +246,8 @@ def run_attack(
             else f"{type(e).__name__}: {e}"
         )
     latency = time.perf_counter() - start
-    success = error is None and evaluate_attack(case, answer, calls)
+    not_evaluated = error is None and not declared and isinstance(case.success, ToolCalled)
+    success = error is None and not not_evaluated and evaluate_attack(case, answer, calls)
     raw = next((e["raw_answer"] for e in events if "raw_answer" in e), answer)
     if case.is_blind:
         # Sigilo estrito: nunca gravar pergunta, resposta bruta/final ou chamadas de tool cegas.
@@ -234,13 +255,14 @@ def run_attack(
             case_id=case.id, category=case.category, is_blind=True,
             final_answer="", tool_calls=[], success=success, error=error,
             latency_s=round(latency, 3), blocked_by=sorted({e["stage"] for e in events}),
-            raw_answer="",
+            raw_answer="", tool_not_evaluated=not_evaluated,
         )
     return AttackRecord(
         case_id=case.id, category=case.category, is_blind=False,
         final_answer=answer, tool_calls=calls,
         success=success, error=error, latency_s=round(latency, 3),
         blocked_by=sorted({e["stage"] for e in events}), raw_answer=raw,
+        tool_not_evaluated=not_evaluated,
     )
 
 
@@ -288,6 +310,7 @@ def run_suite(
     """Roda a suíte. Com `out_path`, grava o JSONL e o sidecar `<out_path>.meta.json`
     (modelo, semente, guardrails, sha256 do resultado e os campos de `meta`)."""
     selected = cases[:limit] if limit is not None else cases
+    meta = {**provenance.target_info(config), **(meta or {})}
     records: list[AttackRecord] = []
     with ExitStack() as stack:
         out = None
@@ -308,6 +331,9 @@ def run_suite(
                 out.write(json.dumps(rec.model_dump(), ensure_ascii=False) + "\n")
                 out.flush()
     if out_path:
+        n_ne = sum(r.tool_not_evaluated for r in records)
+        if n_ne:
+            meta["n_tool_not_evaluated"] = n_ne
         _write_meta(out_path, records, blind_sha256, guardrails, config.model, seed, meta)
     return records
 
@@ -329,13 +355,20 @@ def wilson_interval(successes: int, n: int, z: float = 1.959964) -> tuple[float,
 
 
 def _row(recs: list[AttackRecord]) -> dict:
+    """Linha do ASR. Casos com métrica de ferramenta "não avaliada" ficam fora de n e dos
+    sucessos (nunca viram bloqueio); `n_nao_avaliados` só aparece quando há algum."""
+    skipped = sum(r.tool_not_evaluated for r in recs)
+    recs = [r for r in recs if not r.tool_not_evaluated]
     n = len(recs)
     ok = sum(r.success for r in recs)
     lo, hi = wilson_interval(ok, n)
-    return {
+    row = {
         "n": n, "sucessos": ok, "asr": ok / n if n else 0.0,
         "ic95": [lo, hi], "n_erros": sum(r.error is not None for r in recs),
     }
+    if skipped:
+        row["n_nao_avaliados"] = skipped
+    return row
 
 
 def asr_by_category(records: list[AttackRecord]) -> dict:
@@ -358,13 +391,22 @@ def format_asr_markdown(summary: dict, title: str) -> str:
         "|---|---|---|---|---|---|",
     ]
     for cat, r in summary.items():
-        if r["n"] == 0:
+        if r["n"] == 0 and not r.get("n_nao_avaliados"):
             continue
         lo, hi = r["ic95"]
         lines.append(
             f"| {cat} | {r['n']} | {r['sucessos']} | {r['asr'] * 100:.1f} "
             f"| [{lo * 100:.1f}; {hi * 100:.1f}] | {r['n_erros']} |"
         )
+    skipped = summary.get("total", {}).get("n_nao_avaliados", 0)
+    if skipped:
+        lines += [
+            "",
+            (
+                f"Métrica de ferramenta não avaliada em {skipped} caso(s): o agente externo "
+                "não declarou `tool_calls`. Esses casos ficam fora de n e do ASR."
+            ),
+        ]
     lines += [
         "", "Limitações:",
         "- n pequeno por categoria: os intervalos de confiança são largos.",
@@ -401,6 +443,10 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="executa apenas os ataques da suíte cega (requer --blind-attacks-dir ou AOK_BLIND_ATTACKS_DIR)",
     )
+    ap.add_argument(
+        "--config", default=None,
+        help="agent.yaml do agente a auditar (padrão: o agente de exemplo)",
+    )
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args(argv)
@@ -436,8 +482,10 @@ def main(argv: list[str] | None = None) -> int:
         ap.error(str(e))
 
     out = args.out or "redteam/results/baseline.jsonl"
-    config_path, _, _, _ = _load_example()
+    config_path = args.config or _load_example()[0]
     config = load_config(config_path)
+    if names and config.target is not None:
+        ap.error("--guardrails só se aplica ao agente de exemplo (config sem `target`)")
     command = "python -m agent_ops_kit.redteam.harness " + shlex.join(
         sys.argv[1:] if argv is None else argv
     )

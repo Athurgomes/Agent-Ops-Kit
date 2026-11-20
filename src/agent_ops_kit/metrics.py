@@ -154,7 +154,10 @@ def summarize_records(records: list[dict], model: str, price_table: PriceTable |
     ok_flags = [bool(t.get("ok")) for r in records for t in r.get("tools", [])]
     in_tokens = [r.get("input_tokens", 0) for r in records]
     out_tokens = [r.get("output_tokens", 0) for r in records]
-    cost = table.cost(model, sum(in_tokens), sum(out_tokens)) if records else None
+    if any(t is None for t in in_tokens + out_tokens):  # tokens não registrados: nunca vira 0
+        in_tokens, out_tokens, cost = [], [], None
+    else:
+        cost = table.cost(model, sum(in_tokens), sum(out_tokens)) if records else None
     out = _summary([r["latency_s"] for r in records], in_tokens, out_tokens, ok_flags, cost)
     out["agent_error_rate"] = (sum(1 for r in records if r.get("error")) / len(records)) if records else None
     return out

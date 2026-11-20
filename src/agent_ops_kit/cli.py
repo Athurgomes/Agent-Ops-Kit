@@ -272,7 +272,10 @@ def _run_eval(args: argparse.Namespace) -> int:
                 runs=args.runs,
             )
             if exec_info is None:
-                exec_info = provenance.execution_info(config.model, _reproducible_command(args))
+                exec_info = {
+                    **provenance.execution_info(config.model, _reproducible_command(args)),
+                    **provenance.target_info(config),
+                }
             entry = runner.manifest_entry(
                 v, config, args.dataset, len(records[v]), args.seed, args.prompts_dir,
                 answers_path=path, extra=exec_info,
@@ -420,6 +423,8 @@ def cmd_redteam(args: argparse.Namespace) -> int:
         if args.limit is not None:
             argv += ["--limit", str(args.limit)]
         argv += ["--seed", str(args.seed)]
+        if args.config:
+            argv += ["--config", args.config]
         if args.attacks_dir:
             argv += ["--attacks-dir", args.attacks_dir]
         if args.blind_attacks_dir:
@@ -817,6 +822,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--out", default=None, help="JSONL de saída (obrigatório com --guardrails)")
     r.add_argument("--limit", type=int, default=None)
     r.add_argument("--seed", type=int, default=42)
+    r.add_argument("--config", default=None, help="agent.yaml do agente a auditar (padrão: exemplo)")
     r.add_argument("--attacks-dir", default=None)
     r.add_argument(
         "--blind-attacks-dir",
