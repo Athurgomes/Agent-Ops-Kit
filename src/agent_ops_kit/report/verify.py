@@ -298,6 +298,9 @@ class _Verifier:
 
     def check_counts(self) -> str:
         self._redteam_part(("n_attacks", "n_blind_attacks", "runs_per_config", "n_legit_questions"))
+        fresh = self.redteam_state()["numbers"]
+        if bad := build.not_evaluated_mismatches(fresh, self.data["provenance"].get("executions") or {}):
+            raise _Fail("casos não avaliados: " + "; ".join(bad))
         return "contagens (ataques, suíte cega, execuções, perguntas legítimas) conferem"
 
     def check_policy_sha(self) -> str:

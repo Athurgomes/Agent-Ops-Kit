@@ -141,10 +141,15 @@ def _fp_meta(fp_dir: Path) -> dict | None:
     return meta
 
 
+# Só entram na proveniência quando o sidecar os traz (pacotes antigos continuam verificáveis).
+_OPTIONAL_KEYS = ("target", "n_tool_not_evaluated")
+
+
 def _pick(meta: dict | None, keys: tuple[str, ...], base: str | Path | None = None) -> dict | None:
     if meta is None:
         return None
     out = {k: meta.get(k) for k in keys}
+    out.update({k: meta[k] for k in _OPTIONAL_KEYS if k in meta})
     if isinstance(out.get("command"), str):  # sidecars antigos podem ter caminhos pessoais
         out["command"] = provenance.sanitize_command(out["command"], base)
     return out
@@ -172,6 +177,7 @@ def _asr_row(r: dict) -> dict:
     return {
         "n": r["n"], "successes": r["sucessos"], "asr": r["asr"],
         "ci95_low": lo, "ci95_high": hi, "errors": r["n_erros"],
+        **({"not_evaluated": r["n_nao_avaliados"]} if r.get("n_nao_avaliados") else {}),
     }
 
 
@@ -216,7 +222,8 @@ def eval_numbers(
 def redteam_numbers(base: list, guard: list, ds: list[dict], bn: list[dict]) -> dict:
     """Números do red team e dos falsos positivos (compartilhado por `build` e `verify`)."""
     asr = {
-        name: {c: _asr_row(r) for c, r in asr_by_category(recs).items() if r["n"]}
+        name: {c: _asr_row(r) for c, r in asr_by_category(recs).items()
+            if r["n"] or r.get("n_nao_avaliados")}
         for name, recs in (("baseline", base), ("guardrails", guard))
     }
     return {
@@ -228,6 +235,17 @@ def redteam_numbers(base: list, guard: list, ds: list[dict], bn: list[dict]) -> 
         "false_positives": {"dataset": _fp_row(ds), "benign": _fp_row(bn)},
         "n_legit_questions": len(ds) + len(bn),
     }
+
+
+def not_evaluated_mismatches(numbers: dict, executions: dict) -> list[str]:
+    """Contagem de casos não avaliados do sidecar (`n_tool_not_evaluated`) vs a dos resultados."""
+    out = []
+    for name in ("baseline", "guardrails"):
+        recorded = ((executions.get("redteam") or {}).get(name) or {}).get("n_tool_not_evaluated")
+        fresh = ((numbers["asr"].get(name) or {}).get("total") or {}).get("not_evaluated", 0)
+        if recorded is not None and recorded != fresh:
+            out.append(f"{name}: sidecar registra {recorded} não avaliados, resultados têm {fresh}")
+    return out
 
 
 def _eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, dict]:
@@ -327,7 +345,10 @@ def _redteam_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> dict:
         ("fp_meta", fp_dir / "fp.meta.json"),
     ):
         _role(prov, role, path)
-    return redteam_numbers(base, guard, ds, bn)
+    numbers = redteam_numbers(base, guard, ds, bn)
+    if bad := not_evaluated_mismatches(numbers, prov["executions"]):
+        raise ReportError("casos não avaliados divergem do sidecar: " + "; ".join(bad))
+    return numbers
 
 
 def _read_signed_at(signature_path: str | Path) -> str | None:

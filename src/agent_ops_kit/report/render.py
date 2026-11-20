@@ -10,6 +10,7 @@ import hashlib
 import re
 from html import escape
 
+from agent_ops_kit.report import stats as stats_mod
 from agent_ops_kit.report.build import GREEN_TEXT
 
 COLOR_LABEL = {"green": "VERDE", "yellow": "AMARELO", "red": "VERMELHO"}
@@ -155,6 +156,34 @@ def _pretextual_blocks(d: dict, doc_code: str) -> list[Block]:
     ]
 
 
+def _target_line(d: dict) -> str:
+    """Agente auditado (tipo, ref, semente): um texto se todas as execuções coincidem, senão por origem."""
+    rows = stats_mod.target_rows(d)
+    texts = {stats_mod.target_text(t) for _, t in rows if t}
+    if len(texts) == 1 and all(t for _, t in rows):
+        return f"Agente auditado: {texts.pop()}."
+    if not texts:
+        return f"Agente auditado: {_NOT_RECORDED}."
+    return "Agente auditado (por origem): " + "; ".join(
+        f"{label}: {stats_mod.target_text(t)}" for label, t in rows
+    ) + "."
+
+
+def _not_evaluated_notes(rt: dict) -> list[Block]:
+    parts = []
+    for name, label in (("baseline", "sem controles"), ("guardrails", "com controles")):
+        k = (rt["asr"][name].get("total") or {}).get("not_evaluated", 0)
+        if k:
+            parts.append(f"{k} {label}")
+    if not parts:
+        return []
+    return [(
+        "p",
+        "Métrica de ferramenta não avaliada (agente externo sem `tool_calls` declarados): "
+        + "; ".join(parts) + ". Esses casos ficam fora de n e do ASR.",
+    )]
+
+
 def _scope_blocks(d: dict) -> list[Block]:
     ag, ev, rt, au = d["agent"], d["eval"], d["redteam"], d["audit"]
     fp = rt["false_positives"]
@@ -182,6 +211,7 @@ def _scope_blocks(d: dict) -> list[Block]:
                     f"Agente avaliado: {ag['name']} (prompt_version no agent.yaml: "
                     f"{ag['prompt_version']}; modelo: {ag['model']})."
                 ),
+                _target_line(d),
                 (
                     f"Avaliação funcional A/B: {ev['candidate']} comparada à referência "
                     f"{ev['baseline']} em {ev['n_cases']} casos ({ev['runs_per_config']} "
@@ -549,6 +579,7 @@ def _risk_analysis_blocks(rt: dict) -> list[Block]:
                 risk_rows,
             )
         )
+    blocks += _not_evaluated_notes(rt)
     blocks += _mcnemar_blocks(rt.get("mcnemar"))
     blocks.append(
         (
@@ -908,7 +939,7 @@ def _appendix_blocks(d: dict) -> list[Block]:
                         cat,
                         desc,
                         label,
-                        str(r["n"]),
+                        str(r["n"]) + (f" (+{r['not_evaluated']} não avaliados)" if r.get("not_evaluated") else ""),
                         str(r["successes"]),
                         _pct(r["asr"]),
                         f"[{_pct(r['ci95_low'])}; {_pct(r['ci95_high'])}]",

@@ -9,6 +9,8 @@ from __future__ import annotations
 import math
 from collections import Counter
 
+from agent_ops_kit.target import EXAMPLE_REF
+
 ALPHA = 0.05
 Z_ALPHA = 1.959964  # bilateral, alfa = 5%
 Z_POWER = 0.841621  # poder = 80%
@@ -181,6 +183,64 @@ def _suite_caveat(rt: dict) -> str:
     )
 
 
+def target_rows(data: dict) -> list[tuple[str, dict | None]]:
+    """(origem, target registrado) de cada execução; None = não registrado (pacote antigo)."""
+    ex = (data.get("provenance") or {}).get("executions") or {}
+    rows = [(f"eval {v}", r) for v, r in (ex.get("eval") or {}).items()]
+    rt = ex.get("redteam") or {}
+    for key, label in (("baseline", "red team baseline"), ("guardrails", "red team guardrails"),
+                       ("false_positives", "falsos positivos")):
+        if key in rt:
+            rows.append((label, rt[key]))
+    return [(label, (r or {}).get("target")) for label, r in rows]
+
+
+def target_text(t: dict | None) -> str:
+    if not t:
+        return _NA
+    ref = "agente de referência do kit" if t.get("ref") == EXAMPLE_REF else t.get("ref")
+    seed = "sim" if t.get("seed_controlled_by_kit") else "não"
+    return f"tipo {t.get('type')}, ref {ref}, semente controlada pelo kit: {seed}"
+
+
+def target_caveats(data: dict) -> list[str]:
+    rows = target_rows(data)
+    known = [(label, t) for label, t in rows if t]
+    out = []
+    if len({target_text(t) for _, t in known}) > 1:
+        out.append(
+            "Eval, red team e falsos positivos não apontam para o mesmo agente ("
+            + "; ".join(f"{label}: {target_text(t)}" for label, t in rows) + "). "
+            "Os resultados não descrevem um único agente."
+        )
+    missing = [label for label, t in rows if not t]
+    if known and missing:
+        out.append(
+            "Agente não registrado em parte das execuções (origens: " + "; ".join(missing)
+            + "). Não é possível afirmar que é o mesmo agente em todas."
+        )
+    if any(not t.get("seed_controlled_by_kit") for _, t in known):
+        out.append(
+            "Semente não controlada pelo kit: o agente externo decide o próprio modelo e "
+            "aleatoriedade, então a reprodução das respostas depende dele."
+        )
+    return out
+
+
+def _not_evaluated_caveat(rt: dict) -> list[str]:
+    parts = []
+    for name, label in (("baseline", "sem guardrails"), ("guardrails", "com guardrails")):
+        k = ((rt["asr"].get(name) or {}).get("total") or {}).get("not_evaluated", 0)
+        if k:
+            parts.append(f"{k} caso(s) {label}")
+    if not parts:
+        return []
+    return [
+        "Métrica de ferramenta não avaliada (o agente externo não declarou `tool_calls`): "
+        + "; ".join(parts) + ". Esses casos ficam fora de n e do ASR, o que reduz n."
+    ]
+
+
 def statistical_caveats(data: dict) -> list[str]:
     """Ressalvas estatísticas derivadas dos dados. Ordem fixa: medições, avisos, suíte, proveniência."""
     ev, rt = data["eval"], data["redteam"]
@@ -220,6 +280,8 @@ def statistical_caveats(data: dict) -> list[str]:
                 f"com erro de execução, {ex['unpaired']} sem par); o teste usa {mc['n_paired']} pares."
             )
     out.append(_suite_caveat(rt))
+    out += _not_evaluated_caveat(rt)
+    out += target_caveats(data)
 
     rows = _commit_rows(data)
     commits = {c for _, c, _ in rows if c}

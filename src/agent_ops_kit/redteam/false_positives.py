@@ -31,6 +31,7 @@ from agent_ops_kit.redteam.harness import (
     parse_guardrails,
     wilson_interval,
 )
+from agent_ops_kit.target import Target, resolve_target
 
 BENIGN_PATH = REDTEAM_DIR / "benign" / "benign.jsonl"
 
@@ -46,13 +47,18 @@ def run_benign(
     llm: LLMFn | None = None,
     out_path: str | Path | None = None,
     seed: int = 42,
+    target: Target | None = None,
 ) -> list[dict]:
     """Um registro por pergunta: case_id, blocked, blocked_by, reasons, answer (entregue),
-    raw_answer (antes do filtro de saída), score (checagens determinísticas), error."""
-    _, run_agent, tool_schemas, _ = _load_example()
+    raw_answer (antes do filtro de saída), score (checagens determinísticas), error.
+
+    `target` (padrão: o do config) é o agente chamado. Agente externo roda sem guardrails."""
+    target = target or resolve_target(config)
+    if guardrails_cfg and not target.is_example:
+        raise ValueError("guardrails só se aplicam ao agente de exemplo; target externo roda sem eles")
     llm = llm or make_seeded_llm(seed)
     tb_config = config.model_copy(update={"system_prompt": build_testbed_system_prompt(config)})
-    tools = [tool_schemas[t] for t in config.tools]
+    tools = [_load_example()[2][t] for t in config.tools] if target.is_example else None
     records: list[dict] = []
     out = None
     if out_path:
@@ -63,10 +69,11 @@ def run_benign(
             events: list[dict] = []
             answer, error = "", None
             try:
-                answer = run_agent(
-                    case.question, tb_config, llm, tools=tools,
-                    guardrails=build_guardrails(tb_config, guardrails_cfg), events=events,
+                kwargs = (
+                    {"guardrails": build_guardrails(tb_config, guardrails_cfg), "events": events}
+                    if target.is_example else {}
                 )
+                answer = target.call(case.question, tb_config, llm=llm, tools=tools, **kwargs)["answer"]
             except Exception as e:  # noqa: BLE001 - erro do agente não conta como bloqueio
                 error = f"{type(e).__name__}: {e}"
             raw = next((e["raw_answer"] for e in events if "raw_answer" in e), answer)
@@ -191,20 +198,28 @@ def format_utility_markdown(result: ABResult) -> str:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Mede falsos positivos dos guardrails.")
     ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--guardrails", default="all", help='"all" ou lista separada por vírgulas')
+    ap.add_argument(
+        "--guardrails", default=None,
+        help='"all" (padrão no agente de exemplo) ou lista separada por vírgulas',
+    )
+    ap.add_argument(
+        "--config", default=None,
+        help="agent.yaml do agente a auditar (padrão: o agente de exemplo)",
+    )
     ap.add_argument("--dataset", default="evals/dataset.jsonl")
     ap.add_argument("--benign", default=str(BENIGN_PATH))
     ap.add_argument("--v1-answers", default="evals/answers/v1.jsonl")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args(argv)
+    config = load_config(args.config or _load_example()[0])
+    if args.guardrails and config.target is not None:
+        ap.error("--guardrails só se aplica ao agente de exemplo (config sem `target`)")
     try:
-        names = parse_guardrails(args.guardrails)
+        names = [] if config.target is not None else parse_guardrails(args.guardrails or "all")
     except ValueError as e:
         ap.error(str(e))
-    config_path, _, _, _ = _load_example()
     out_dir = Path(args.out_dir)
-    config = load_config(config_path)
     cfg = config.model_copy(update={"system_prompt": load_prompt("v1"), "prompt_version": "v1"})
     dataset = load_dataset(args.dataset)[: args.limit]
     benign = load_benign(args.benign)[: args.limit]
@@ -219,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     write_fp_meta(
         out_dir, config.model, args.seed, names, args.dataset, args.benign, command,
-        extra=provenance.execution_info(config.model, command),
+        extra={**provenance.execution_info(config.model, command), **provenance.target_info(config)},
     )
     ids = {c.id for c in dataset}
     base = [r for r in load_records(args.v1_answers) if r["case_id"] in ids]
