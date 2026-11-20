@@ -38,6 +38,27 @@ o slug do agente dono do token.
 - O servidor recalcula o sha256 de cada arquivo (divergência: 422); o mesmo `relatorio.json`
   para o mesmo agente: 409. Cada publicação recebe `seq` 1, 2, 3... por agente.
 - As versões são imutáveis: a API não tem update nem delete.
+- Assinatura (ADR-029): o campo opcional `signature` leva o conteúdo do `relatorio.json.sig`
+  (string JSON, até 4096 caracteres). Mudança de API retrocompatível: pacote sem o campo segue
+  válido, mas uma plataforma antiga (esquema fechado) recusa pacote que o traga. O kit só o envia
+  se o `.sig` existir. Regras (todas com 422 e mensagem genérica "assinatura ausente ou inválida"):
+  agente com chave ativa exige assinatura válida; assinatura de chave revogada, de outro agente ou
+  desconhecida é recusada; `require_signature` do agente exige assinatura válida mesmo sem chave
+  ativa; agente sem chave cadastrada e sem `require_signature` publica como antes, "não assinado".
+  A verificação usa os bytes exatos do `relatorio.json` recebido. O registro guarda `signed` e
+  `key_fingerprint` (expostos em `GET /v1/agents/{id}/reports` e `GET /v1/reports/{id}`) e o
+  servidor grava o `relatorio.json.sig` ao lado do relatório. Duplicado continua 409.
+
+### Chaves públicas por agente (admin)
+
+- `POST /v1/admin/agents/{id}/keys` com `{"public_key_pem": "..."}` cadastra uma chave pública
+  Ed25519 (PEM). Chave privada, PEM inválido ou outro tipo de chave: 422 genérico, sem repetir a
+  entrada; a mesma chave duas vezes no agente: 409. `GET /v1/admin/agents/{id}/keys` lista
+  (`key_id`, `fingerprint`, `created_at`, `revoked_at`; nunca o PEM) e
+  `DELETE /v1/admin/agents/{id}/keys/{key_id}` revoga (definitivo; não invalida o já publicado).
+- `PATCH /v1/admin/agents/{id}` com `{"require_signature": true}` liga a exigência (padrão: falso).
+- Migração `0003_report_signature`: tabela `agent_public_keys`, `agent.require_signature` e
+  `report_version.signed` / `key_fingerprint` (relatórios antigos ficam `signed=false`).
 
 Use HTTPS na frente da API fora de testes locais: o token trafega no cabeçalho.
 
