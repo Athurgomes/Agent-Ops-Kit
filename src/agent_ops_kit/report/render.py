@@ -770,6 +770,57 @@ def _provenance_blocks(d: dict) -> list[Block]:
     return blocks
 
 
+_SOURCE_LABEL = {"redteam": "red team", "false_positive": "falso positivo", "eval": "eval"}
+_FINDINGS_MAX_ROWS = 30
+
+
+def _findings_blocks(d: dict) -> list[Block]:
+    """A.8: achados com a linha do JSONL que os prova (só ids e hashes; sem texto de ataque)."""
+    blocks: list[Block] = [("h2", "A.8 Achados e evidências")]
+    found = d.get("findings")
+    if not isinstance(found, list):
+        return [*blocks, ("p", "Achados não registrados neste relatório.")]
+    if not found:
+        none = (
+            "Nenhum achado: nenhum ataque com sucesso, erro de execução, "
+            "pergunta legítima bloqueada ou regressão de caso no eval."
+        )
+        return [*blocks, ("p", none)]
+    counts = {k: sum(f["source"] == k for f in found) for k in _SOURCE_LABEL}
+    resumo = "; ".join(f"{_SOURCE_LABEL[k]}: {n}" for k, n in counts.items())
+    blocks.append((
+        "p",
+        (
+            f"{len(found)} achados ({resumo}). Cada achado aponta para a linha do arquivo de "
+            "resultados que o prova (arquivo:linha) e para o SHA-256 do registro, calculado sobre "
+            "o JSON canônico da linha; o build confere linha e hash e falha se divergirem. "
+            "A severidade vem de uma tabela fixa por categoria (impacto potencial, não CVSS); "
+            "erros, falsos positivos e regressões de eval ficam como não classificado."
+        ),
+    ))
+    rank = {"alta": 0, "média": 1, "baixa": 2}
+    tie = {"false_positive": 0, "redteam": 1, "eval": 2}  # empate de severidade: falso positivo antes
+    shown = sorted(found, key=lambda f: (rank.get(f["severity"], 3), tie.get(f["source"], 3)))
+    shown = shown[:_FINDINGS_MAX_ROWS]
+    rows = [
+        [
+            f["id"], _SOURCE_LABEL.get(f["source"], f["source"]), _val(f.get("category"), "n/d"),
+            f["severity"], f"{f['evidence']['file']}:{f['evidence']['line']}",
+            f["evidence"]["record_sha256"][:12],
+        ]
+        for f in shown
+    ]
+    blocks.append(("table", ["ID", "Origem", "Categoria", "Severidade", "Arquivo:linha", "SHA-256"], rows))
+    if len(found) > len(shown):
+        note = (
+            f"Listagem limitada a {len(shown)} dos {len(found)} achados (maior severidade "
+            "primeiro; empate: falso positivo, red team, eval); a lista completa, com os hashes "
+            "inteiros, está no relatorio.json (campo findings)."
+        )
+        blocks.append(("p", note))
+    return blocks
+
+
 def _appendix_blocks(d: dict) -> list[Block]:
     ev, rt, au = d["eval"], d["redteam"], d["audit"]
     fp = rt["false_positives"]
@@ -936,7 +987,7 @@ def _appendix_blocks(d: dict) -> list[Block]:
             rows.append(["Assinatura da âncora", "não informada (sem assinatura)"])
         blocks.append(("table", ["Item", "Valor"], rows))
         blocks.append(("p", _audit_signature_limitation(sig if isinstance(sig, dict) else None)))
-    return [*blocks, *_provenance_blocks(d)]
+    return [*blocks, *_provenance_blocks(d), *_findings_blocks(d)]
 
 
 def build_blocks(d: dict) -> list[Block]:

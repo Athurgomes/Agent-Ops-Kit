@@ -22,6 +22,7 @@ from agent_ops_kit.eval.dataset import load_dataset
 from agent_ops_kit.redteam.false_positives import fp_rate
 from agent_ops_kit.redteam.harness import asr_by_category
 from agent_ops_kit.redteam.report import ReportError, _load_attacks, _load_jsonl
+from agent_ops_kit.report import findings as findings_mod
 from agent_ops_kit.report import policy as policy_mod
 
 SCHEMA_VERSION = 1
@@ -160,7 +161,7 @@ def _fp_row(recs: list[dict]) -> dict:
     }
 
 
-def _eval_section(a: dict, hashes: dict, prov: dict) -> tuple[dict, dict]:
+def _eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, dict]:
     dataset_path, answers_dir = Path(a["dataset"]), Path(a["answers_dir"])
     variants = [a["baseline"], a["candidate"]]
     _need(Path(a["config"]), "config")
@@ -202,6 +203,13 @@ def _eval_section(a: dict, hashes: dict, prov: dict) -> tuple[dict, dict]:
     for v in variants:
         hashes[f"eval_answers_{v}"] = _sha(answers_dir / f"{v}.jsonl")
 
+    ctx["eval"] = {
+        "baseline": variants[0], "candidate": variants[1],
+        "baseline_path": answers_dir / f"{variants[0]}.jsonl",
+        "candidate_path": answers_dir / f"{variants[1]}.jsonl",
+        "scores_baseline": scores[variants[0]], "scores_candidate": scores[variants[1]],
+        "categories": {c.id: c.category for c in dataset},
+    }
     regression = ab.mean_diff < 0 and ab.p_value < ALPHA
     section = {
         "baseline": variants[0], "candidate": variants[1],
@@ -223,7 +231,7 @@ def _eval_section(a: dict, hashes: dict, prov: dict) -> tuple[dict, dict]:
     return section, agent
 
 
-def _redteam_section(a: dict, hashes: dict, prov: dict) -> dict:
+def _redteam_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> dict:
     fp_dir = Path(a["fp_dir"])
     base_p, guard_p = Path(a["redteam_baseline"]), Path(a["redteam_guardrails"])
     # Os sidecars são conferidos antes de ler os resultados: adulteração falha com mensagem clara.
@@ -255,6 +263,10 @@ def _redteam_section(a: dict, hashes: dict, prov: dict) -> dict:
     for key in ("dataset_path", "benign_path"):
         if fp_meta and isinstance(fp_meta.get(key), str):
             _add_input(inputs, Path(fp_meta[key]))
+    ctx["redteam"] = {"baseline": base_p, "guardrails": guard_p}
+    ctx["false_positives"] = {
+        "dataset": fp_dir / "fp_dataset.jsonl", "benign": fp_dir / "fp_benign.jsonl",
+    }
     asr = {
         name: {c: _asr_row(r) for c, r in asr_by_category(recs).items() if r["n"]}
         for name, recs in (("baseline", base), ("guardrails", guard))
@@ -590,9 +602,14 @@ def build_data(
 
     hashes: dict[str, str] = {}
     prov: dict = {"seeds": {}, "executions": {}, "inputs": {}}
+    ctx: dict = {}
     try:
-        ev, agent = _eval_section(args, hashes, prov)
-        rt = _redteam_section(args, hashes, prov)
+        ev, agent = _eval_section(args, hashes, prov, ctx)
+        rt = _redteam_section(args, hashes, prov, ctx)
+        found, found_paths = findings_mod.collect(
+            redteam=ctx["redteam"], false_positives=ctx["false_positives"], eval_ctx=ctx["eval"]
+        )
+        findings_mod.verify(found, found_paths)
     except (ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
         raise ReportError(f"resultado ou configuração inválidos: {exc}") from exc
     au = _audit_section(
@@ -616,6 +633,7 @@ def build_data(
         "redteam": rt,
         "audit": au,
         "hashes": hashes,
+        "findings": found,
         "provenance": _provenance_block(agent, prov, command, repo_dir),
         "previous": None,
     }
