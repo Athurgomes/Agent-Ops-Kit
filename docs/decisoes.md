@@ -399,3 +399,16 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O `relatorio.json` registra `policy` (`id`, `version`, `sha256`, `path_relative`, regras com `observed`, `passed`, `severity`, `rationale`) e `indicators` (valores derivados que as regras consultam). Cor = pior severidade entre as regras que falharam. Métrica ausente vira "não avaliada" (`passed: null`) e nunca dá verde: a cor é, no mínimo, amarela, com a ressalva "regra não avaliada". O relatório MD/HTML ganha a tabela "Critérios de classificação".
 - Política inválida é erro claro, exit 2. Limiares absolutos (média mínima do eval, limite superior de Wilson do ASR) ficam só comentados no YAML, como proposta: decisão do dono.
 - Plataforma: `semaphore.color` e `triggered` continuam no mesmo formato; ela só confere a cor e não lê `policy`, então aceita relatórios antigos e novos sem mudança.
+
+## ADR-024: Achados rastreáveis até a evidência
+
+**Contexto.** O relatório era agregado: um auditor não conseguia ir de um número (por exemplo, "5 ataques com sucesso") até o registro que o prova.
+
+**Decisão.**
+- O `relatorio.json` ganha `findings[]` e o relatório a seção "A.8 Achados e evidências". Entram: cada ataque com sucesso e cada erro de execução do red team (`RT-<ataque>-<config>`, `RT-ERR-...`), cada pergunta benigna bloqueada (`FP-<caso>-<conjunto>`) e cada caso do eval cuja nota média caiu do baseline para o candidato (`EV-<caso>-<variante>`). Caso repetido em várias execuções ganha `-r<n>` no id.
+- Cada achado traz `evidence`: `file` (relativo à raiz), `line` (linha física do JSONL, base 1), `record_sha256` (sha256 do JSON canônico da linha: chaves ordenadas, sem espaços, UTF-8), `file_sha256` (o mesmo de `provenance.sha256_file`) e `run_id`/`trace_id` quando o registro os tem (senão `null`). No eval, a evidência é o 1º registro do caso em cada variante.
+- O build relê os arquivos e confere linha, hash do registro e hash do arquivo; divergência é erro (exit 2), como na proveniência.
+- Severidade: tabela fixa por categoria do red team (exfiltração, vazamento de dados e abuso de tools = alta; injeção, saída insegura, multi-turn e ofuscação = média; exaustão de recursos = baixa), que reflete o impacto potencial e não é CVSS; é heurística provisória do kit, sujeita a revisão pelo dono do projeto (`SEVERITY_BY_CATEGORY` em `src/agent_ops_kit/report/findings.py`). Erros, falsos positivos, regressões do eval e categorias fora da tabela ficam "não classificado".
+- Ordenação determinística (origem, config, id). Só ids, categorias, estágios, motivos (códigos), notas e hashes: nenhum texto de ataque, pergunta ou resposta. O relatório MD/HTML lista no máximo 30 achados (maior severidade primeiro); a lista completa fica no JSON.
+- Correção relacionada: a seção de atribuição do relatório do red team listava só os sucessos da baseline; passa a listar também os sucessos da execução com guardrails que não tiveram sucesso na baseline. Os `.md` já versionados em `redteam/results_owasp/` não foram regenerados e seguem sem essa lista.
+- Limites: regressão do eval usa a média de notas por caso (sem teste estatístico por caso: é indício, não prova); relatórios antigos sem `findings` mostram "não registrados".
