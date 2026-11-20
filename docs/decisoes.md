@@ -389,3 +389,13 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - O manifesto passa a ter `answers_sha256`; hash divergente do manifesto, do sidecar ou da suíte é erro (código 2).
 - Ficam `null` ("não registrado") digest, versão do Ollama, sementes do red team e `answers_sha256` nas execuções antigas (`evals/answers*`, `redteam/results/`), que seguem validando sem regravação. Sem git, commit e árvore ficam `null`.
 - Limites: os hashes comparam texto normalizado (CRLF e LF dão o mesmo hash) e o corpus envenenado do red team não entra no hash da suíte.
+
+## ADR-023: Política de classificação versionada
+
+**Contexto.** O semáforo era uma regra fixa no código ("provisoria-1"): sem limiar absoluto, e `triggered` listava só ids, sem limiar nem valor observado.
+
+**Decisão.**
+- As regras passam para `policies/default.yaml` (`id`, `version`, `description`, `rules`); cada regra compara uma métrica do `relatorio.json` com um limiar (`<`, `<=`, `>`, `>=`, `==`), sem expressões livres. A política padrão reproduz exatamente a "provisoria-1" (teste de equivalência contra a implementação antiga); `--policy PATH` em `report build` e `check` usa outra.
+- O `relatorio.json` registra `policy` (`id`, `version`, `sha256`, `path_relative`, regras com `observed`, `passed`, `severity`, `rationale`) e `indicators` (valores derivados que as regras consultam). Cor = pior severidade entre as regras que falharam. Métrica ausente vira "não avaliada" (`passed: null`) e nunca dá verde: a cor é, no mínimo, amarela, com a ressalva "regra não avaliada". O relatório MD/HTML ganha a tabela "Critérios de classificação".
+- Política inválida é erro claro, exit 2. Limiares absolutos (média mínima do eval, limite superior de Wilson do ASR) ficam só comentados no YAML, como proposta: decisão do dono.
+- Plataforma: `semaphore.color` e `triggered` continuam no mesmo formato; ela só confere a cor e não lê `policy`, então aceita relatórios antigos e novos sem mudança.
