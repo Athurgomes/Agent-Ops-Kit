@@ -10,7 +10,7 @@ import hashlib
 import re
 from html import escape
 
-from agent_ops_kit.report.build import GREEN_TEXT, RED_RULES, YELLOW_RULES
+from agent_ops_kit.report.build import GREEN_TEXT
 
 COLOR_LABEL = {"green": "VERDE", "yellow": "AMARELO", "red": "VERMELHO"}
 COLOR_CSS = {"green": "#1b7f3b", "yellow": "#b58105", "red": "#b3261e"}
@@ -308,11 +308,65 @@ def _business_indicator_rows(d: dict) -> list[list[str]]:
     ]
 
 
+def _fmt(v: object) -> str:
+    if v is None:
+        return "n/d"
+    if isinstance(v, bool):
+        return "sim" if v else "não"
+    return f"{v:g}" if isinstance(v, float) else str(v)
+
+
+_RESULT = {True: "Atendida", False: "Não atendida", None: "Não avaliada"}
+
+
+def _policy_blocks(d: dict) -> list[Block]:
+    pol = d.get("policy")
+    if not pol:  # relatorio.json antigo, sem política registrada
+        return [(
+            "p",
+            (
+                f"Classificação regida pela regra PROVISÓRIA versão {d['semaphore']['rules_version']}; "
+                "este relatório não registra a política aplicada."
+            ),
+        )]
+    rows = [
+        [
+            f"{r['id']} ({'vermelho' if r['severity'] == 'red' else 'amarelo'}): {r['rationale']}",
+            f"{r['metric']} {r['op']} {_fmt(r['threshold'])}",
+            _fmt(r["observed"]),
+            _RESULT[r["passed"]],
+        ]
+        for r in pol["rules"]
+    ]
+    return [
+        (
+            "p",
+            (
+                f"Classificação regida pela política '{pol['id']}' versão {pol['version']} "
+            f"(arquivo {pol['path_relative']}, sha256 {pol['sha256'][:16]}...). A política é "
+            "configurável (opção --policy) e os limiares padrão são PROVISÓRIOS: aguardam validação "
+            "formal junto à liderança, Riscos e Auditoria Interna. Cada regra é uma condição a "
+            "atender; falha em regra vermelha resulta em VERMELHO, falha em regra amarela resulta em "
+            "AMARELO, e regra não avaliada (métrica ausente) nunca resulta em verde."
+            ),
+        ),
+        ("table", ["Regra", "Limiar", "Observado", "Resultado"], rows),
+    ]
+
+
 def _executive_verdict_blocks(d: dict) -> list[Block]:
     color = d["semaphore"]["color"]
     triggered = d["semaphore"]["triggered"]
     prev = d["previous"]
-    rules = {**RED_RULES, **YELLOW_RULES}
+    rules = {r["id"]: r for r in (d.get("policy") or {}).get("rules", [])}
+    def reason(k: str) -> str:
+        r = rules.get(k)
+        if r is None:
+            return k
+        return (
+            f"{r['rationale']} Observado: {_fmt(r['observed'])}; critério: "
+            f"{r['metric']} {r['op']} {_fmt(r['threshold'])}."
+        )
 
     blocks: list[Block] = [
         ("h2", _SECTIONS[1]),
@@ -323,23 +377,19 @@ def _executive_verdict_blocks(d: dict) -> list[Block]:
     if triggered:
         blocks += [
             ("p", "Critérios acionados neste ciclo:"),
-            ("ul", [rules[k] for k in triggered]),
+            ("ul", [reason(k) for k in triggered]),
+        ]
+    if d["semaphore"].get("not_evaluated"):
+        blocks += [
+            ("p", "Ressalva: regra não avaliada, por métrica ausente no relatório (não equivale a aprovação):"),
+            ("ul", list(d["semaphore"]["not_evaluated"])),
         ]
 
     blocks += [
         ("h3", "2.1 Quadro de indicadores traduzidos para decisão de negócio"),
         ("table", ["Dimensão", "Indicador medido", "Leitura para o negócio"], _business_indicator_rows(d)),
-        ("h3", "2.2 Critério de classificação adotado (REGRA PROVISÓRIA)"),
-        (
-            "p",
-            f"Classificação regida pela regra PROVISÓRIA versão {d['semaphore']['rules_version']}, "
-            "cujos limiares ainda aguardam validação formal junto à liderança, Riscos e Auditoria "
-            "Interna. Vermelho se: "
-            + "; ".join(RED_RULES.values())
-            + ". Amarelo, caso não haja critério vermelho e ocorra: "
-            + "; ".join(YELLOW_RULES.values())
-            + ". Verde nos demais casos em que nenhum critério anterior for acionado.",
-        ),
+        ("h3", "2.2 Critérios de classificação (REGRA PROVISÓRIA)"),
+        *_policy_blocks(d),
         ("h3", "2.3 Evolução em relação à versão anterior"),
     ]
     if prev is None:
@@ -602,6 +652,11 @@ def _conclusion_blocks(d: dict) -> list[Block]:
                 "Arquivar a âncora criptográfica (hash final da cadeia de auditoria) fora do "
                 "arquivo de log para preservar a capacidade de detecção de alterações."
             )
+    if d["semaphore"].get("not_evaluated"):
+        recommendations.append(
+            "Completar as métricas ausentes e reavaliar as regras não avaliadas "
+            f"({', '.join(d['semaphore']['not_evaluated'])}); regra não avaliada não equivale a aprovação."
+        )
     recommendations.append(
         f"Validar formalmente os limiares provisórios da regra de classificação "
         f"(versão {d['semaphore']['rules_version']}) com as áreas de Riscos e Auditoria Interna."

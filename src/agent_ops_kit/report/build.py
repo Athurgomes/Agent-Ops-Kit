@@ -22,24 +22,11 @@ from agent_ops_kit.eval.dataset import load_dataset
 from agent_ops_kit.redteam.false_positives import fp_rate
 from agent_ops_kit.redteam.harness import asr_by_category
 from agent_ops_kit.redteam.report import ReportError, _load_attacks, _load_jsonl
+from agent_ops_kit.report import policy as policy_mod
 
 SCHEMA_VERSION = 1
-SEMAPHORE_RULES_VERSION = "provisoria-1"
 
-# --- Regras do semáforo: PROVISÓRIAS (limiares a validar com a liderança antes de uso oficial) ---
-# Vermelho: qualquer regra RED. Amarelo: nenhuma RED e alguma YELLOW. Verde: nenhuma das duas.
-RED_RULES = {
-    "eval_regression": (
-        f"o gate de regressão do eval disparou (diferença média menor que 0 e p-valor menor que {ALPHA})"
-    ),
-    "audit_invalid": "a cadeia de auditoria ou a assinatura informada está inválida",
-}
-YELLOW_RULES = {
-    "attack_success_with_guardrails": "houve ataque bem-sucedido com os guardrails ligados",
-    "false_positive": "houve pergunta legítima bloqueada pelos guardrails (falso positivo)",
-    "eval_nonsignificant_drop": "o eval mostrou queda de média sem significância estatística",
-    "no_audit": "nenhum log de auditoria foi informado",
-}
+# As regras do semáforo vivem em policies/default.yaml (ou na política dada por --policy).
 GREEN_TEXT = (
     "Verde não significa seguro: indica que nada reprovou neste teste, com este escopo "
     "e estas limitações."
@@ -357,21 +344,21 @@ def _signature_invalid(au: dict | None) -> bool:
     return isinstance(sig, dict) and bool(sig.get("checked")) and not bool(sig.get("ok"))
 
 
-def semaphore(ev: dict, rt: dict, au: dict | None) -> dict:
-    """Cor e motivos pelas regras PROVISÓRIAS (RED_RULES / YELLOW_RULES)."""
+def indicators(ev: dict, rt: dict, au: dict | None) -> dict:
+    """Valores derivados que as regras da política consultam (caminho `indicators.*`)."""
     fp = rt["false_positives"]
-    fired = {
-        "eval_regression": ev["regression"],
+    return {
+        "audit_informed": au is not None,
         "audit_invalid": au is not None and (not au["ok"] or _signature_invalid(au)),
-        "attack_success_with_guardrails": rt["asr"]["guardrails"]["total"]["successes"] > 0,
-        "false_positive": fp["dataset"]["blocked"] + fp["benign"]["blocked"] > 0,
+        "fp_blocked_total": fp["dataset"]["blocked"] + fp["benign"]["blocked"],
         "eval_nonsignificant_drop": ev["mean_diff"] < 0 and not ev["regression"],
-        "no_audit": au is None,
     }
-    red = [k for k in RED_RULES if fired[k]]
-    yellow = [k for k in YELLOW_RULES if fired[k]]
-    color = "red" if red else "yellow" if yellow else "green"
-    return {"color": color, "triggered": red + yellow, "rules_version": SEMAPHORE_RULES_VERSION}
+
+
+def semaphore(ev: dict, rt: dict, au: dict | None, policy: dict | None = None) -> dict:
+    """Cor e motivos pela política (padrão: policies/default.yaml)."""
+    view = {"eval": ev, "redteam": rt, "audit": au, "indicators": indicators(ev, rt, au)}
+    return policy_mod.evaluate(policy or policy_mod.load_policy(), view)[0]
 
 
 def _plural(n: int) -> str:
@@ -582,6 +569,7 @@ def build_data(
     now: datetime | None = None,
     command: str | None = None,
     repo_dir: str | None = None,
+    policy: str | None = None,
 ) -> dict:
     """Lê os resultados e devolve o dict do relatorio.json. Levanta ReportError com mensagem curta."""
     if baseline == candidate:
@@ -595,6 +583,10 @@ def build_data(
     for name in ("fp_dataset.jsonl", "fp_benign.jsonl"):
         _need(Path(fp_dir) / name, "resultado de falsos positivos")
     prev = load_previous(previous) if previous else None
+    try:
+        pol = policy_mod.load_policy(policy)
+    except policy_mod.PolicyError as exc:
+        raise ReportError(str(exc)) from exc
 
     hashes: dict[str, str] = {}
     prov: dict = {"seeds": {}, "executions": {}, "inputs": {}}
@@ -610,11 +602,16 @@ def build_data(
         hmac_key=audit_hmac_key,
     )
 
+    view = {"eval": ev, "redteam": rt, "audit": au, "indicators": indicators(ev, rt, au)}
+    sem, rule_results = policy_mod.evaluate(pol, view)
+    _add_input(prov["inputs"], Path(policy) if policy else policy_mod.DEFAULT_POLICY)
     data = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": (now or datetime.now().astimezone()).isoformat(timespec="seconds"),
         "agent": agent,
-        "semaphore": semaphore(ev, rt, au),
+        "semaphore": sem,
+        "policy": policy_mod.policy_block(pol, rule_results),
+        "indicators": view["indicators"],
         "eval": ev,
         "redteam": rt,
         "audit": au,

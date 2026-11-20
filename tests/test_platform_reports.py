@@ -537,3 +537,21 @@ def test_publish_remote_relatorio_json_sem_semaforo(tmp_path, content):
 def test_dockerignore_exclui_env_em_subpastas():
     lines = (ROOT / ".dockerignore").read_text(encoding="utf-8").split()
     assert {"**/.env", "**/.env.*", "**/*.db", "**/aok_data"} <= set(lines)
+
+
+def test_aceita_relatorio_com_e_sem_politica(env):
+    """Relatório antigo (sem `policy`) e novo (com `policy`/`indicators`) são aceitos."""
+    client, _ = env
+    _, token, _ = _make_agent(client)
+    assert _post(client, token, _package(mean=0.7)).status_code == 201  # sem policy
+    pkg = _package(mean=0.8)
+    js = json.loads(pkg["files"]["relatorio.json"])
+    js["semaphore"].update(not_evaluated=[], caveats=[], rules_version="provisoria-1")
+    js["policy"] = {
+        "id": "default", "version": "provisoria-1", "sha256": "a" * 64,
+        "path_relative": "policies/default.yaml", "rules": [],
+    }
+    js["indicators"] = {"audit_informed": True}
+    pkg["files"]["relatorio.json"] = json.dumps(js, ensure_ascii=False)
+    pkg["sha256"]["relatorio.json"] = _sha(pkg["files"]["relatorio.json"])
+    assert _post(client, token, pkg).status_code == 201
