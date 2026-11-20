@@ -24,6 +24,7 @@ from agent_ops_kit.redteam.harness import asr_by_category
 from agent_ops_kit.redteam.report import ReportError, _load_attacks, _load_jsonl
 from agent_ops_kit.report import findings as findings_mod
 from agent_ops_kit.report import policy as policy_mod
+from agent_ops_kit.report import stats as stats_mod
 
 SCHEMA_VERSION = 1
 
@@ -273,6 +274,8 @@ def _redteam_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> dict:
     }
     return {
         "n_attacks": len(guard),
+        "n_blind_attacks": sum(r.is_blind for r in guard),
+        "mcnemar": stats_mod.mcnemar_block(base, guard),
         "runs_per_config": min(_runs([r.case_id for r in recs]) for recs in (base, guard)),
         "asr": asr,
         "false_positives": {"dataset": _fp_row(ds), "benign": _fp_row(bn)},
@@ -432,7 +435,7 @@ def _runs_limitation(ev: dict, rt: dict) -> str:
 
 
 def limitations(data: dict) -> list[str]:
-    """Texto fixo do kit; só os números vêm dos resultados."""
+    """Texto fixo do kit mais as ressalvas estatísticas geradas dos dados (stats.statistical_caveats)."""
     ev, rt = data["eval"], data["redteam"]
     return [
         (
@@ -441,17 +444,12 @@ def limitations(data: dict) -> list[str]:
         ),
         (
             f"Tamanho do teste: {ev['n_cases']} casos de avaliação, {rt['n_attacks']} ataques e "
-            f"{rt['n_legit_questions']} perguntas legítimas para medir falsos positivos. Com "
-            "amostras pequenas, os intervalos de confiança são largos."
+            f"{rt['n_legit_questions']} perguntas legítimas para medir falsos positivos."
         ),
         _runs_limitation(ev, rt),
         (
             "As defesas são heurísticas (filtros de entrada, ferramentas e saída) e podem ser "
             "contornadas por ataques diferentes dos testados."
-        ),
-        (
-            "A suíte de ataques não é reservada: foi escrita no mesmo projeto das defesas e "
-            "não funciona como teste cego."
         ),
         _audit_limitation_text(data.get("audit")),
         (
@@ -464,6 +462,7 @@ def limitations(data: dict) -> list[str]:
             "sem guardrails para com guardrails não pode ser atribuída apenas aos guardrails."
         ),
         "Não cobre ataques fora da suíte, outros modelos nem uso em produção.",
+        *stats_mod.statistical_caveats(data),
     ]
 
 

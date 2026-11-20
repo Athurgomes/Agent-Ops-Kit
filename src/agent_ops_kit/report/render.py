@@ -478,6 +478,32 @@ def _functional_quality_blocks(ev: dict) -> list[Block]:
     return blocks
 
 
+def _mcnemar_blocks(mc: dict | None) -> list[Block]:
+    """Teste de McNemar exato (baseline vs guardrails, pareado por ataque)."""
+    if not mc:
+        return [("p", f"Teste de McNemar (baseline vs guardrails): {_NOT_RECORDED} neste relatório.")]
+    if not mc["applicable"]:
+        return [("p", f"Teste de McNemar (baseline vs guardrails): não aplicável. {mc['reason']}.")]
+    ex = mc["excluded"]
+    return [
+        (
+            "p",
+            (
+                "Teste de McNemar exato (binomial bilateral), pareado por ataque. b = sucesso só "
+                "sem guardrails; c = sucesso só com guardrails."
+            ),
+        ),
+        (
+            "table",
+            ["Pares (n)", "b", "c", "p exato", "Excluídos (erro / sem par)"],
+            [[
+                str(mc["n_paired"]), str(mc["b"]), str(mc["c"]), f"{mc['p_value']:.4f}",
+                f"{ex['total']} ({ex['errors']} / {ex['unpaired']})",
+            ]],
+        ),
+    ]
+
+
 def _risk_analysis_blocks(rt: dict) -> list[Block]:
     asr_b = rt["asr"]["baseline"].get("total") or {"n": 0, "successes": 0, "asr": 0.0}
     asr_g = rt["asr"]["guardrails"].get("total") or {"n": 0, "successes": 0, "asr": 0.0}
@@ -523,6 +549,7 @@ def _risk_analysis_blocks(rt: dict) -> list[Block]:
                 risk_rows,
             )
         )
+    blocks += _mcnemar_blocks(rt.get("mcnemar"))
     blocks.append(
         (
             "p",
