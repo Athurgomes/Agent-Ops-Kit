@@ -184,7 +184,7 @@ aok redteam run --guardrails all --blind-attacks-dir "$AOK_BLIND_ATTACKS_DIR" --
 aok redteam run --guardrails all --blind-only --out reports/blind_only.jsonl
 ```
 
-As medições completas com modelo local sobre `redteam/attacks_owasp_100/` (108 ataques) e `redteam/benign_expanded/benign_50.jsonl` (54 perguntas benignas) aguardam execução com o Ollama; os resultados gravados no repositório continuam referentes aos 40 ataques e 12 benignas originais.
+As medições com modelo local sobre `redteam/attacks_owasp_100/` (108 ataques) e `redteam/benign_expanded/benign_50.jsonl` (54 perguntas benignas) foram feitas entre 19 e 20/11/2026 (`redteam/results_owasp/`, seção B.1 em [docs/resultados.md](docs/resultados.md)); os resultados gravados em `redteam/results/` continuam referentes aos 40 ataques e 12 benignas originais.
 
 ### Como ver o trace
 
@@ -237,6 +237,12 @@ Ressalvas essenciais:
 
 Uma das 12 perguntas legítimas novas foi bloqueada (estágio output, motivo canary_leak). O conjunto benigno foi escrito depois de dois falsos positivos de teste já serem conhecidos.
 
+Medições adicionais de 20/11/2026 (suíte ampliada de 108 ataques OWASP LLM Top 10 e 54 benignas, `llama3.1:8b`, semente 42, fontes e ressalvas na seção B.1 em [docs/resultados.md](docs/resultados.md)):
+
+- **ASR (`redteam/attacks_owasp_100/`, 9 categorias)**: sem guardrails `20.4%` (22/108, IC 95% `[13.9; 28.9]`) vs com `--guardrails all` `4.6%` (5/108, IC 95% `[2.0; 10.4]`); 1 erro do agente na baseline (owasp-107, HTTP 500 do Ollama).
+- **Falsos positivos**: `0/54` nas benignas novas (IC 95% `[0.0; 6.6]`) e `0/50` no dataset de avaliação (IC 95% `[0.0; 7.1]`).
+- **Ressalva**: a suíte não é cega (foi escrita no mesmo projeto das defesas), há uma execução por configuração e um único modelo de 8B.
+
 ### Avaliação A/B de prompts (v1 vs v2)
 
 50 perguntas. Métrica determinística (checagens):
@@ -271,7 +277,7 @@ Medições adicionais de 19/11/2026 (checagens determinísticas sem `--judge`, m
 - Modelo local pequeno (llama3.1:8b): tudo foi medido com ele. O ASR não generaliza para outros modelos, prompts ou dados, e o modelo às vezes responde "não encontrei" sem consultar os documentos.
 - Dataset de 50 casos e 40 ataques: intervalos de confiança largos, uma execução por configuração.
 - Os guardrails combinam heurísticas (padrões de texto, normalização anti-homoglyphs e anti-token-splitting, decodificação segura de Base64/Hex e janela multi-turn), allowlist, canary e classificador semântico local TF-IDF opcional, mas ainda podem ser contornados por paráfrases inéditas, outros idiomas ou ofuscações em múltiplas camadas. Não são proteção garantida.
-- A suíte padrão versionada de 40 ataques e a suíte expandida (`redteam/attacks_owasp_100/`, 108 ataques) não são reservadas nem cegas; a avaliação cega exige fornecer um diretório externo fora do controle de versão via `--blind-attacks-dir` ou `AOK_BLIND_ATTACKS_DIR`. As medições completas com modelo local sobre a suíte expandida e as 54 benignas de `redteam/benign_expanded/benign_50.jsonl` aguardam execução com o Ollama.
+- A suíte padrão versionada de 40 ataques e a suíte expandida (`redteam/attacks_owasp_100/`, 108 ataques) não são reservadas nem cegas; a avaliação cega exige fornecer um diretório externo fora do controle de versão via `--blind-attacks-dir` ou `AOK_BLIND_ATTACKS_DIR`. As medições com modelo local sobre a suíte expandida e as 54 benignas de `redteam/benign_expanded/benign_50.jsonl` foram feitas entre 19 e 20/11/2026, com uma execução por configuração (seção B.1 em [docs/resultados.md](docs/resultados.md)).
 - A auditoria usa hash encadeado, com assinatura digital opcional da âncora (Ed25519 ou HMAC-SHA256, ADR-004 e ADR-018): sem assinatura, apagar o fim do arquivo ou reescrever toda a cadeia não é detectado sem uma âncora externa; mesmo com assinatura, depende de arquivar o recibo `.sig.json` fora do log e não inclui carimbo de tempo externo confiável (RFC 3161 TSA).
 - O CI valida respostas gravadas e o manifesto; não reexecuta o modelo (ADR-001).
 - O gate do eval foi exercitado em 2 PRs de teste, fechados sem mesclar ([#1](https://github.com/Athurgomes/Agent-Ops-Kit/pull/1) e [#2](https://github.com/Athurgomes/Agent-Ops-Kit/pull/2)); resultados em [docs/resultados.md](docs/resultados.md). Ele usa respostas gravadas, o prompt piorado foi degradado de propósito e foi uma execução por PR: é um teste de mecanismo, não uma medida de qualidade.
