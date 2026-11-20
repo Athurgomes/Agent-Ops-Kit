@@ -378,3 +378,14 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - Em verificação determinística offline apenas da camada de entrada (`check_input` + `LocalSemanticClassifier` + `check_conversation` em `tests/test_redteam_owasp_and_blind.py`), observou-se **0/54** falsos positivos em `benign_50.jsonl` e detecção de 66/108 casos em `attacks_owasp_100` (38/108 apenas com heurísticas sem classificador semântico), com lacunas esperadas em categorias que dependem da resposta do modelo ou da allowlist de tools (`saida_insegura`, `exaustao_recursos`, `abuso_de_tools` e `injecao_indireta`).
 - Medições completas de ASR ponta a ponta com o agente e modelo local na suíte de 108 ataques e 54 benignas aguardam execução com o Ollama; `docs/resultados.md` continua refletindo a execução gravada dos 40 ataques e 12 benignas originais.
 - Os arquivos em `redteam/attacks_owasp_100/` são públicos no repositório; a avaliação cega efetiva depende de o operador fornecer um diretório externo fora do controle de versão via `--blind-attacks-dir` ou `AOK_BLIND_ATTACKS_DIR`.
+
+## ADR-022: Proveniência do relatório
+
+**Contexto.** O `relatorio.json` guardava só hashes de config, dataset, respostas e manifesto; não dizia com que versão, commit, modelo ou comando os números foram obtidos.
+
+**Decisão.**
+- O bloco `provenance` (e a seção A.7 do relatório) registra versão do kit, commit git e árvore com mudanças (só arquivos rastreados), Python, sistema operacional, modelo, digest do modelo, versão do Ollama, comando, sementes e o sha256 de cada arquivo de entrada (dataset, prompts, suítes, benignas, corpus, `agent.yaml`, respostas).
+- Digest e versão do Ollama são capturados na execução (`aok eval`, `aok redteam run`, medição de falsos positivos) e gravados no manifesto do eval, em `<resultado>.meta.json` e em `fp.meta.json`; o build só lê, sem modelo.
+- O manifesto passa a ter `answers_sha256`; hash divergente do manifesto, do sidecar ou da suíte é erro (código 2).
+- Ficam `null` ("não registrado") digest, versão do Ollama, sementes do red team e `answers_sha256` nas execuções antigas (`evals/answers*`, `redteam/results/`), que seguem validando sem regravação. Sem git, commit e árvore ficam `null`.
+- Limites: os hashes comparam texto normalizado (CRLF e LF dão o mesmo hash) e o corpus envenenado do red team não entra no hash da suíte.
