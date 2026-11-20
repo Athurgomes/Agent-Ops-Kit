@@ -12,6 +12,7 @@ from html import escape
 
 from agent_ops_kit.report import stats as stats_mod
 from agent_ops_kit.report.build import GREEN_TEXT
+from agent_ops_kit.report.build import cases_label as _cases
 
 COLOR_LABEL = {"green": "VERDE", "yellow": "AMARELO", "red": "VERMELHO"}
 COLOR_CSS = {"green": "#1b7f3b", "yellow": "#b58105", "red": "#b3261e"}
@@ -110,7 +111,7 @@ def _pretextual_blocks(d: dict, doc_code: str) -> list[Block]:
     )
     summary = (
         f"Este parecer apresenta os resultados determinísticos da avaliação do agente {ag['name']} "
-        f"(prompt {ag['prompt_version']}, modelo {ag['model']}), abrangendo {ev['n_cases']} casos "
+        f"(prompt {ag['prompt_version']}, modelo {ag['model']}), abrangendo {_cases(ev)} "
         f"de qualidade funcional ({ev['candidate']} vs {ev['baseline']}), {rt['n_attacks']} "
         f"simulações de manipulação e {rt['n_legit_questions']} consultas legítimas. A classificação "
         f"consolidada foi {COLOR_LABEL[color]}. Na qualidade funcional, a variante candidata obteve "
@@ -214,7 +215,7 @@ def _scope_blocks(d: dict) -> list[Block]:
                 _target_line(d),
                 (
                     f"Avaliação funcional A/B: {ev['candidate']} comparada à referência "
-                    f"{ev['baseline']} em {ev['n_cases']} casos ({ev['runs_per_config']} "
+                    f"{ev['baseline']} em {_cases(ev)} ({ev['runs_per_config']} "
                     f"execução(ões) por configuração); respostas gravadas em {', '.join(dates)}."
                 ),
                 (

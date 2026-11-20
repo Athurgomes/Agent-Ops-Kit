@@ -555,3 +555,13 @@ def test_aceita_relatorio_com_e_sem_politica(env):
     pkg["files"]["relatorio.json"] = json.dumps(js, ensure_ascii=False)
     pkg["sha256"]["relatorio.json"] = _sha(pkg["files"]["relatorio.json"])
     assert _post(client, token, pkg).status_code == 201
+
+
+def test_publish_remote_sem_assinatura_avisa(tmp_path, capsys):
+    pkg = _package()
+    for name, text in pkg["files"].items():
+        (tmp_path / name).write_text(text, encoding="utf-8", newline="")
+    (tmp_path / publish.SIG_FILE).unlink(missing_ok=True)
+    with pytest.raises(publish.PublishError):
+        publish.publish_remote(tmp_path, "http://127.0.0.1:9", "rag-demo", "tok", timeout=2)
+    assert "pacote não assinado" in capsys.readouterr().err

@@ -299,3 +299,30 @@ def test_forged_coverage_block_exit_1(repo):
 
     _edit_json(repo, "pk_audit", forge)
     assert _statuses(repo)["coverage"] == "falha"
+
+
+def test_missing_evidence_message_suggests_flag(repo):
+    from agent_ops_kit.report import verify as v
+
+    ver = v._Verifier.__new__(v._Verifier)
+    ver.root, ver.evidence_root = repo, None
+    with pytest.raises(v._NotVerifiable, match="--evidence-root"):
+        ver.path("@evidence/a/b.jsonl", "x")
+    ver.evidence_root = repo
+    with pytest.raises(v._NotVerifiable, match=r"procurado em --evidence-root, como a/b.jsonl"):
+        ver.path("@evidence/a/b.jsonl", "x")
+    ver.evidence_root = None
+    with pytest.raises(v._NotVerifiable, match="procurado em pasta do pacote, como a/c.jsonl"):
+        ver.path("a/c.jsonl", "x")
+
+
+def test_eval_n_cases_is_executed_not_dataset():
+    from agent_ops_kit.eval.dataset import load_dataset
+    from agent_ops_kit.report import build as b
+
+    ds = load_dataset(SRC / "evals" / "dataset.jsonl")
+    sub = ds[:10]
+    recs = {v: [{"case_id": c.id, "answer": "x", "run_index": 0} for c in sub] for v in ("v1", "v2")}
+    ev, _ = b.eval_numbers(ds, recs, "v1", "v2", 42)
+    assert (ev["n_cases"], ev["n_dataset"]) == (10, len(ds))
+    assert b.cases_label(ev) == f"10 de {len(ds)} casos do conjunto"

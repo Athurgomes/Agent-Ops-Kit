@@ -139,11 +139,12 @@ class _Verifier:
         base = self.root
         if key.startswith(provenance.EVIDENCE_PREFIX):
             if self.evidence_root is None:
-                raise _NotVerifiable(f"evidência em {provenance.EVIDENCE_PREFIX[:-1]}: informe --evidence-root ({key})")
+                raise _NotVerifiable(f"evidência em {provenance.EVIDENCE_PREFIX[:-1]}: informe --evidence-root com a pasta das evidências ({key})")
             base, p = self.evidence_root, Path(key[len(provenance.EVIDENCE_PREFIX):])
         full = base / p
         if not full.is_file():
-            raise _NotVerifiable(f"arquivo de evidência ausente: {key}")
+            where = "--evidence-root" if base is self.evidence_root else "pasta do pacote"
+            raise _NotVerifiable(f"arquivo de evidência ausente: {key} (procurado em {where}, como {p.as_posix()})")
         return full
 
     def file(self, role: str) -> Path:

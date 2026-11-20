@@ -215,6 +215,12 @@ def _fp_row(recs: list[dict]) -> dict:
     }
 
 
+def cases_label(ev: dict) -> str:
+    """'10 casos' ou '10 de 50 casos do conjunto' (n executado vs tamanho do dataset)."""
+    n, tot = ev["n_cases"], ev.get("n_dataset", ev["n_cases"])
+    return f"{n} casos" if n == tot else f"{n} de {tot} casos do conjunto"
+
+
 def eval_numbers(
     dataset: list, records: dict[str, list[dict]], baseline: str, candidate: str, seed: int
 ) -> tuple[dict, dict]:
@@ -232,7 +238,8 @@ def eval_numbers(
     section = {
         "baseline": baseline, "candidate": candidate,
         "metric": "score das checagens determinísticas, de 0 a 1",
-        "n_cases": len(dataset), "n_pairs": ab.n, "n_dropped": ab.n_dropped,
+        "n_cases": len({r["case_id"] for r in records[baseline]} & {r["case_id"] for r in records[candidate]}),
+        "n_dataset": len(dataset), "n_pairs": ab.n, "n_dropped": ab.n_dropped,
         "runs_per_config": min(_runs([r["case_id"] for r in records[v]]) for v in variants),
         "variance": variance,
         "mean_baseline": ab.mean_baseline, "mean_candidate": ab.mean_candidate,
@@ -554,7 +561,7 @@ def limitations(data: dict) -> list[str]:
             "outros modelos nem para uso em produção."
         ),
         (
-            f"Tamanho do teste: {ev['n_cases']} casos de avaliação, {rt['n_attacks']} ataques e "
+            f"Tamanho do teste: {cases_label(ev)} de avaliação, {rt['n_attacks']} ataques e "
             f"{rt['n_legit_questions']} perguntas legítimas para medir falsos positivos."
         ),
         _runs_limitation(ev, rt),

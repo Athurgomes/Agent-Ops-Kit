@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
@@ -144,6 +145,12 @@ def publish_remote(
             payload["signature"] = (src / SIG_FILE).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             raise PublishError(f"não foi possível ler {SIG_FILE}") from exc
+    else:
+        print(
+            "aviso: pacote não assinado; se o agente tiver chave cadastrada na plataforma, será "
+            "recusado (defina AOK_SIGNING_KEY_FILE ou AOK_SIGNING_KEY_PEM)",
+            file=sys.stderr,
+        )
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         url.rstrip("/") + "/v1/reports",
