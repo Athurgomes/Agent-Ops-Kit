@@ -16,7 +16,7 @@ from pathlib import Path
 
 import yaml
 
-from agent_ops_kit import provenance
+from agent_ops_kit import audit, audit_sign, provenance  # noqa: F401  (audit antes de audit_sign: import circular)
 from agent_ops_kit.config import load_config
 from agent_ops_kit.eval import runner
 from agent_ops_kit.eval.dataset import load_dataset
@@ -28,6 +28,7 @@ from agent_ops_kit.report import policy as policy_mod
 
 OK, FAIL, NOT_VERIFIABLE = "ok", "falha", "nao_verificavel"
 PACKAGE_FILE = "relatorio.json"
+SIG_FILE = "relatorio.json.sig"
 # Declarações sobre o ambiente do build: não há arquivo que as comprove, então ficam fora do escopo.
 NOT_COVERED = (
     (
@@ -530,8 +531,36 @@ def _structure(data: dict) -> str:
     return f"schema_version {data['schema_version']} e campos obrigatórios presentes"
 
 
-def verify_package(package: str | Path, repo_root: str | Path = ".", hmac_key: str | None = None) -> dict:
-    """Resultado da verificação: {ok, package, checks, summary, not_covered}. Determinístico."""
+def _check_signature(package: Path, public_key: str | Path | None) -> str:
+    """Confere relatorio.json.sig contra os bytes exatos do relatorio.json (ADR-029)."""
+    sig_path = package / SIG_FILE
+    if not sig_path.is_file():
+        raise _Fail("pacote sem assinatura (exigida por --require-signature)")
+    try:
+        receipt = json.loads(sig_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError):
+        raise _Fail(f"{SIG_FILE} ilegível ou JSON inválido") from None
+    fp = receipt.get("key_fingerprint") if isinstance(receipt, dict) else None
+    if public_key is None:
+        raise _NotVerifiable(f"assinada (chave {fp}), mas sem --public-key para verificar")
+    try:
+        pub = Path(public_key).read_bytes()
+    except OSError:
+        raise _Fail("chave pública ilegível") from None
+    res = audit_sign.verify_bytes((package / PACKAGE_FILE).read_bytes(), receipt, pub)
+    if not res.ok:
+        raise _Fail(res.reason or "assinatura inválida")
+    return f"assinatura Ed25519 válida (chave {res.key_fingerprint})"
+
+
+def verify_package(
+    package: str | Path,
+    repo_root: str | Path = ".",
+    hmac_key: str | None = None,
+    public_key: str | Path | None = None,
+    require_signature: bool = False,
+) -> dict:
+    """Resultado da verificação: {ok, package, checks, summary, signed, not_covered}. Determinístico."""
     data = load_package(package)
     root = Path(repo_root)
     if not root.is_dir():
@@ -539,12 +568,16 @@ def verify_package(package: str | Path, repo_root: str | Path = ".", hmac_key: s
     checks = [_run_step("structure", "estrutura mínima do relatorio.json", lambda: _structure(data))]
     if checks[0]["status"] == OK:
         checks += _Verifier(data, Path(package), root, hmac_key).run()
+    signed = (Path(package) / SIG_FILE).is_file()
+    if signed or require_signature:  # sem .sig e sem exigência: só informativo, não entra nas checagens
+        checks.append(_run_step("signature", "assinatura do relatorio.json", lambda: _check_signature(Path(package), public_key)))
     summary = {s: sum(c["status"] == s for c in checks) for s in (OK, FAIL, NOT_VERIFIABLE)}
     return {
         "ok": summary[FAIL] == 0 and summary[NOT_VERIFIABLE] == 0,
         "package": Path(package).as_posix(),
         "checks": checks,
         "summary": summary,
+        "signed": signed,
         "not_covered": list(NOT_COVERED),
     }
 
@@ -559,6 +592,8 @@ def format_table(result: dict) -> str:
         if c["detail"]:
             lines.append(f"    {c['detail']}")
     s = result["summary"]
+    if not result.get("signed"):
+        lines += ["", "Assinatura: não assinado (informativo; use --require-signature para exigir)"]
     lines += [
         "",
         (

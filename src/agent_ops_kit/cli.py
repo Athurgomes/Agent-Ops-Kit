@@ -584,6 +584,7 @@ def _write_package(args: argparse.Namespace) -> dict:
     """Gera relatorio.{json,md,html} em args.out (compartilhado por `report build` e `check`)."""
     import json
 
+    from agent_ops_kit import audit_sign
     from agent_ops_kit.redteam.report import ReportError
     from agent_ops_kit.report import build, render
 
@@ -627,9 +628,18 @@ def _write_package(args: argparse.Namespace) -> dict:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     title = f"Relatório de teste do agente {data['agent']['name']}"
-    (out / "relatorio.json").write_text(
-        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    json_bytes = (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    sig_path = out / "relatorio.json.sig"
+    try:
+        key_pem = audit_sign.signing_key_from_env()
+        receipt = audit_sign.sign_bytes(json_bytes, key_pem) if key_pem else None
+    except ValueError as exc:
+        raise ReportError(str(exc)) from None
+    (out / "relatorio.json").write_bytes(json_bytes)
+    if receipt:
+        sig_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+    else:
+        sig_path.unlink(missing_ok=True)  # um .sig antigo não vale para o json novo
     (out / "relatorio.md").write_text(render.to_markdown(blocks), encoding="utf-8")
     (out / "relatorio.html").write_text(render.to_html(blocks, title), encoding="utf-8")
     return data
@@ -643,7 +653,9 @@ def cmd_report_verify(args: argparse.Namespace) -> int:
 
     try:
         hmac_key = _resolve_hmac_env(args.audit_hmac_key_env)
-        result = verify.verify_package(args.package, args.repo_root, hmac_key)
+        result = verify.verify_package(
+            args.package, args.repo_root, hmac_key, args.public_key, args.require_signature
+        )
     except (verify.PackageError, ValueError) as exc:
         print(f"erro: {exc}", file=sys.stderr)
         return 2
@@ -673,6 +685,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     label = render.COLOR_LABEL[data["semaphore"]["color"]]
     print(f"Pacote gravado em {Path(args.out).as_posix()}/ (relatorio.md, relatorio.html, relatorio.json)")
     print(f"Semáforo (regras provisórias): {label}")
+    if (Path(args.out) / "relatorio.json.sig").is_file():
+        print("Assinado: relatorio.json.sig (Ed25519)")
     return 0
 
 
@@ -906,6 +920,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--repo-root", default=".", help="raiz a que os caminhos do pacote se referem")
     r.add_argument("--json", action="store_true", help="saída em JSON")
     r.add_argument("--audit-hmac-key-env", default=None, help="variável de ambiente com a chave HMAC da assinatura de auditoria")
+    r.add_argument("--public-key", default=None, help="chave pública Ed25519 (PEM) para conferir relatorio.json.sig")
+    r.add_argument("--require-signature", action="store_true", help="falha se o pacote não tiver relatorio.json.sig")
     p.set_defaults(func=cmd_report)
 
     p = sub.add_parser("check", help="gera o pacote a partir dos resultados gravados e, opcional, publica")

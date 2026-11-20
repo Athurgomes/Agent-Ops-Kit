@@ -134,6 +134,70 @@ def generate_ed25519_keypair(
     }
 
 
+SIGNING_KEY_FILE_ENV = "AOK_SIGNING_KEY_FILE"
+SIGNING_KEY_PEM_ENV = "AOK_SIGNING_KEY_PEM"
+
+
+def _load_private_key(pem: bytes) -> Ed25519PrivateKey:
+    try:
+        loaded = serialization.load_pem_private_key(pem, password=None)
+        if isinstance(loaded, Ed25519PrivateKey):
+            return loaded
+    except (ValueError, TypeError, UnsupportedAlgorithm):
+        pass
+    raise ValueError("chave de assinatura inválida ou não suportada (esperada PEM Ed25519)")
+
+
+def signing_key_from_env(environ: dict[str, str] | None = None) -> bytes | None:
+    """PEM da chave privada de AOK_SIGNING_KEY_FILE (caminho) ou AOK_SIGNING_KEY_PEM (conteúdo); None se ausentes."""
+    env = os.environ if environ is None else environ
+    path = env.get(SIGNING_KEY_FILE_ENV)
+    if path:
+        try:
+            return Path(path).read_bytes()
+        except OSError:
+            raise ValueError(f"não foi possível ler a chave de assinatura de {SIGNING_KEY_FILE_ENV}") from None
+    pem = env.get(SIGNING_KEY_PEM_ENV)
+    return pem.encode("utf-8") if pem and pem.strip() else None
+
+
+def sign_bytes(data: bytes, private_pem: bytes) -> dict[str, str]:
+    """Assina os bytes exatos com Ed25519 e devolve o recibo (conteúdo do arquivo .sig)."""
+    key = _load_private_key(private_pem)
+    return {
+        "algorithm": "ed25519",
+        "key_fingerprint": _ed25519_fingerprint(key.public_key()),
+        "sig": base64.b64encode(key.sign(data)).decode("ascii"),
+        "signed_at_utc": datetime.now(UTC).isoformat(timespec="seconds"),
+    }
+
+
+def verify_bytes(data: bytes, receipt: Any, public_pem: bytes) -> SignatureVerifyResult:
+    """Confere o recibo de `sign_bytes` contra os bytes e a chave pública (PEM)."""
+    fp = receipt.get("key_fingerprint") if isinstance(receipt, dict) else None
+    fp = fp if isinstance(fp, str) else None
+
+    def bad(reason: str) -> SignatureVerifyResult:
+        return SignatureVerifyResult(ok=False, algorithm="ed25519", key_fingerprint=fp, reason=reason)
+
+    if not isinstance(receipt, dict) or receipt.get("algorithm") != "ed25519" or fp is None:
+        return bad("recibo de assinatura inválido ou algoritmo não suportado")
+    try:
+        sig = base64.b64decode(str(receipt.get("sig", "")).encode("ascii"), validate=True)
+        pub = serialization.load_pem_public_key(public_pem)
+    except (ValueError, TypeError, UnsupportedAlgorithm, binascii.Error):
+        return bad("assinatura ou chave pública ilegível")
+    if not isinstance(pub, Ed25519PublicKey):
+        return bad("chave pública fornecida não é Ed25519")
+    if not hmac.compare_digest(_ed25519_fingerprint(pub), fp):
+        return bad("a chave pública não corresponde ao fingerprint da assinatura")
+    try:
+        pub.verify(sig, data)
+    except InvalidSignature:
+        return bad("assinatura inválida: o conteúdo foi alterado ou a chave está errada")
+    return SignatureVerifyResult(ok=True, algorithm="ed25519", key_fingerprint=fp)
+
+
 def sign_anchor(
     audit_path: str | Path,
     *,
