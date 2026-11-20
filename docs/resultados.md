@@ -27,11 +27,13 @@ Obs.: `--reuse` confere o manifesto das respostas gravadas. Sem `--judge`, o `ao
 
 Fonte: `evals/results/v1_vs_v2.md` (50 perguntas, llama3.1:8b, semente 42, respostas geradas na própria execução). Os números nas tabelas abaixo correspondem exclusivamente ao conjunto padrão de 50 casos (`evals/dataset.jsonl`).
 
-Para auditoria local mais ampla com Ollama (sem respostas gravadas nem medições publicadas aqui), o repositório inclui também `evals/dataset_audit_200.jsonl` (200 casos cobrindo os 15 documentos do corpus e casos de abstenção):
+Para auditoria local mais ampla com Ollama, o repositório inclui também `evals/dataset_audit_200.jsonl` (200 casos cobrindo os 15 documentos do corpus e casos de abstenção), além do suporte a múltiplas execuções (`--runs`):
 
 ```bash
 aok eval --baseline v1 --candidate v2 --dataset evals/dataset_audit_200.jsonl --runs 3
 ```
+
+As medições de 19/11/2026 para variância multi-execução (50 casos × 3 execuções) e para o conjunto ampliado de auditoria (200 casos × 1 execução) estão nas subseções A.1 e A.2 abaixo, com respostas e relatórios gravados no repositório.
 
 Métrica determinística (checagens):
 
@@ -63,6 +65,103 @@ Taxa de aprovação por checagem (aprovados/aplicáveis):
 | refuses_when_unanswerable | 7/10 (70.0%) | 5/10 (50.0%) |
 
 Leitura: pela métrica determinística a diferença não é distinguível de zero a 5% (p = 0.0929); pelo juiz, v2 é pior (p = 0.0154). Aviso sobre o juiz: o juiz é o mesmo modelo de 8B que gera as respostas (viés de autopreferência e ruído); as notas são ordinais (1 a 5), não intervalares; a rubrica não foi calibrada contra humanos. Use como complemento das checagens determinísticas, não como substituto.
+
+### A.1 Variância multi-execução (19/11/2026)
+
+Fontes: `evals/results/v1_vs_v2_multirun.md` e `evals/answers_multirun/` (`v1.jsonl`, `v2.jsonl`, `manifest.json`). Executado em 19/11/2026 sobre o conjunto padrão (`evals/dataset.jsonl`, 50 casos × 3 execuções por variante = 150 execuções-caso por variante), modelo `llama3.1:8b` com embeddings `nomic-embed-text` via Ollama, `temperature=0`, semente base `42` (usando sementes `42`, `43` e `44` nas 3 execuções) e checagens determinísticas sem `--judge` (tempo total do batch: `1977.22 s`, ~32.95 min):
+
+```bash
+aok eval --baseline v1 --candidate v2 --dataset evals/dataset.jsonl --prompts-dir evals/prompts --config examples/rag_agent/agent.yaml --answers-dir evals/answers_multirun --runs 3 --seed 42 --report evals/results/v1_vs_v2_multirun.md
+# ou sem modelo, lendo as respostas gravadas:
+aok eval --baseline v1 --candidate v2 --dataset evals/dataset.jsonl --answers-dir evals/answers_multirun --reuse --seed 42
+```
+
+Comparação A/B (média agregada por caso nas 3 execuções, checagens determinísticas):
+
+| Item | Valor |
+|---|---|
+| Média v1 | 0.7067 |
+| Média v2 | 0.6133 |
+| Diferença média (v2 - v1) | -0.0933 |
+| IC 95% da diferença (bootstrap) | [-0.1933, +0.0067] |
+| p-valor (permutação pareada, bilateral, monte_carlo) | 0.0929 |
+| n (pares usados) / descartados | 50 / 0 |
+| Semente / reamostragens | 42 / 10000 |
+
+Variância entre execuções:
+
+| Variante | Execuções | Médias por execução | Média agregada | Desvio-padrão (execuções) | Desvio médio por caso | Consistência exata (score / resposta) |
+|---|---|---|---|---|---|---|
+| v1 | 3 | [0.7067, 0.7067, 0.7067] | 0.7067 | 0.0000 | 0.0000 | 100.0% / 98.0% |
+| v2 | 3 | [0.6133, 0.6133, 0.6133] | 0.6133 | 0.0000 | 0.0000 | 100.0% / 100.0% |
+
+Taxa de aprovação por checagem (aprovados/aplicáveis nas 150 execuções-caso por variante):
+
+| Checagem | v1 | v2 |
+|---|---|---|
+| contains_expected | 63/120 (52.5%) | 51/120 (42.5%) |
+| cites_correct_source | 105/150 (70.0%) | 66/150 (44.0%) |
+| valid_format | 129/150 (86.0%) | 144/150 (96.0%) |
+| refuses_when_unanswerable | 21/30 (70.0%) | 15/30 (50.0%) |
+
+Métricas operacionais e erros (150 execuções-caso por variante):
+
+| Métrica | v1 | v2 |
+|---|---|---|
+| Latência por caso, p50 (s) | 5.39 | 7.89 |
+| Latência por caso, p95 (s) | 8.10 | 11.38 |
+| Tokens de entrada, média por caso | 1095.76 | 1362.54 |
+| Tokens de saída, média por caso | 69.83 | 116.44 |
+| Taxa de erro do agente (erros) | 0.0000 (0) | 0.0000 (0) |
+| Taxa de erro de tool | n/d (o runner não registra tools por caso) | n/d (o runner não registra tools por caso) |
+| Custo estimado | 0.0000 | 0.0000 |
+
+Leitura e ressalvas: todas as médias e taxas por checagem reproduziram exatamente a gravação anterior de `evals/results/v1_vs_v2.md` (12/11/2026). Como o runner fixa `temperature=0` nas opções do Ollama e a execução ocorreu na mesma GPU e runtime locais (sementes 42, 43 e 44), a variância de score observada foi `0.0000` (consistência exata de score de `100.0%` em v1 e v2; consistência textual de resposta de `98.0%` em v1 e `100.0%` em v2). Isso mede estabilidade sob `temperature=0` no mesmo ambiente e não substitui medições com `temperature > 0` ou em mudanças de hardware/runtime. As execuções foram rodadas sem `--judge` (apenas checagens determinísticas).
+
+### A.2 Conjunto ampliado de auditoria (19/11/2026)
+
+Fontes: `evals/results/audit_200_v1_vs_v2.md` e `evals/answers_audit_200/` (`v1.jsonl`, `v2.jsonl`, `manifest.json`). Executado em 19/11/2026 sobre `evals/dataset_audit_200.jsonl` (200 casos: 165 respondíveis e 35 não respondíveis, cobrindo os 15 documentos do corpus), 1 execução por variante (`--runs 1`), modelo `llama3.1:8b` com embeddings `nomic-embed-text` via Ollama, `temperature=0`, semente `42` e checagens determinísticas sem `--judge` (tempo total do batch: `2691.65 s`, ~44.86 min):
+
+```bash
+aok eval --baseline v1 --candidate v2 --dataset evals/dataset_audit_200.jsonl --prompts-dir evals/prompts --config examples/rag_agent/agent.yaml --answers-dir evals/answers_audit_200 --seed 42 --report evals/results/audit_200_v1_vs_v2.md
+# ou sem modelo, lendo as respostas gravadas:
+aok eval --baseline v1 --candidate v2 --dataset evals/dataset_audit_200.jsonl --answers-dir evals/answers_audit_200 --reuse --seed 42
+```
+
+Comparação A/B (checagens determinísticas):
+
+| Item | Valor |
+|---|---|
+| Média v1 | 0.7750 |
+| Média v2 | 0.6217 |
+| Diferença média (v2 - v1) | -0.1533 |
+| IC 95% da diferença (bootstrap) | [-0.2100, -0.0950] |
+| p-valor (permutação pareada, bilateral, monte_carlo) | 0.0001 |
+| n (pares usados) / descartados | 200 / 0 |
+| Semente / reamostragens | 42 / 10000 |
+
+Taxa de aprovação por checagem (aprovados/aplicáveis):
+
+| Checagem | v1 | v2 |
+|---|---|---|
+| contains_expected | 97/165 (58.8%) | 59/165 (35.8%) |
+| cites_correct_source | 165/200 (82.5%) | 89/200 (44.5%) |
+| valid_format | 173/200 (86.5%) | 198/200 (99.0%) |
+| refuses_when_unanswerable | 30/35 (85.7%) | 27/35 (77.1%) |
+
+Métricas operacionais e erros (200 casos por variante):
+
+| Métrica | v1 | v2 |
+|---|---|---|
+| Latência por caso, p50 (s) | 4.93 | 8.07 |
+| Latência por caso, p95 (s) | 8.04 | 11.70 |
+| Tokens de entrada, média por caso | 1169.27 | 1396.85 |
+| Tokens de saída, média por caso | 76.72 | 127.03 |
+| Taxa de erro do agente (erros) | 0.0000 (0) | 0.0000 (0) |
+| Taxa de erro de tool | n/d (o runner não registra tools por caso) | n/d (o runner não registra tools por caso) |
+| Custo estimado | 0.0000 | 0.0000 |
+
+Leitura e ressalvas: com 200 pares, a diferença média de `-0.1533` é estatisticamente distinguível de zero a 5% (`p = 0.0001`), confirmando o padrão observado nos 50 casos: v2 melhora a formatação (`valid_format` `99.0%` vs `86.5%`), mas piora a citação de fonte (`44.5%` vs `82.5%`), a presença dos termos esperados (`35.8%` vs `58.8%`) e a recusa (`77.1%` vs `85.7%`), além de consumir mais tokens e latência. Ressalvas: uma execução por configuração (semente `42`, pois 3 execuções de 200 casos exigiriam cerca de 2 horas neste hardware), apenas checagens determinísticas (sem `--judge`) e um único modelo local de 8B (`llama3.1:8b`) sobre o corpus fictício de 15 documentos.
 
 ## B. Segurança: red team com e sem guardrails
 

@@ -162,16 +162,16 @@ python -m examples.rag_agent "Quantos dias de férias a Lumina concede por ano?"
 
 Na primeira execução o corpus fictício é indexado em `chroma/`. Só uma pergunta foi executada para confirmar este comando; os demais comandos que usam o modelo (`aok eval` sem `--reuse`, `--judge`, `aok redteam run`) estão em [docs/resultados.md](docs/resultados.md) e não foram reexecutados ao escrever este README.
 
-Para medir variância e consistência entre múltiplas execuções por caso (ex.: 3 execuções usando sementes `seed`, `seed+1`, `seed+2`):
+Para medir variância e consistência entre múltiplas execuções por caso (ex.: 3 execuções usando sementes `seed`, `seed+1`, `seed+2`; respostas gravadas em `evals/answers_multirun/` e relatório em `evals/results/v1_vs_v2_multirun.md`, resumidos em [docs/resultados.md](docs/resultados.md)):
 
 ```bash
-aok eval --baseline v1 --candidate v2 --runs 3 --summary
+aok eval --baseline v1 --candidate v2 --answers-dir evals/answers_multirun --runs 3 --summary
 ```
 
-Para auditoria local mais ampla com Ollama, está disponível também `evals/dataset_audit_200.jsonl` (200 casos cobrindo os 15 documentos do corpus e casos de abstenção; sem respostas gravadas no repositório):
+Para auditoria local mais ampla com Ollama, está disponível também `evals/dataset_audit_200.jsonl` (200 casos cobrindo os 15 documentos do corpus e casos de abstenção; execução de referência com `--runs 1` gravada em `evals/answers_audit_200/` e relatório em `evals/results/audit_200_v1_vs_v2.md`, ver [docs/resultados.md](docs/resultados.md)):
 
 ```bash
-aok eval --baseline v1 --candidate v2 --dataset evals/dataset_audit_200.jsonl --runs 3 --summary
+aok eval --baseline v1 --candidate v2 --dataset evals/dataset_audit_200.jsonl --answers-dir evals/answers_audit_200 --summary
 ```
 
 Para red team ampliado (108 ataques em 9 categorias OWASP LLM Top 10) e avaliação com suíte cega externa fora do repositório (sem gravar perguntas, respostas ou chamadas de tools dos casos cegos):
@@ -260,6 +260,11 @@ Nota do juiz (1 a 5):
 | p-valor (permutação pareada, bilateral) | 0.0154 |
 
 Ressalvas: pelas checagens, a diferença não é distinguível de zero a 5%. O juiz é o mesmo modelo de 8B que gera as respostas (viés de autopreferência), as notas são ordinais e a rubrica não foi calibrada contra humanos; ele complementa as checagens, não as substitui. Detalhes (taxa por checagem, execução com guardrails) em [docs/resultados.md](docs/resultados.md).
+
+Medições adicionais de 19/11/2026 (checagens determinísticas sem `--judge`, modelo `llama3.1:8b`, `temperature=0`, fontes em [docs/resultados.md](docs/resultados.md)):
+
+- **Multi-execução (`evals/dataset.jsonl`, 50 casos × 3 execuções, sementes 42, 43 e 44, `evals/results/v1_vs_v2_multirun.md`)**: v1 `0.7067` (`run_stdev` `0.0000`, consistência de score `100.0%` e de resposta `98.0%`) vs v2 `0.6133` (`run_stdev` `0.0000`, consistência `100.0%` / `100.0%`), diferença `-0.0933`, IC 95% `[-0.1933, +0.0067]`, `p = 0.0929`.
+- **Auditoria ampliada (`evals/dataset_audit_200.jsonl`, 200 casos × 1 execução, semente 42, `evals/results/audit_200_v1_vs_v2.md`)**: v1 `0.7750` vs v2 `0.6217`, diferença `-0.1533`, IC 95% `[-0.2100, -0.0950]`, `p = 0.0001` (v2 melhora formato `99.0%` vs `86.5%`, mas piora citação `44.5%` vs `82.5%` e termos esperados `35.8%` vs `58.8%`).
 
 ## Limitações
 
