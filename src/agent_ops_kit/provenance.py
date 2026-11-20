@@ -195,5 +195,11 @@ def execution_info(
     fetch: Callable[[str], dict] | None = None,
     cwd: str | Path | None = None,
 ) -> dict:
-    """Proveniência de uma execução com modelo: ambiente, Ollama (versão, digest) e comando."""
-    return {**environment(cwd), **ollama_info(model, fetch), "command": sanitize_command(command)}
+    """Proveniência de uma execução com modelo: ambiente, Ollama (versão, digest), comando e
+    limites de geração (num_predict, timeout; execuções antigas não tinham limite)."""
+    from agent_ops_kit import ollama_chat
+
+    return {
+        **environment(cwd), **ollama_info(model, fetch),
+        "command": sanitize_command(command), "generation_limits": ollama_chat.limits(),
+    }

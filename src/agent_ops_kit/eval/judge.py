@@ -23,6 +23,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
 
+from agent_ops_kit import ollama_chat
 from agent_ops_kit.eval.checks import REFUSAL_PHRASE
 from agent_ops_kit.eval.dataset import EvalCase
 from agent_ops_kit.eval.runner import final_answer
@@ -93,13 +94,8 @@ def make_ollama_judge_llm(model: str = DEFAULT_MODEL, seed: int = DEFAULT_SEED) 
     """Juiz via Ollama: modo JSON, temperature 0 e semente fixa."""
 
     def llm(messages: list[dict]) -> str:
-        import ollama
-
-        resp = ollama.chat(
-            model=model,
-            messages=messages,
-            format="json",
-            options={"temperature": 0, "seed": seed},
+        resp = ollama_chat.chat(
+            model, messages, format="json", options={"temperature": 0, "seed": seed}
         )
         return resp["message"]["content"] if isinstance(resp, dict) else resp.message.content
 

@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from agent_ops_kit import ollama_chat
 from agent_ops_kit.config import AgentConfig
 from agent_ops_kit.eval.checks import run_checks
 from agent_ops_kit.eval.dataset import EvalCase
@@ -43,16 +44,11 @@ _ANSWER_MARKER = re.compile(r"(?<!\w)\*{0,2}resp[oó]sta\*{0,2}\s*:\s*\*{0,2}", 
 
 
 def make_ollama_llm(seed: int = DEFAULT_SEED) -> LLMFn:
-    """LLM do Ollama com temperature 0 e semente fixa."""
+    """LLM do Ollama com temperature 0, semente fixa, limite de geração e timeout por chamada."""
 
     def llm(model: str, messages: list[dict], tools: list[dict]) -> object:
-        import ollama
-
-        return ollama.chat(
-            model=model,
-            messages=messages,
-            tools=tools,
-            options={"temperature": 0, "seed": seed},
+        return ollama_chat.chat(
+            model, messages, tools, options={"temperature": 0, "seed": seed}
         )
 
     return llm

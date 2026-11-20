@@ -142,7 +142,7 @@ def _fp_meta(fp_dir: Path) -> dict | None:
 
 
 # Só entram na proveniência quando o sidecar os traz (pacotes antigos continuam verificáveis).
-_OPTIONAL_KEYS = ("target", "n_tool_not_evaluated")
+_OPTIONAL_KEYS = ("target", "n_tool_not_evaluated", "generation_limits")
 
 
 def _pick(meta: dict | None, keys: tuple[str, ...], base: str | Path | None = None) -> dict | None:

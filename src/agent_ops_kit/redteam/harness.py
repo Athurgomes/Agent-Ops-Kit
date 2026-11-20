@@ -21,7 +21,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from agent_ops_kit import provenance
+from agent_ops_kit import ollama_chat, provenance
 from agent_ops_kit.config import AgentConfig, load_config
 from agent_ops_kit.eval.runner import LLMFn
 from agent_ops_kit.guardrails import REFUSAL_MESSAGE, Guardrails
@@ -141,11 +141,8 @@ def build_guardrails(tb_config: AgentConfig, names: list[str]) -> Guardrails:
 
 def make_seeded_llm(seed: int = 42) -> LLMFn:
     def llm(model: str, messages: list[dict], tools: list[dict]) -> object:
-        import ollama
-
-        return ollama.chat(
-            model=model, messages=messages, tools=tools,
-            options={"temperature": 0, "seed": seed},
+        return ollama_chat.chat(
+            model, messages, tools, options={"temperature": 0, "seed": seed}
         )
 
     return llm

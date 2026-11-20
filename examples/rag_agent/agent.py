@@ -25,9 +25,9 @@ ToolRunner = Callable[[str, dict, int], str]
 
 
 def ollama_llm(model: str, messages: list[dict], tools: list[dict]) -> object:
-    import ollama
+    from agent_ops_kit import ollama_chat
 
-    return ollama.chat(model=model, messages=messages, tools=tools, options={"temperature": 0})
+    return ollama_chat.chat(model, messages, tools, options={"temperature": 0})
 
 
 _SOURCE_HEADER = re.compile(r"^\[fonte: ([^\]\n]+)\]\n", re.MULTILINE)
