@@ -1,8 +1,9 @@
 """Publicação local do pacote (`aok check --publish ROOT`): pasta versionada, sem rede.
 
 Layout: ROOT/<agent_id>/<AAAAMMDDTHHMMSSZ>/{relatorio.*, pacote.json} e ROOT/<agent_id>/index.json.
-Cada versão é imutável por convenção do kit: nunca sobrescreve uma pasta existente. Não há
-assinatura: o sha256 só permite detectar alteração para quem guardou o hash em outro lugar.
+Cada versão é imutável por convenção do kit: nunca sobrescreve uma pasta existente. O sha256 só
+detecta alteração para quem guardou o hash em outro lugar; se existir `relatorio.json.sig` (ADR-029),
+ele é copiado junto (local) ou enviado em `signature` (remoto), fora do pacote.json.
 Com URL http(s) em vez de pasta, `publish_remote` envia o pacote à plataforma (POST /v1/reports).
 """
 
@@ -19,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 FILES = ("relatorio.md", "relatorio.html", "relatorio.json")
+SIG_FILE = "relatorio.json.sig"  # opcional: só existe se o relatório foi assinado
 AGENT_ID_RE = re.compile(r"[a-z0-9-]{1,64}")
 
 
@@ -75,7 +77,7 @@ def publish(package_dir: str | Path, root: str | Path, agent_id: str, now: datet
         raise PublishError(f"versão já existe e é imutável: {dest} (tente de novo)") from exc
 
     try:
-        for name in FILES:
+        for name in (*FILES, *([SIG_FILE] if (src / SIG_FILE).is_file() else [])):
             shutil.copyfile(src / name, dest / name)
         hashes = {name: _sha256(dest / name) for name in FILES}
         _write_atomic(
@@ -130,16 +132,19 @@ def publish_remote(
         color = json.loads(files["relatorio.json"])["semaphore"]["color"]
     except (ValueError, KeyError, TypeError) as exc:
         raise PublishError("relatorio.json inválido: semáforo não encontrado") from exc
-    body = json.dumps(
-        {
-            "agent_id": agent_id,
-            "timestamp": (now or _utcnow()).astimezone(UTC).strftime("%Y%m%dT%H%M%SZ"),
-            "semaphore": color,
-            "sha256": hashes,
-            "files": files,
-        },
-        ensure_ascii=False,
-    ).encode("utf-8")
+    payload = {
+        "agent_id": agent_id,
+        "timestamp": (now or _utcnow()).astimezone(UTC).strftime("%Y%m%dT%H%M%SZ"),
+        "semaphore": color,
+        "sha256": hashes,
+        "files": files,
+    }
+    if (src / SIG_FILE).is_file():  # campo opcional; plataforma antiga (esquema fechado) o recusa
+        try:
+            payload["signature"] = (src / SIG_FILE).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise PublishError(f"não foi possível ler {SIG_FILE}") from exc
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         url.rstrip("/") + "/v1/reports",
         data=body,
