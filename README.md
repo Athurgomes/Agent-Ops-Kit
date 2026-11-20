@@ -73,6 +73,14 @@ Saída real de ambos neste repositório: `Pacote gravado em reports/pacote/ (rel
 - O log de auditoria nunca entra no pacote: com `--audit`, só entram o resultado da verificação da cadeia e a âncora.
 - O semáforo usa regras provisórias, e verde não significa seguro.
 
+Verificação offline por um auditor, sem confiar no autor (sem rede, sem Ollama):
+
+```bash
+aok report verify reports/pacote --repo-root .   # opcional: --json, --audit-hmac-key-env VAR
+```
+
+Recalcula, a partir dos arquivos de evidência, o eval (médias, IC, p), o ASR com IC de Wilson, o McNemar exato e os falsos positivos; reavalia o semáforo com a política gravada (sha256 em disco igual ao gravado); confere os hashes de `hashes`, `provenance.inputs` e dos achados (linha e registro), a cadeia e a assinatura do log de auditoria (se referenciado), execuções e sementes, as limitações e se `relatorio.md`/`.html` são a renderização do JSON. Exit 0 = tudo confere; 1 = falha ou evidência ausente ("não verificável" não é ok); 2 = pacote ilegível. Detalhes e limites na ADR-026.
+
 ### Plataforma (fase 2: API)
 
 Serviço opcional em `platform/` que recebe o pacote publicado. Como subir: ver [platform/README.md](platform/README.md). Como publicar, com o token emitido pelo admin só em variável de ambiente:
