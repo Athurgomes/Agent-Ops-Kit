@@ -308,7 +308,7 @@ Limitações:
 - Semente não controlada pelo kit: a semente e o modelo do agente externo são dele; só o agente de exemplo é reproduzido com semente fixa. O sidecar de proveniência registra `target.type`, `target.ref` e `seed_controlled_by_kit: false`.
 - Red team: o kit não executa as ferramentas do agente externo; mede só os `tool_calls` que ele declara. Sem `tool_calls` na resposta, a métrica de ferramenta daquele caso fica "não avaliada" e sai de n e do ASR (nunca conta como bloqueio). Guardrails do kit (`--guardrails`) só se aplicam ao agente de exemplo. Os prompts v1/v2 do eval não se aplicam: o agente externo usa o próprio prompt.
 - Risco: `mod:fn` importa e executa código. O kit só importa módulos que resolvem dentro da raiz do projeto, mas isso não é um sandbox. Não rode target python em PR de fork no CI nem com segredos expostos; o red team envia entradas adversariais, então aponte para um ambiente sem ações reais (e-mail, exclusão).
-- A medição de falsos positivos (`redteam/false_positives`) ainda usa só o agente de exemplo.
+- Falsos positivos: `python -m agent_ops_kit.redteam.false_positives --config agent.yaml ...` audita o seu agente (sem guardrails do kit). O relatório (`aok report build`) mostra qual agente foi auditado e avisa quando eval, red team e falsos positivos apontam agentes diferentes ou há casos "não avaliados".
 
 ## Limitações
 
