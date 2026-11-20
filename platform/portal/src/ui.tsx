@@ -62,6 +62,19 @@ export function Tag({ children, muted = false }: { children: ReactNode; muted?: 
   );
 }
 
+/** Neutral signature stamp (never green: colors are reserved for the semaforo). */
+export function SignatureBadge({ signed, fingerprint }: { signed?: boolean; fingerprint?: string | null }) {
+  const fp = fingerprint ?? "";
+  const label = signed ? `${copy.signature.signed}${fp ? ` · ${fp.slice(0, 12)}` : ""}` : copy.signature.unsigned;
+  const title = signed && fp ? `${copy.signature.help}
+Fingerprint: ${fp}` : copy.signature.help;
+  return (
+    <span title={title}>
+      <Tag muted={!signed}>{label}</Tag>
+    </span>
+  );
+}
+
 /** Traffic-light label: color + distinct Unicode glyph + text (never color alone). Colors only ever mean the result. */
 export function SemaforoBadge({ value, size = "md" }: { value: string; size?: "md" | "lg" }) {
   const s = semaforoOf(value);

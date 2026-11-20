@@ -5,7 +5,7 @@ import { AsciiSounding, AsciiWaves } from "../AsciiArt";
 import { areaPath, useCatalog } from "../auth";
 import { copy } from "../copy";
 import { fmtDate } from "../format";
-import { ErrorBox, LinkButton, PageHeader, SemaforoBadge, Tag, useAsync } from "../ui";
+import { ErrorBox, LinkButton, PageHeader, SemaforoBadge, SignatureBadge, Tag, useAsync } from "../ui";
 
 export function AgentReports() {
   const { areaId, agentId } = useParams();
@@ -177,6 +177,9 @@ export function AgentReports() {
                         {fmtDate(r.generated_at)}
                       </p>
                       <p className="mt-1 text-sm text-subtle">{copy.agentReports.rowDetailsHint}</p>
+                      <div className="mt-2">
+                        <SignatureBadge signed={r.signed} fingerprint={r.key_fingerprint} />
+                      </div>
                     </td>
                     <td className="whitespace-nowrap text-right">
                       <Link

@@ -18,7 +18,7 @@ import {
   RULE_TEXT,
   SELF_DECLARED_TEXT,
 } from "../format";
-import { Button, ErrorBox, PageHeader, SemaforoBadge, useAsync } from "../ui";
+import { Button, ErrorBox, PageHeader, SemaforoBadge, SignatureBadge, useAsync } from "../ui";
 
 const FORMATS: { f: Format; label: string }[] = [
   { f: "html", label: copy.reportView.downloadFormats.html },
@@ -322,6 +322,12 @@ export function ReportView() {
                       <div className="border-t border-line pt-3">
                         <dt className="eyebrow">{copy.reportView.meta.publishedAt}</dt>
                         <dd className="mt-1 font-medium text-ink">{fmtDateLong(r.published_at)}</dd>
+                      </div>
+                      <div className="border-t border-line pt-3">
+                        <dt className="eyebrow">{copy.signature.meta}</dt>
+                        <dd className="mt-1">
+                          <SignatureBadge signed={r.signed} fingerprint={r.key_fingerprint} />
+                        </dd>
                       </div>
                       <div className="border-t border-line pt-3">
                         <dt className="eyebrow">{copy.reportView.meta.model}</dt>

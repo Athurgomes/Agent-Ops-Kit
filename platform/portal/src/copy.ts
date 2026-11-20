@@ -430,6 +430,12 @@ export const copy = {
     selfDeclaredText:
       "Relatórios são autodeclarados: são gerados e publicados pelo time responsável pelo agente. O portal armazena, exibe e registra downloads, mas não reexecuta os testes nem comprova a veracidade dos resultados.",
   },
+  signature: {
+    signed: "Assinado",
+    unsigned: "Não assinado",
+    help: "A assinatura prova a autoria e a integridade do arquivo publicado, não que a avaliação foi executada.",
+    meta: "Assinatura",
+  },
   agentReports: {
     pageTitle: (agentName?: string) => (agentName ? `${agentName} · Relatórios` : "Relatórios"),
     stamp: "REGISTRO DE VERSÕES",

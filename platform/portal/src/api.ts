@@ -16,6 +16,8 @@ export type ReportItem = {
   published_at: string;
   generated_at: string | null;
   status_semaforo: string;
+  signed?: boolean; // absent in older API versions
+  key_fingerprint?: string | null;
 };
 export type Rate = { n?: number; successes?: number; asr?: number; ci95_low?: number; ci95_high?: number };
 export type FpRate = { n?: number; blocked?: number; rate?: number; ci95_low?: number; ci95_high?: number };
