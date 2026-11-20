@@ -280,6 +280,36 @@ Medições adicionais de 19/11/2026 (checagens determinísticas sem `--judge`, m
 - **Multi-execução (`evals/dataset.jsonl`, 50 casos × 3 execuções, sementes 42, 43 e 44, `evals/results/v1_vs_v2_multirun.md`)**: v1 `0.7067` (`run_stdev` `0.0000`, consistência de score `100.0%` e de resposta `98.0%`) vs v2 `0.6133` (`run_stdev` `0.0000`, consistência `100.0%` / `100.0%`), diferença `-0.0933`, IC 95% `[-0.1933, +0.0067]`, `p = 0.0929`.
 - **Auditoria ampliada (`evals/dataset_audit_200.jsonl`, 200 casos × 1 execução, semente 42, `evals/results/audit_200_v1_vs_v2.md`)**: v1 `0.7750` vs v2 `0.6217`, diferença `-0.1533`, IC 95% `[-0.2100, -0.0950]`, `p = 0.0001` (v2 melhora formato `99.0%` vs `86.5%`, mas piora citação `44.5%` vs `82.5%` e termos esperados `35.8%` vs `58.8%`).
 
+## Auditar seu próprio agente
+
+Por padrão o kit audita o agente de exemplo (`examples.rag_agent`). Para auditar outro agente em Python, acrescente `target` ao `agent.yaml`:
+
+```yaml
+target:
+  type: python
+  ref: "meu_pacote.meu_agente:run"   # pacote.modulo:funcao, dentro da raiz do projeto
+```
+
+```python
+def run(request: dict, llm=None) -> dict:
+    # request: {"question": str, "context": str | None, "tools": list | None}
+    return {
+        "answer": "texto da resposta",
+        "tool_calls": [{"name": "send_email", "arguments": {"to": "x"}}],  # opcional
+        "trace_id": None,                                                  # opcional
+    }
+```
+
+Rode da raiz do projeto: `aok eval ... --config agent.yaml` e `aok redteam run --config agent.yaml`. Resposta fora do contrato vira erro do caso, sem derrubar a execução. Se `run` tiver o parâmetro `llm`, o kit injeta o LLM e conta os tokens; senão os tokens ficam "não registrados" (nunca zero).
+
+Limitações:
+
+- Só Python. `type: http` é recusado na validação (ainda não é suportado; ADR-028).
+- Semente não controlada pelo kit: a semente e o modelo do agente externo são dele; só o agente de exemplo é reproduzido com semente fixa. O sidecar de proveniência registra `target.type`, `target.ref` e `seed_controlled_by_kit: false`.
+- Red team: o kit não executa as ferramentas do agente externo; mede só os `tool_calls` que ele declara. Sem `tool_calls` na resposta, a métrica de ferramenta daquele caso fica "não avaliada" e sai de n e do ASR (nunca conta como bloqueio). Guardrails do kit (`--guardrails`) só se aplicam ao agente de exemplo. Os prompts v1/v2 do eval não se aplicam: o agente externo usa o próprio prompt.
+- Risco: `mod:fn` importa e executa código. O kit só importa módulos que resolvem dentro da raiz do projeto, mas isso não é um sandbox. Não rode target python em PR de fork no CI nem com segredos expostos; o red team envia entradas adversariais, então aponte para um ambiente sem ações reais (e-mail, exclusão).
+- A medição de falsos positivos (`redteam/false_positives`) ainda usa só o agente de exemplo.
+
 ## Limitações
 
 - Modelo local pequeno (llama3.1:8b): tudo foi medido com ele. O ASR não generaliza para outros modelos, prompts ou dados, e o modelo às vezes responde "não encontrei" sem consultar os documentos.
