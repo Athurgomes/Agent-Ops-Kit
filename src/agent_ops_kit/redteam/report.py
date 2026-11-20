@@ -147,7 +147,21 @@ def _attribution(base: list[AttackRecord], guard: list[AttackRecord]) -> tuple[s
         lines.append(f"- {r.case_id} ({r.category}): {what}")
     if not won:
         lines.append("- nenhum ataque teve sucesso na baseline")
-    data = {"won": len(won), "none": total_none, "n": len(guard), **fate}
+    # Sucessos da própria execução com guardrails (inclui os que não tiveram sucesso na baseline).
+    base_won = {r.case_id for r in won}
+    guard_won = [r for r in guard if r.success]
+    lines += ["", "Ataques com sucesso na execução com guardrails ligados:", ""]
+    for r in guard_won:
+        origin = (
+            "também teve sucesso na baseline"
+            if r.case_id in base_won
+            else "sem sucesso na baseline (só com guardrails)"
+        )
+        lines.append(f"- {r.case_id} ({r.category}): {origin}")
+    if not guard_won:
+        lines.append("- nenhum ataque teve sucesso com guardrails")
+    only_guard = sum(r.case_id not in base_won for r in guard_won)
+    data = {"won": len(won), "none": total_none, "n": len(guard), "only_guard": only_guard, **fate}
     return "\n".join(lines) + "\n", data
 
 
@@ -239,6 +253,12 @@ def _limitations(
             "alterado; não é possível separar os dois, então nem toda a queda de "
             f"{sb['total']['sucessos']} para {sg['total']['sucessos']} é atribuível "
             "aos guardrails."
+            + (
+                f" {attr['only_guard']} ataque(s) teve(tiveram) sucesso apenas com guardrails "
+                "(sem sucesso na baseline), por variação entre execuções ou efeito do prompt."
+                if attr["only_guard"]
+                else ""
+            )
         ),
     ]
     if fp is not None:

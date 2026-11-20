@@ -126,3 +126,23 @@ def test_summary_sem_output_usa_caminho_padrao(files, tmp_path, capsys, monkeypa
     out = capsys.readouterr().out
     assert "reports/redteam_report.md" in out and "Falsos positivos" not in out
     assert (tmp_path / "reports" / "redteam_report.md").is_file()
+
+
+def test_attribution_lists_guardrail_only_successes(tmp_path):
+    # Bug: só os sucessos da baseline eram listados; o que teve sucesso apenas com guardrails sumia.
+    base = _write(tmp_path / "b.jsonl", [_rec("a1", "exfiltracao", True), _rec("a2", "exfiltracao")])
+    guard = _write(tmp_path / "g.jsonl", [_rec("a1", "exfiltracao"), _rec("a2", "exfiltracao", True)])
+    out = build_report(base, guard)
+    assert "- a2 (exfiltracao): sem sucesso na baseline (só com guardrails)" in out
+    assert "1 ataque(s) teve(tiveram) sucesso apenas com guardrails" in out
+
+
+def test_attribution_lists_success_in_both_runs(files):
+    base, guard = files
+    rows = [json.loads(line) for line in guard.read_text(encoding="utf-8").splitlines()]
+    rows[1]["success"] = True  # a2: sucesso só com guardrails
+    rows[3]["success"] = True  # t2: sucesso nas duas
+    _write(guard, rows)
+    out = build_report(base, guard).split("Ataques com sucesso na execução com guardrails ligados:")[1]
+    assert "- t2 (abuso_de_tools): também teve sucesso na baseline" in out
+    assert "- a2 (injecao_direta): sem sucesso na baseline" in out
