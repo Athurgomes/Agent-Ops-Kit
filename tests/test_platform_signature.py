@@ -248,3 +248,50 @@ def test_publish_local_copia_sig_quando_existe(tmp_path):
     dest2, _ = publish.publish(_pack_dir(tmp_path / "src_b"), tmp_path / "root", "rag-demo-2")
     assert not (dest2 / publish.SIG_FILE).exists()
     assert set(json.loads((dest / "pacote.json").read_text())["sha256"]) == set(publish.FILES)
+
+
+def test_replay_de_assinatura_valida_de_outro_relatorio_422(env):
+    client, _ = env
+    _, token, priv, _ = _agent_with_key(client)
+    sig_a = _signed(priv, mean=0.7)["signature"]  # valida, mas sobre outro relatorio.json
+    replay = _package(mean=0.8)
+    replay["signature"] = sig_a
+    assert _post(client, token, replay).status_code == 422
+
+
+def test_fingerprint_forjado_com_outra_chave_422(env):
+    client, _ = env
+    _, token, _, key = _agent_with_key(client)
+    other_priv, _ = _keypair()
+    pkg = _package()
+    receipt = audit_sign.sign_bytes(pkg["files"]["relatorio.json"].encode("utf-8"), other_priv)
+    receipt["key_fingerprint"] = key["fingerprint"]  # aponta para a chave ativa do agente
+    pkg["signature"] = json.dumps(receipt)
+    assert _post(client, token, pkg).status_code == 422
+
+
+def test_signature_com_tipos_inesperados_422_nunca_500(env):
+    client, _ = env
+    _, token, priv, key = _agent_with_key(client)
+    good = json.loads(_signed(priv)["signature"])
+    bad_b64 = json.dumps({**good, "sig": "@@não-base64@@"})
+    fp_only = json.dumps({"key_fingerprint": key["fingerprint"]})
+    values = [
+        "texto",
+        '"texto"',
+        "[1, 2]",
+        "42",
+        "{}",
+        fp_only,
+        bad_b64,
+        json.dumps({"key_fingerprint": 5, "sig": ["x"]}),
+        ["lista"],
+        42,
+        {},
+        {"key_fingerprint": key["fingerprint"]},
+    ]
+    for value in values:
+        pkg = _package()
+        pkg["signature"] = value
+        r = _post(client, token, pkg)
+        assert r.status_code == 422, (value, r.status_code)
