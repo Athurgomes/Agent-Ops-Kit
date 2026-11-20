@@ -16,7 +16,7 @@ from pathlib import Path
 
 import yaml
 
-from agent_ops_kit import audit, audit_sign, provenance  # noqa: F401  (audit antes de audit_sign: import circular)
+from agent_ops_kit import audit_sign, provenance
 from agent_ops_kit.config import load_config
 from agent_ops_kit.eval import runner
 from agent_ops_kit.eval.dataset import load_dataset

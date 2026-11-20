@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_ops_kit import audit, audit_sign, cli  # noqa: F401  (audit antes de audit_sign: import circular)
+from agent_ops_kit import audit_sign, cli
 from agent_ops_kit.report import verify
 
 ROOT = Path(__file__).resolve().parent.parent

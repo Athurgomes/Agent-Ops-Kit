@@ -20,7 +20,6 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from agent_ops_kit import audit  # noqa: F401 - audit antes de audit_sign evita import circular do kit
 from agent_ops_kit.audit_sign import verify_bytes
 
 from .auth import hash_token, org_is_active

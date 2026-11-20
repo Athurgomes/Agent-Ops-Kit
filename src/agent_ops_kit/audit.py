@@ -316,9 +316,18 @@ def report(
     return "\n".join(out)
 
 
-from agent_ops_kit.audit_sign import (  # noqa: F401
-    SignatureVerifyResult,
-    generate_ed25519_keypair,
-    sign_anchor,
-    verify_signature,
+_SIGN_EXPORTS = (
+    "SignatureVerifyResult",
+    "generate_ed25519_keypair",
+    "sign_anchor",
+    "verify_signature",
 )
+
+
+def __getattr__(name: str) -> Any:
+    # Reexport tardio (audit_sign importa audit): evita o import circular.
+    if name in _SIGN_EXPORTS:
+        from agent_ops_kit import audit_sign
+
+        return getattr(audit_sign, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
