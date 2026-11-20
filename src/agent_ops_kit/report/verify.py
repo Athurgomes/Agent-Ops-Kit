@@ -22,6 +22,7 @@ from agent_ops_kit.eval import runner
 from agent_ops_kit.eval.dataset import load_dataset
 from agent_ops_kit.redteam.report import ReportError, _load_attacks, _load_jsonl
 from agent_ops_kit.report import build
+from agent_ops_kit.report import coverage as coverage_mod
 from agent_ops_kit.report import findings as findings_mod
 from agent_ops_kit.report import policy as policy_mod
 
@@ -367,6 +368,30 @@ class _Verifier:
             raise _Fail(f"a lista de achados difere da recoletada ({len(found)} gravados, {len(fresh)} recalculados)")
         return f"{len(found)} achados: linha e sha256 de cada evidência conferem; lista completa reproduzida"
 
+    def check_coverage(self) -> str:
+        stored = self.data.get("coverage")
+        if stored is None:
+            raise _NotVerifiable("o pacote não traz o bloco coverage (gerado antes da ADR-027)")
+        meta = stored.get("map") if isinstance(stored, dict) else None
+        if not isinstance(meta, dict):
+            raise _Fail("coverage.map ausente ou inválido")
+        try:
+            cmap = coverage_mod.load_map(self.path(meta.get("path_relative"), "mapa de cobertura"))
+        except coverage_mod.CoverageError as exc:
+            raise _Fail(str(exc)) from exc
+        if cmap["sha256"] != meta.get("sha256"):
+            raise _Fail(
+                f"sha256 do mapa em disco ({cmap['sha256'][:12]}...) difere do gravado "
+                f"({str(meta.get('sha256'))[:12]}...): {meta.get('path_relative')}"
+            )
+        fresh = coverage_mod.compute(cmap, self.redteam_state()["numbers"])
+        fresh["map"]["path_relative"] = meta.get("path_relative")
+        _compare("coverage", stored, _norm(fresh))
+        by = {}
+        for c in fresh["categories"]:
+            by[c["status"]] = by.get(c["status"], 0) + 1
+        return "mapa OWASP LLM 2025 recalculado: " + ", ".join(f"{n} {k}" for k, n in sorted(by.items()))
+
     def check_audit(self) -> str:
         stored = self.data.get("audit")
         if stored is None:
@@ -453,6 +478,7 @@ class _Verifier:
             ("policy_sha", "política: sha256 em disco = gravado", self.check_policy_sha),
             ("semaphore", "semáforo: cor, indicadores e regras reavaliados", self.check_semaphore),
             ("findings", "achados: evidência por linha e lista completa", self.check_findings),
+            ("coverage", "cobertura OWASP LLM Top 10 (mapa e números)", self.check_coverage),
             ("audit", "auditoria: cadeia de hashes e assinatura", self.check_audit),
             ("executions", "execuções e sementes (manifesto e sidecars)", self.check_executions),
             ("limitations", "limitações e ressalvas estatísticas", self.check_limitations),

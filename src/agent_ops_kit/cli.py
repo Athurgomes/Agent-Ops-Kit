@@ -615,6 +615,7 @@ def _write_package(args: argparse.Namespace) -> dict:
         audit_hmac_key=hmac_key,
         previous=args.previous,
         policy=args.policy,
+        coverage_map=args.coverage_map,
         command="aok " + shlex.join(getattr(args, "argv", None) or sys.argv[1:]),
     )
     blocks = render.build_blocks(data)
@@ -886,6 +887,7 @@ def build_parser() -> argparse.ArgumentParser:
         r.add_argument("--audit-public-key", default=None, help="chave pública Ed25519 em PEM para verificar a assinatura")
         r.add_argument("--audit-hmac-key-env", default=None, help="variável de ambiente com a chave HMAC para verificar a assinatura")
         r.add_argument("--policy", default=None, help="política de classificação YAML (padrão: policies/default.yaml)")
+        r.add_argument("--coverage-map", default=None, help="mapa de cobertura OWASP YAML (padrão: policies/coverage/owasp_llm_2025.yaml)")
         r.add_argument("--previous", default=None, help="relatorio.json anterior, para comparar")
         r.add_argument("--out", default="reports/pacote", help="pasta de saída")
 

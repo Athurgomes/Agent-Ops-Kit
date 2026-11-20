@@ -45,7 +45,8 @@ def _build(root, name, *extra):
         rc = cli.main([
             "report", "build", "--out", name,
             "--redteam-baseline", "rt/baseline.jsonl", "--redteam-guardrails", "rt/guardrails.jsonl",
-            "--fp-dir", "rt", "--policy", "policies/default.yaml", *extra,
+            "--fp-dir", "rt", "--policy", "policies/default.yaml",
+            "--coverage-map", "policies/coverage/owasp_llm_2025.yaml", *extra,
         ])
     assert rc == 0
 
@@ -281,3 +282,20 @@ def test_build_and_verify_share_calculation(repo):
 
     assert verify.build.eval_numbers is build.eval_numbers
     assert verify.build.redteam_numbers is build.redteam_numbers
+
+
+def test_coverage_checked_and_tampered_map_exit_1(repo):
+    assert _statuses(repo)["coverage"] == "ok"
+    mp = repo / "policies" / "coverage" / "owasp_llm_2025.yaml"
+    mp.write_text(mp.read_text(encoding="utf-8").replace("  injecao_direta: [LLM01]", "  injecao_direta: [LLM02]"), encoding="utf-8")
+    assert _run(repo) == 1
+    st = _statuses(repo)
+    assert st["coverage"] == "falha" and st["inputs"] == "falha"
+
+
+def test_forged_coverage_block_exit_1(repo):
+    def forge(d):
+        d["coverage"]["categories"][2]["status"] = "testado"  # LLM03 nunca foi testado
+
+    _edit_json(repo, "pk_audit", forge)
+    assert _statuses(repo)["coverage"] == "falha"

@@ -1,0 +1,47 @@
+# Mapa de cobertura OWASP Top 10 for LLM Applications (edição 2025) do agent-ops-kit.
+# Fonte dos IDs e nomes: https://genai.owasp.org/llm-top-10/
+# Mapeamento CONSERVADOR: só liga o que a suíte redteam/attacks_owasp_100 exercita (categoria de
+# ataque) e o que o kit implementa (guardrail). Categoria sem ataque nem controle fica em
+# `not_covered`, com o motivo. A ligação é do kit, não da OWASP: revise antes de citar fora daqui.
+id: owasp-llm-2025
+version: 1
+source: https://genai.owasp.org/llm-top-10/
+
+categories:
+  LLM01: Prompt Injection
+  LLM02: Sensitive Information Disclosure
+  LLM03: Supply Chain
+  LLM04: Data and Model Poisoning
+  LLM05: Improper Output Handling
+  LLM06: Excessive Agency
+  LLM07: System Prompt Leakage
+  LLM08: Vector and Embedding Weaknesses
+  LLM09: Misinformation
+  LLM10: Unbounded Consumption
+
+# Categoria de ataque da suíte (campo `category` dos JSONL de resultado) -> IDs OWASP.
+attack_categories:
+  injecao_direta: [LLM01]
+  ofuscacao: [LLM01]
+  multi_turn: [LLM01]
+  injecao_indireta: [LLM01]
+  vazamento_dados: [LLM02]
+  exfiltracao: [LLM02]
+  abuso_de_tools: [LLM06]
+  saida_insegura: [LLM05]
+  exaustao_recursos: [LLM10]
+
+# Guardrail do kit -> IDs OWASP que ele pretende mitigar.
+controls:
+  input_filter: [LLM01]
+  untrusted_content: [LLM01]
+  tool_allowlist: [LLM06]
+  output_filter: [LLM02, LLM07]
+  canary: [LLM02]
+
+# Só categorias sem ataque e sem controle. LLM07 e LLM05/LLM10 aparecem acima (controle ou ataque).
+not_covered:
+  LLM03: o kit não audita dependências, modelos ou artefatos de terceiros
+  LLM04: o kit não testa envenenamento de treino, ajuste fino ou embeddings (o corpus envenenado exercita LLM01 indireta)
+  LLM08: o kit não testa fraquezas de vetores e embeddings (acesso ao índice, inversão)
+  LLM09: o eval mede qualidade das respostas, mas não há ataque nem controle contra desinformação

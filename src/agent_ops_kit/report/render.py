@@ -848,6 +848,46 @@ def _findings_blocks(d: dict) -> list[Block]:
     return blocks
 
 
+def _coverage_blocks(d: dict) -> list[Block]:
+    """A.9: cobertura OWASP Top 10 for LLM Applications (2025); só contagens, sem texto de ataque."""
+    blocks: list[Block] = [("h2", "A.9 Cobertura OWASP LLM Top 10 (2025)")]
+    cov = d.get("coverage")
+    if not isinstance(cov, dict):
+        return [*blocks, ("p", "Cobertura não registrada neste relatório.")]
+    m = cov["map"]
+    blocks.append((
+        "p",
+        (
+            f"Mapa {m['id']} (versão {m['version']}, arquivo {m['path_relative']}, sha256 "
+            f"{m['sha256'][:16]}...), baseado em {m['source'].removeprefix('https://')}. A ligação entre categorias de ataque, "
+            "guardrails e IDs OWASP é conservadora e escolha do kit: só conta o que a suíte exercita "
+            "ou o que o kit implementa. Categoria sem ataque nem controle aparece como não coberta, "
+            "e ataque sem sucesso não prova ausência da fraqueza."
+        ),
+    ))
+
+    def cell(r: dict) -> str:
+        return f"{r['successes']}/{r['n']}" if r["n"] else "-"
+
+    rows = [
+        [
+            c["id"], c["name"], c["status"], cell(c["baseline"]), cell(c["guardrails"]),
+            ", ".join(c["controls"]) or "-", c["reason"] or "-",
+        ]
+        for c in cov["categories"]
+    ]
+    blocks.append((
+        "table",
+        ["ID", "Categoria", "Status", "Sucessos baseline", "Sucessos guardrails", "Controles do kit", "Observação"],
+        rows,
+    ))
+    if cov["unmapped_attack_categories"]:
+        blocks.append((
+            "p", "Categorias de ataque fora do mapa: " + ", ".join(cov["unmapped_attack_categories"]) + ".",
+        ))
+    return blocks
+
+
 def _appendix_blocks(d: dict) -> list[Block]:
     ev, rt, au = d["eval"], d["redteam"], d["audit"]
     fp = rt["false_positives"]
@@ -1014,7 +1054,7 @@ def _appendix_blocks(d: dict) -> list[Block]:
             rows.append(["Assinatura da âncora", "não informada (sem assinatura)"])
         blocks.append(("table", ["Item", "Valor"], rows))
         blocks.append(("p", _audit_signature_limitation(sig if isinstance(sig, dict) else None)))
-    return [*blocks, *_provenance_blocks(d), *_findings_blocks(d)]
+    return [*blocks, *_provenance_blocks(d), *_findings_blocks(d), *_coverage_blocks(d)]
 
 
 def build_blocks(d: dict) -> list[Block]:

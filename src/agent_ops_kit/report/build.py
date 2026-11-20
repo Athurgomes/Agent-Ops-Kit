@@ -22,6 +22,7 @@ from agent_ops_kit.eval.dataset import load_dataset
 from agent_ops_kit.redteam.false_positives import fp_rate
 from agent_ops_kit.redteam.harness import asr_by_category
 from agent_ops_kit.redteam.report import ReportError, _load_attacks, _load_jsonl
+from agent_ops_kit.report import coverage as coverage_mod
 from agent_ops_kit.report import findings as findings_mod
 from agent_ops_kit.report import policy as policy_mod
 from agent_ops_kit.report import stats as stats_mod
@@ -628,6 +629,7 @@ def build_data(
     command: str | None = None,
     repo_dir: str | None = None,
     policy: str | None = None,
+    coverage_map: str | None = None,
 ) -> dict:
     """Lê os resultados e devolve o dict do relatorio.json. Levanta ReportError com mensagem curta."""
     if baseline == candidate:
@@ -644,6 +646,10 @@ def build_data(
     try:
         pol = policy_mod.load_policy(policy)
     except policy_mod.PolicyError as exc:
+        raise ReportError(str(exc)) from exc
+    try:
+        cmap = coverage_mod.load_map(coverage_map)
+    except coverage_mod.CoverageError as exc:
         raise ReportError(str(exc)) from exc
 
     hashes: dict[str, str] = {}
@@ -669,9 +675,10 @@ def build_data(
     _role(prov, "audit_signature", audit_signature, as_input=False)
     _role(prov, "audit_public_key", audit_public_key, as_input=False)
 
-    view ={"eval": ev, "redteam": rt, "audit": au, "indicators": indicators(ev, rt, au)}
+    view = {"eval": ev, "redteam": rt, "audit": au, "indicators": indicators(ev, rt, au)}
     sem, rule_results = policy_mod.evaluate(pol, view)
     _add_input(prov["inputs"], Path(policy) if policy else policy_mod.DEFAULT_POLICY)
+    _add_input(prov["inputs"], Path(coverage_map) if coverage_map else coverage_mod.DEFAULT_MAP)
     data = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": (now or datetime.now().astimezone()).isoformat(timespec="seconds"),
@@ -684,6 +691,7 @@ def build_data(
         "audit": au,
         "hashes": hashes,
         "findings": found,
+        "coverage": coverage_mod.compute(cmap, rt),
         "provenance": _provenance_block(agent, prov, command, repo_dir),
         "previous": None,
     }
