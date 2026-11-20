@@ -109,6 +109,7 @@ def write_fp_meta(
     benign_path: str | Path,
     command: str,
     extra: dict | None = None,
+    evidence_root: str | Path | None = None,
 ) -> Path:
     """Sidecar `<out_dir>/fp.meta.json`: proveniência da medição de falsos positivos."""
     out_dir = Path(out_dir)
@@ -118,9 +119,9 @@ def write_fp_meta(
         "seed": seed,
         "guardrails": list(guardrails),
         "command": provenance.sanitize_command(command),
-        "dataset_path": provenance.rel_path(dataset_path),
+        "dataset_path": provenance.rel_path(dataset_path, evidence_root=evidence_root),
         "dataset_sha256": provenance.sha256_file(dataset_path),
-        "benign_path": provenance.rel_path(benign_path),
+        "benign_path": provenance.rel_path(benign_path, evidence_root=evidence_root),
         "benign_sha256": provenance.sha256_file(benign_path),
         "results_sha256": results,
         **(extra or {}),
@@ -211,6 +212,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--v1-answers", default="evals/answers/v1.jsonl")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument(
+        "--evidence-root", default=None,
+        help="raiz das evidências fora do repositório (caminhos gravados como @evidence/...)",
+    )
     args = ap.parse_args(argv)
     config = load_config(args.config or _load_example()[0])
     if args.guardrails and config.target is not None:
@@ -235,6 +240,7 @@ def main(argv: list[str] | None = None) -> int:
     write_fp_meta(
         out_dir, config.model, args.seed, names, args.dataset, args.benign, command,
         extra={**provenance.execution_info(config.model, command), **provenance.target_info(config)},
+        evidence_root=args.evidence_root,
     )
     ids = {c.id for c in dataset}
     base = [r for r in load_records(args.v1_answers) if r["case_id"] in ids]

@@ -57,22 +57,29 @@ def _sha(path: Path) -> str:
     return runner.sha256_text(path.read_text(encoding="utf-8"))
 
 
-def _add_input(inputs: dict[str, str], path: Path) -> str | None:
-    """Registra o sha256 do arquivo (caminho relativo à raiz) se ele existir; devolve a chave."""
+def _add_input(inputs: dict[str, str], path: Path, evidence_root: str | None = None) -> str | None:
+    """Registra o sha256 do arquivo (caminho relativo à raiz, ou `@evidence/...`) se ele
+    existir; devolve a chave."""
     if not path.is_file():
         return None
-    key, sha = provenance.rel_path(path), provenance.sha256_file(path)
+    key, sha = provenance.rel_path(path, evidence_root=evidence_root), provenance.sha256_file(path)
     if inputs.get(key, sha) != sha:  # mesmo nome em pastas diferentes fora da raiz
         key = f"{path.resolve().parent.name}/{key}"
     inputs[key] = sha
     return key
 
 
-def _role(prov: dict, role: str, path: Path | str | None, as_input: bool = True) -> None:
+def _role(
+    prov: dict, role: str, path: Path | str | None, as_input: bool = True,
+    evidence_root: str | None = None,
+) -> None:
     """Mapa papel -> chave do arquivo (provenance.files): é como `report verify` acha a evidência."""
     if path is None or not Path(path).is_file():
         return
-    key = _add_input(prov["inputs"], Path(path)) if as_input else provenance.rel_path(path)
+    key = (
+        _add_input(prov["inputs"], Path(path), evidence_root) if as_input
+        else provenance.rel_path(path, evidence_root=evidence_root)
+    )
     prov["files"][role] = key
 
 
@@ -102,13 +109,27 @@ def _check_sha(recorded: object, path: Path, what: str) -> None:
         )
 
 
-def _check_dir(meta: dict, dir_key: str, sha_key: str, pattern: str, what: str) -> None:
+def _recorded_path(key: str, evidence_root: str | None) -> Path:
+    """Caminho gravado no sidecar (relativo ao repositório ou `@evidence/...`) como caminho real."""
+    try:
+        return provenance.resolve_key(key, evidence_root)
+    except ValueError as exc:
+        raise ReportError(str(exc)) from exc
+
+
+def _check_dir(
+    meta: dict, dir_key: str, sha_key: str, pattern: str, what: str, evidence_root: str | None = None
+) -> None:
     """Se o sidecar registra pasta e hash, a pasta atual tem de existir e bater."""
-    path, recorded = meta.get(dir_key), meta.get(sha_key)
-    if not (isinstance(path, str) and isinstance(recorded, str)):
+    key, recorded = meta.get(dir_key), meta.get(sha_key)
+    if not (isinstance(key, str) and isinstance(recorded, str)):
         return
-    if not Path(path).is_dir():
-        raise ReportError(f"{what} registrado na proveniência não encontrado: {path}")
+    path = _recorded_path(key, evidence_root)
+    if not path.is_dir():
+        raise ReportError(
+            f"{what} registrado na proveniência não encontrado: {key} "
+            "(se estiver fora do repositório, use --evidence-root)"
+        )
     if provenance.sha256_dir(path, pattern) != recorded:
         raise ReportError(
             f"{what} mudou desde a execução (sha256 diverge do registrado): {path}. "
@@ -116,17 +137,21 @@ def _check_dir(meta: dict, dir_key: str, sha_key: str, pattern: str, what: str) 
         )
 
 
-def _redteam_meta(result_path: Path, role: str) -> dict | None:
+def _redteam_meta(result_path: Path, role: str, evidence_root: str | None = None) -> dict | None:
     meta = _load_meta(Path(f"{result_path}.meta.json"), f"red team, {role}")
     if meta is None:
         return None
     _check_sha(meta.get("results_sha256"), result_path, f"resultado do red team ({role})")
-    _check_dir(meta, "attacks_dir", "attacks_sha256", "*.jsonl", f"suíte de ataques ({role})")
-    _check_dir(meta, "poisoned_dir", "poisoned_sha256", "*.md", f"corpus envenenado ({role})")
+    _check_dir(
+        meta, "attacks_dir", "attacks_sha256", "*.jsonl", f"suíte de ataques ({role})", evidence_root
+    )
+    _check_dir(
+        meta, "poisoned_dir", "poisoned_sha256", "*.md", f"corpus envenenado ({role})", evidence_root
+    )
     return meta
 
 
-def _fp_meta(fp_dir: Path) -> dict | None:
+def _fp_meta(fp_dir: Path, evidence_root: str | None = None) -> dict | None:
     meta = _load_meta(fp_dir / "fp.meta.json", "falsos positivos")
     if meta is None:
         return None
@@ -137,7 +162,7 @@ def _fp_meta(fp_dir: Path) -> dict | None:
     for key, label in (("dataset", "dataset dos falsos positivos"), ("benign", "conjunto benigno")):
         path, sha = meta.get(f"{key}_path"), meta.get(f"{key}_sha256")
         if isinstance(path, str):
-            _check_sha(sha, Path(path), label)
+            _check_sha(sha, _recorded_path(path, evidence_root), label)
     return meta
 
 
@@ -249,6 +274,7 @@ def not_evaluated_mismatches(numbers: dict, executions: dict) -> list[str]:
 
 
 def _eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, dict]:
+    ev_root = a["evidence_root"]
     dataset_path, answers_dir = Path(a["dataset"]), Path(a["answers_dir"])
     variants = [a["baseline"], a["candidate"]]
     _need(Path(a["config"]), "config")
@@ -277,12 +303,12 @@ def _eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, d
         *[answers_dir / f"{v}.jsonl" for v in variants],
         *sorted((Path(a["config"]).parent / "corpus").glob("*.md")),
     ):
-        _add_input(inputs, path)
-    _role(prov, "config", a["config"])
-    _role(prov, "eval_dataset", dataset_path)
-    _role(prov, "eval_manifest", answers_dir / runner.MANIFEST_NAME)
+        _add_input(inputs, path, ev_root)
+    _role(prov, "config", a["config"], evidence_root=ev_root)
+    _role(prov, "eval_dataset", dataset_path, evidence_root=ev_root)
+    _role(prov, "eval_manifest", answers_dir / runner.MANIFEST_NAME, evidence_root=ev_root)
     for v in variants:
-        _role(prov, f"eval_answers_{v}", answers_dir / f"{v}.jsonl")
+        _role(prov, f"eval_answers_{v}", answers_dir / f"{v}.jsonl", evidence_root=ev_root)
 
     hashes["config"] = _sha(Path(a["config"]))
     hashes["eval_dataset"] = _sha(dataset_path)
@@ -301,12 +327,29 @@ def _eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, d
     return section, agent_block(config, manifest, variants[1])
 
 
+def _refuse_mixed_targets(metas: dict) -> None:
+    """Baseline e guardrails entram na mesma tabela e no McNemar pareado: de agentes diferentes
+    não se combinam (ADR-030)."""
+    tb, tg = (metas["baseline"] or {}).get("target"), (metas["guardrails"] or {}).get("target")
+    if tb and tg and stats_mod.target_text(tb) != stats_mod.target_text(tg):
+        raise ReportError(
+            "red team baseline e guardrails são de agentes diferentes "
+            f"({stats_mod.target_text(tb)} / {stats_mod.target_text(tg)}); "
+            "não são combinados na mesma tabela. Informe execuções do mesmo agente"
+        )
+
+
 def _redteam_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> dict:
+    ev_root = a["evidence_root"]
     fp_dir = Path(a["fp_dir"])
     base_p, guard_p = Path(a["redteam_baseline"]), Path(a["redteam_guardrails"])
     # Os sidecars são conferidos antes de ler os resultados: adulteração falha com mensagem clara.
-    metas = {"baseline": _redteam_meta(base_p, "baseline"), "guardrails": _redteam_meta(guard_p, "guardrails")}
-    fp_meta = _fp_meta(fp_dir)
+    metas = {
+        "baseline": _redteam_meta(base_p, "baseline", ev_root),
+        "guardrails": _redteam_meta(guard_p, "guardrails", ev_root),
+    }
+    _refuse_mixed_targets(metas)
+    fp_meta = _fp_meta(fp_dir, ev_root)
     base, guard = _load_attacks(base_p), _load_attacks(guard_p)
     ds = _load_jsonl(fp_dir / "fp_dataset.jsonl")
     bn = _load_jsonl(fp_dir / "fp_benign.jsonl")
@@ -322,17 +365,17 @@ def _redteam_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> dict:
     prov["seeds"]["false_positives"] = (fp_meta or {}).get("seed")
     inputs = prov["inputs"]
     for path in (base_p, Path(f"{base_p}.meta.json"), guard_p, Path(f"{guard_p}.meta.json")):
-        _add_input(inputs, path)
+        _add_input(inputs, path, ev_root)
     for name in ("fp_dataset.jsonl", "fp_benign.jsonl", "fp.meta.json"):
-        _add_input(inputs, fp_dir / name)
+        _add_input(inputs, fp_dir / name, ev_root)
     for meta in metas.values():
         for key, pattern in (("attacks_dir", "*.jsonl"), ("poisoned_dir", "*.md")):
             if meta and isinstance(meta.get(key), str):
-                for path in sorted(Path(meta[key]).glob(pattern)):
-                    _add_input(inputs, path)
+                for path in sorted(_recorded_path(meta[key], ev_root).glob(pattern)):
+                    _add_input(inputs, path, ev_root)
     for key in ("dataset_path", "benign_path"):
         if fp_meta and isinstance(fp_meta.get(key), str):
-            _add_input(inputs, Path(fp_meta[key]))
+            _add_input(inputs, _recorded_path(fp_meta[key], ev_root), ev_root)
     ctx["redteam"] = {"baseline": base_p, "guardrails": guard_p}
     ctx["false_positives"] = {
         "dataset": fp_dir / "fp_dataset.jsonl", "benign": fp_dir / "fp_benign.jsonl",
@@ -344,7 +387,7 @@ def _redteam_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> dict:
         ("redteam_guardrails_meta", Path(f"{guard_p}.meta.json")),
         ("fp_meta", fp_dir / "fp.meta.json"),
     ):
-        _role(prov, role, path)
+        _role(prov, role, path, evidence_root=ev_root)
     numbers = redteam_numbers(base, guard, ds, bn)
     if bad := not_evaluated_mismatches(numbers, prov["executions"]):
         raise ReportError("casos não avaliados divergem do sidecar: " + "; ".join(bad))
@@ -616,9 +659,13 @@ def _first(prov: dict, key: str) -> str | None:
 
 def _provenance_block(agent: dict, prov: dict, command: str | None, repo_dir: str | None) -> dict:
     """Bloco `provenance`: ambiente do build + o que as execuções gravaram (null = não registrado)."""
+    used = any(
+        str(k).startswith(provenance.EVIDENCE_PREFIX) for k in (*prov["inputs"], *prov["files"].values())
+    )
     return {
         **provenance.environment(repo_dir),
         "command": None if command is None else provenance.sanitize_command(command),
+        **({"evidence_root": provenance.EVIDENCE_PREFIX.rstrip("/")} if used else {}),
         "model": agent["model"],
         "model_digest": _first(prov, "model_digest"),
         "ollama_version": _first(prov, "ollama_version"),
@@ -651,6 +698,7 @@ def build_data(
     repo_dir: str | None = None,
     policy: str | None = None,
     coverage_map: str | None = None,
+    evidence_root: str | None = None,
 ) -> dict:
     """Lê os resultados e devolve o dict do relatorio.json. Levanta ReportError com mensagem curta."""
     if baseline == candidate:
@@ -680,7 +728,8 @@ def build_data(
         ev, agent = _eval_section(args, hashes, prov, ctx)
         rt = _redteam_section(args, hashes, prov, ctx)
         found, found_paths = findings_mod.collect(
-            redteam=ctx["redteam"], false_positives=ctx["false_positives"], eval_ctx=ctx["eval"]
+            redteam=ctx["redteam"], false_positives=ctx["false_positives"], eval_ctx=ctx["eval"],
+            evidence_root=args["evidence_root"],
         )
         findings_mod.verify(found, found_paths)
     except (ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
@@ -692,9 +741,9 @@ def build_data(
         hmac_key=audit_hmac_key,
     )
     # O log cresce depois do build: referenciado pelo caminho, fora de `inputs` (a âncora o confere).
-    _role(prov, "audit_log", audit_path, as_input=False)
-    _role(prov, "audit_signature", audit_signature, as_input=False)
-    _role(prov, "audit_public_key", audit_public_key, as_input=False)
+    _role(prov, "audit_log", audit_path, as_input=False, evidence_root=evidence_root)
+    _role(prov, "audit_signature", audit_signature, as_input=False, evidence_root=evidence_root)
+    _role(prov, "audit_public_key", audit_public_key, as_input=False, evidence_root=evidence_root)
 
     view = {"eval": ev, "redteam": rt, "audit": au, "indicators": indicators(ev, rt, au)}
     sem, rule_results = policy_mod.evaluate(pol, view)

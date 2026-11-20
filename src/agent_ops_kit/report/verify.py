@@ -114,8 +114,12 @@ def _run_step(cid: str, label: str, fn) -> dict:
 
 
 class _Verifier:
-    def __init__(self, data: dict, package: Path, root: Path, hmac_key: str | None) -> None:
+    def __init__(
+        self, data: dict, package: Path, root: Path, hmac_key: str | None,
+        evidence_root: Path | None = None,
+    ) -> None:
         self.data, self.package, self.root, self.hmac_key = data, package, root, hmac_key
+        self.evidence_root = evidence_root
         prov = data["provenance"]
         self.files = prov.get("files") if isinstance(prov.get("files"), dict) else {}
         self.checks: list[dict] = []
@@ -132,7 +136,12 @@ class _Verifier:
         p = Path(key)
         if p.anchor or ".." in p.parts:
             raise _Fail(f"caminho fora da raiz em {what}: {key}")
-        full = self.root / p
+        base = self.root
+        if key.startswith(provenance.EVIDENCE_PREFIX):
+            if self.evidence_root is None:
+                raise _NotVerifiable(f"evidência em {provenance.EVIDENCE_PREFIX[:-1]}: informe --evidence-root ({key})")
+            base, p = self.evidence_root, Path(key[len(provenance.EVIDENCE_PREFIX):])
+        full = base / p
         if not full.is_file():
             raise _NotVerifiable(f"arquivo de evidência ausente: {key}")
         return full
@@ -366,7 +375,7 @@ class _Verifier:
         fresh, _ = findings_mod.collect(
             redteam={"baseline": self.file("redteam_baseline"), "guardrails": self.file("redteam_guardrails")},
             false_positives={"dataset": self.file("fp_dataset"), "benign": self.file("fp_benign")},
-            eval_ctx=ctx, base=self.root,
+            eval_ctx=ctx, base=self.root, evidence_root=self.evidence_root,
         )
         if _canon(found) != _canon(_norm(fresh)):
             raise _Fail(f"a lista de achados difere da recoletada ({len(found)} gravados, {len(fresh)} recalculados)")
@@ -559,15 +568,19 @@ def verify_package(
     hmac_key: str | None = None,
     public_key: str | Path | None = None,
     require_signature: bool = False,
+    evidence_root: str | Path | None = None,
 ) -> dict:
     """Resultado da verificação: {ok, package, checks, summary, signed, not_covered}. Determinístico."""
     data = load_package(package)
     root = Path(repo_root)
     if not root.is_dir():
         raise PackageError(f"--repo-root não é uma pasta: {repo_root}")
+    ev_root = Path(evidence_root) if evidence_root is not None else None
+    if ev_root is not None and not ev_root.is_dir():
+        raise PackageError(f"--evidence-root não é uma pasta: {evidence_root}")
     checks = [_run_step("structure", "estrutura mínima do relatorio.json", lambda: _structure(data))]
     if checks[0]["status"] == OK:
-        checks += _Verifier(data, Path(package), root, hmac_key).run()
+        checks += _Verifier(data, Path(package), root, hmac_key, ev_root).run()
     signed = (Path(package) / SIG_FILE).is_file()
     if signed or require_signature:  # sem .sig e sem exigência: só informativo, não entra nas checagens
         checks.append(_run_step("signature", "assinatura do relatorio.json", lambda: _check_signature(Path(package), public_key)))

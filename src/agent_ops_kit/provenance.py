@@ -40,13 +40,35 @@ def sha256_dir(directory: str | Path, pattern: str = "*.jsonl") -> str:
     return hasher.hexdigest()
 
 
-def rel_path(path: str | Path, base: str | Path | None = None) -> str:
-    """Caminho relativo (com /) à base (padrão: diretório atual); fora dela, só o nome."""
+EVIDENCE_PREFIX = "@evidence/"  # raiz lógica das evidências fora do repositório (ADR-030)
+
+
+def rel_path(
+    path: str | Path, base: str | Path | None = None, evidence_root: str | Path | None = None
+) -> str:
+    """Caminho relativo (com /) à base (padrão: diretório atual). Fora dela, mas dentro de
+    `evidence_root`, vira `@evidence/<relativo>` (sem caminho absoluto); senão, só o nome."""
     p = Path(path).resolve()
     try:
         return p.relative_to(Path(base or Path.cwd()).resolve()).as_posix()
     except ValueError:
-        return p.name
+        pass
+    if evidence_root is not None:
+        try:
+            return EVIDENCE_PREFIX + p.relative_to(Path(evidence_root).resolve()).as_posix()
+        except ValueError:
+            pass
+    return p.name
+
+
+def resolve_key(key: str | Path, evidence_root: str | Path | None = None) -> Path:
+    """Inverso de `rel_path`: chave `@evidence/...` sob a raiz de evidências; outra, como está."""
+    text = Path(key).as_posix() if not isinstance(key, str) else key
+    if not text.startswith(EVIDENCE_PREFIX):
+        return Path(text)
+    if evidence_root is None:
+        raise ValueError(f"{text} está na raiz de evidências: informe --evidence-root")
+    return Path(evidence_root) / text[len(EVIDENCE_PREFIX):]
 
 
 _SECRET_OPTS = {

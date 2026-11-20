@@ -446,6 +446,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument(
+        "--evidence-root", default=None,
+        help="raiz das evidências fora do repositório (caminhos gravados como @evidence/...)",
+    )
     args = ap.parse_args(argv)
     names = None
     if args.guardrails:
@@ -488,9 +492,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     meta = provenance.execution_info(config.model, command)
     if not args.blind_only:
-        meta["attacks_dir"] = provenance.rel_path(args.attacks_dir)
+        meta["attacks_dir"] = provenance.rel_path(args.attacks_dir, evidence_root=args.evidence_root)
         meta["attacks_sha256"] = provenance.sha256_dir(args.attacks_dir)
-        meta["poisoned_dir"] = provenance.rel_path(resolved_base_poisoned)
+        meta["poisoned_dir"] = provenance.rel_path(
+            resolved_base_poisoned, evidence_root=args.evidence_root
+        )
         meta["poisoned_sha256"] = provenance.sha256_dir(resolved_base_poisoned, "*.md")
     records = run_suite(
         cases,

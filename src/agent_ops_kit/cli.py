@@ -14,6 +14,10 @@ ALPHA = 0.05
 DEFAULT_EVAL_REPORT = "reports/eval_report.md"
 DEFAULT_REDTEAM_REPORT = "reports/redteam_report.md"
 DEFAULT_CONFIG = "examples/rag_agent/agent.yaml"
+# Resultados do agente de exemplo: só valem quando NENHUM argumento de red team é informado.
+RT_DEFAULTS = (
+    "redteam/results/baseline.jsonl", "redteam/results/guardrails.jsonl", "redteam/results",
+)
 
 JUDGE_WARNING = (
     "Aviso sobre o juiz: o juiz é o mesmo modelo de 8B que gera as respostas (viés de "
@@ -431,6 +435,8 @@ def cmd_redteam(args: argparse.Namespace) -> int:
             argv += ["--blind-attacks-dir", args.blind_attacks_dir]
         if args.blind_only:
             argv += ["--blind-only"]
+        if args.evidence_root:
+            argv += ["--evidence-root", args.evidence_root]
         return harness.main(argv)
 
     from agent_ops_kit.redteam.report import ReportError, build_report, build_summary
@@ -601,6 +607,16 @@ def _write_package(args: argparse.Namespace) -> dict:
     except ValueError as exc:
         raise ReportError(str(exc)) from exc
 
+    given = [args.redteam_baseline, args.redteam_guardrails, args.fp_dir]
+    if all(g is None for g in given):
+        args.redteam_baseline, args.redteam_guardrails, args.fp_dir = RT_DEFAULTS
+    elif any(g is None for g in given):
+        raise ReportError(
+            "informe --redteam-baseline, --redteam-guardrails e --fp-dir juntos (ou nenhum, para "
+            "usar os resultados do agente de exemplo); misturar execuções de agentes diferentes "
+            "não é permitido. Com target externo, o kit não aplica guardrails: passe o mesmo "
+            "JSONL nos dois primeiros"
+        )
     cwd = os.getcwd()  # o runner importa examples.rag_agent, na raiz do repositório
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
@@ -622,6 +638,7 @@ def _write_package(args: argparse.Namespace) -> dict:
         previous=args.previous,
         policy=args.policy,
         coverage_map=args.coverage_map,
+        evidence_root=args.evidence_root,
         command="aok " + shlex.join(getattr(args, "argv", None) or sys.argv[1:]),
     )
     blocks = render.build_blocks(data)
@@ -654,7 +671,8 @@ def cmd_report_verify(args: argparse.Namespace) -> int:
     try:
         hmac_key = _resolve_hmac_env(args.audit_hmac_key_env)
         result = verify.verify_package(
-            args.package, args.repo_root, hmac_key, args.public_key, args.require_signature
+            args.package, args.repo_root, hmac_key, args.public_key, args.require_signature,
+            args.evidence_root,
         )
     except (verify.PackageError, ValueError) as exc:
         print(f"erro: {exc}", file=sys.stderr)
@@ -848,6 +866,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="executa apenas a suíte cega (requer --blind-attacks-dir ou AOK_BLIND_ATTACKS_DIR)",
     )
+    r.add_argument(
+        "--evidence-root", default=None,
+        help="raiz das evidências fora do repositório (caminhos gravados como @evidence/...)",
+    )
     r = rsub.add_parser("report", help="relatório markdown a partir dos JSONL gravados (sem modelo)")
     r.add_argument("--baseline", required=True, help="JSONL sem guardrails")
     r.add_argument("--guardrails", required=True, help="JSONL com guardrails")
@@ -899,9 +921,23 @@ def build_parser() -> argparse.ArgumentParser:
         r.add_argument("--config", default=config_default)
         r.add_argument("--answers-dir", default="evals/answers", help="pasta com as respostas e o manifest.json")
         r.add_argument("--seed", type=int, default=42)
-        r.add_argument("--redteam-baseline", default="redteam/results/baseline.jsonl")
-        r.add_argument("--redteam-guardrails", default="redteam/results/guardrails.jsonl")
-        r.add_argument("--fp-dir", default="redteam/results", help="pasta com fp_dataset.jsonl e fp_benign.jsonl")
+        r.add_argument(
+            "--redteam-baseline", default=None,
+            help=f"JSONL do red team sem guardrails (padrão do repositório: {RT_DEFAULTS[0]}; "
+            "os três argumentos de red team vão juntos ou nenhum)",
+        )
+        r.add_argument(
+            "--redteam-guardrails", default=None,
+            help=f"JSONL do red team com guardrails (padrão do repositório: {RT_DEFAULTS[1]})",
+        )
+        r.add_argument(
+            "--fp-dir", default=None,
+            help=f"pasta com fp_dataset.jsonl e fp_benign.jsonl (padrão do repositório: {RT_DEFAULTS[2]})",
+        )
+        r.add_argument(
+            "--evidence-root", default=None,
+            help="raiz das evidências fora do repositório (caminhos gravados como @evidence/...)",
+        )
         r.add_argument("--audit", default=None, help="log de auditoria (só o resultado da cadeia e a âncora entram)")
         r.add_argument("--audit-signature", default=None, help="recibo JSON da assinatura da âncora de auditoria")
         r.add_argument("--audit-public-key", default=None, help="chave pública Ed25519 em PEM para verificar a assinatura")
@@ -922,6 +958,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--audit-hmac-key-env", default=None, help="variável de ambiente com a chave HMAC da assinatura de auditoria")
     r.add_argument("--public-key", default=None, help="chave pública Ed25519 (PEM) para conferir relatorio.json.sig")
     r.add_argument("--require-signature", action="store_true", help="falha se o pacote não tiver relatorio.json.sig")
+    r.add_argument("--evidence-root", default=None, help="raiz das evidências fora do repositório (@evidence/...)")
     p.set_defaults(func=cmd_report)
 
     p = sub.add_parser("check", help="gera o pacote a partir dos resultados gravados e, opcional, publica")

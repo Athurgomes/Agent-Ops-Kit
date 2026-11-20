@@ -194,11 +194,24 @@ def test_external_target_has_seed_caveat(tmp_path):
     assert set(_checks(root).values()) == {"ok"}
 
 
-def test_divergent_targets_add_caveat_and_verify_reproduces_it(tmp_path):
+def test_baseline_and_guardrails_from_different_agents_are_refused(tmp_path, capsys):
     root = _make_repo(tmp_path, base_target=EXAMPLE, guard_target=EXTERNAL, fp_target=OTHER)
+    rc, _ = _build(root)
+    assert rc == 2 and "agentes diferentes" in capsys.readouterr().err
+
+
+def test_partial_redteam_args_are_refused_and_defaults_only_when_none(tmp_path, capsys):
+    root = _make_repo(tmp_path)
+    with _cd(root):
+        rc = cli.main(["report", "build", "--out", "pk", "--redteam-baseline", "rt/baseline.jsonl"])
+    assert rc == 2 and "juntos" in capsys.readouterr().err
+
+
+def test_divergent_targets_add_caveat_and_verify_reproduces_it(tmp_path):
+    root = _make_repo(tmp_path, base_target=EXAMPLE, guard_target=EXAMPLE, fp_target=OTHER)
     _, data = _build(root)
     cav = [x for x in data["limitations"] if "não apontam para o mesmo agente" in x]
-    assert len(cav) == 1 and "red team guardrails" in cav[0] and "outro:agente" in cav[0]
+    assert len(cav) == 1 and "falsos positivos" in cav[0] and "outro:agente" in cav[0]
     assert "Agente auditado (por origem)" in _md(data)
     assert set(_checks(root).values()) == {"ok"}
     # a ressalva é checada pelo verify: apagá-la do json falha
@@ -249,3 +262,62 @@ def test_partially_registered_target_adds_caveat_and_verify_reproduces_it(tmp_pa
     d["limitations"] = [x for x in d["limitations"] if "em parte das execuções" not in x]
     p.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
     assert _checks(root)["limitations"] == "falha"
+
+
+# --- evidências fora do repositório (--evidence-root, ADR-030) ----------------------------
+
+
+def _external_evidence(tmp_path, root):
+    """Move o red team do repositório sintético para uma pasta externa (fora do cwd do build)."""
+    ext = tmp_path / "ext"
+    shutil.copytree(root / "rt", ext / "rt")
+    shutil.rmtree(root / "rt")
+    return ext
+
+
+def _build_ext(root, ext, extra=()):
+    with _cd(root):
+        return cli.main([
+            "report", "build", "--out", "pk", "--redteam-baseline", str(ext / "rt/baseline.jsonl"),
+            "--redteam-guardrails", str(ext / "rt/guardrails.jsonl"), "--fp-dir", str(ext / "rt"),
+            "--policy", "policies/default.yaml", "--coverage-map",
+            "policies/coverage/owasp_llm_2025.yaml", *extra,
+        ])
+
+
+def test_evidence_outside_repo_is_verifiable_with_evidence_root(tmp_path):
+    root = _make_repo(tmp_path, base_target=EXTERNAL, guard_target=EXTERNAL, fp_target=EXTERNAL)
+    ext = _external_evidence(tmp_path, root)
+    assert _build_ext(root, ext, ["--evidence-root", str(ext)]) == 0
+    data = json.loads((root / "pk" / "relatorio.json").read_text(encoding="utf-8"))
+    text = json.dumps(data)
+    assert str(ext).replace("\\", "/") not in text and data["provenance"]["evidence_root"] == "@evidence"
+    assert data["provenance"]["files"]["redteam_baseline"] == "@evidence/rt/baseline.jsonl"
+    res = verify.verify_package(root / "pk", root, evidence_root=ext)
+    assert {c["id"]: c["status"] for c in res["checks"]} == {c["id"]: "ok" for c in res["checks"]}
+    # sem --evidence-root o verify diz o que falta, sem adivinhar
+    res = verify.verify_package(root / "pk", root)
+    assert not res["ok"] and any("--evidence-root" in c["detail"] for c in res["checks"])
+
+
+def test_outside_evidence_without_root_is_not_resolvable_but_stays_inside_package_rules(tmp_path):
+    root = _make_repo(tmp_path, base_target=EXTERNAL, guard_target=EXTERNAL, fp_target=EXTERNAL)
+    ext = _external_evidence(tmp_path, root)
+    assert _build_ext(root, ext) == 0  # legado: chave só com o nome do arquivo
+    data = json.loads((root / "pk" / "relatorio.json").read_text(encoding="utf-8"))
+    assert "evidence_root" not in data["provenance"]
+    assert not verify.verify_package(root / "pk", root)["ok"]
+
+
+def test_rel_path_and_resolve_key_roundtrip(tmp_path):
+    ext, repo = tmp_path / "ext", tmp_path / "repo"
+    (ext / "a").mkdir(parents=True)
+    repo.mkdir()
+    f = ext / "a" / "x.jsonl"
+    f.write_text("{}\n", encoding="utf-8")
+    key = provenance.rel_path(f, repo, ext)
+    assert key == "@evidence/a/x.jsonl"
+    assert provenance.resolve_key(key, ext) == ext / "a" / "x.jsonl"
+    assert provenance.rel_path(f, repo) == "x.jsonl"  # sem raiz: só o nome (legado)
+    with pytest.raises(ValueError):
+        provenance.resolve_key(key, None)
