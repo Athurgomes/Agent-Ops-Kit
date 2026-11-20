@@ -20,11 +20,15 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from agent_ops_kit import audit  # noqa: F401 - audit antes de audit_sign evita import circular do kit
+from agent_ops_kit.audit_sign import verify_bytes
+
 from .auth import hash_token, org_is_active
-from .models import Agent, AgentCredential, ReportVersion, utcnow
+from .models import Agent, AgentCredential, AgentPublicKey, ReportVersion, utcnow
 
 MAX_BODY = 1024 * 1024  # 1 MiB no total
 FILES = ("relatorio.md", "relatorio.html", "relatorio.json")  # mesmo conjunto de pacote.json
+SIG_FILE = "relatorio.json.sig"  # conteúdo vem em `signature`; fora de FILES e de pacote.json
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -38,6 +42,7 @@ class PackageIn(BaseModel):
     semaphore: Literal["green", "yellow", "red"]
     sha256: dict[str, str]
     files: dict[str, str]
+    signature: str | None = Field(default=None, max_length=4096)  # opcional: conteúdo do .sig
 
     @field_validator("sha256", "files")
     @classmethod
@@ -59,6 +64,7 @@ class ReportOut(BaseModel):
     sha256: str
     published_at: datetime
     status_semaforo: str
+    signed: bool
 
 
 def _agent_from_token(authorization: str | None, s: Session) -> Agent:
@@ -151,6 +157,30 @@ def _write_atomic(path: Path, data: bytes) -> None:
         raise
 
 
+def _check_signature(signature: str | None, raw: bytes, agent: Agent, s: Session) -> str | None:
+    """Devolve o fingerprint se a assinatura vale; None se o relatório fica "não assinado"; 422 se recusa."""
+    bad = HTTPException(422, "assinatura ausente ou inválida")  # mensagem única, sem detalhes
+    keys = list(s.scalars(select(AgentPublicKey).where(AgentPublicKey.agent_id == agent.id)))
+    active = {k.fingerprint: k for k in keys if k.revoked_at is None}
+    try:
+        receipt = json.loads(signature) if signature else None
+    except ValueError:
+        receipt = None
+    if not isinstance(receipt, dict):  # ausente (ou ilegível)
+        if active or agent.require_signature:
+            raise bad
+        return None
+    fp = receipt.get("key_fingerprint")
+    key = active.get(fp) if isinstance(fp, str) else None
+    if key is not None:
+        if verify_bytes(raw, receipt, key.public_key_pem.encode("ascii")).ok:
+            return key.fingerprint
+        raise bad
+    if keys or agent.require_signature:  # chave revogada, de outro agente ou desconhecida
+        raise bad
+    return None  # agente sem chave cadastrada: vale como antes, "não assinado"
+
+
 def _store(pkg: PackageIn, agent: Agent, s: Session, data_dir: Path) -> ReportVersion:
     """Valida, grava arquivos (atômico) e a linha. Uma pasta por (agente, sha256): sem corrida."""
     raw = {name: pkg.files[name].encode("utf-8") for name in FILES}
@@ -164,6 +194,7 @@ def _store(pkg: PackageIn, agent: Agent, s: Session, data_dir: Path) -> ReportVe
         raise HTTPException(422, "relatorio.json inválido") from exc
     if facts["status_semaforo"] != pkg.semaphore:
         raise HTTPException(422, "semáforo declarado diverge do relatorio.json")
+    key_fp = _check_signature(pkg.signature, raw["relatorio.json"], agent, s)
     digest = hashlib.sha256(raw["relatorio.json"]).hexdigest()
 
     def duplicate() -> HTTPException:
@@ -181,6 +212,8 @@ def _store(pkg: PackageIn, agent: Agent, s: Session, data_dir: Path) -> ReportVe
     try:
         for name in FILES:
             _write_atomic(folder / name, raw[name])
+        if key_fp is not None:
+            _write_atomic(folder / SIG_FILE, pkg.signature.encode("utf-8"))
         _write_atomic(  # mesmo formato do pacote.json do motor
             folder / "pacote.json",
             json.dumps(
@@ -208,6 +241,8 @@ def _store(pkg: PackageIn, agent: Agent, s: Session, data_dir: Path) -> ReportVe
                 sha256=digest,
                 summary_json=summary,
                 **facts,
+                signed=key_fp is not None,
+                key_fingerprint=key_fp,
                 file_md=(rel / FILES[0]).as_posix(),
                 file_html=(rel / FILES[1]).as_posix(),
                 file_json=(rel / FILES[2]).as_posix(),
@@ -257,6 +292,7 @@ def build_reports_router(get_session, data_dir: Path) -> APIRouter:
             sha256=row.sha256,
             published_at=row.published_at,
             status_semaforo=row.status_semaforo,
+            signed=row.signed,
         )
 
     return r

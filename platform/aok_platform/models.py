@@ -12,9 +12,11 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     TypeDecorator,
     UniqueConstraint,
     event,
+    false,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -72,6 +74,20 @@ class Agent(Base):
     slug: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(200))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    require_signature: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+
+
+class AgentPublicKey(Base):
+    """Chave pública Ed25519 do agente (PEM). Revogada nunca volta; nada de chave privada aqui."""
+
+    __tablename__ = "agent_public_keys"
+    __table_args__ = (UniqueConstraint("agent_id", "fingerprint", name="uq_agent_key_fingerprint"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agent.id"), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))  # SHA-256 do PEM SPKI (igual ao do kit)
+    public_key_pem: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
 
 class AgentCredential(Base):
@@ -106,6 +122,8 @@ class ReportVersion(Base):
     dataset_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     n_cases: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    signed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    key_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     file_md: Mapped[str] = mapped_column(String(300))  # caminhos relativos a AOK_DATA_DIR
     file_html: Mapped[str] = mapped_column(String(300))
     file_json: Mapped[str] = mapped_column(String(300))

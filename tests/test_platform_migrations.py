@@ -42,6 +42,7 @@ EXPECTED_TABLES = {
     "operator_session",
     "operator_event",
     "rate_limit_entry",
+    "agent_public_keys",
 }
 
 EXPECTED_INDEXES = {
@@ -56,6 +57,7 @@ EXPECTED_INDEXES = {
     "operator_session": {"ix_operator_session_operator_id"},
     "operator_event": {"ix_operator_event_at", "ix_operator_event_operator_id"},
     "rate_limit_entry": {"ix_rate_limit_entry_expires_at"},
+    "agent_public_keys": {"ix_agent_public_keys_agent_id"},
 }
 
 
@@ -84,7 +86,7 @@ def test_sqlite_novo_cria_tabelas_indices_e_alembic_version_idempotente(tmp_path
         tables = set(insp.get_table_names())
         assert EXPECTED_TABLES <= tables
         assert "alembic_version" in tables
-        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _alembic_revisions(engine) == ["0003_report_signature"]
         assert _schema_diffs(engine) == []
 
         for table, expected_ix in EXPECTED_INDEXES.items():
@@ -124,7 +126,7 @@ def test_sqlite_legado_remove_unique_global_de_slug_preserva_dados_e_idempotente
 
         insp = inspect(engine)
         assert EXPECTED_TABLES <= set(insp.get_table_names())
-        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _alembic_revisions(engine) == ["0003_report_signature"]
         assert "ix_agent_org_id" in {ix["name"] for ix in insp.get_indexes("agent")}
 
         with Session(engine) as s:
@@ -169,7 +171,7 @@ def test_sqlite_roundtrip_upgrade_downgrade_upgrade(tmp_path):
 
         run_migrations(engine)
         assert EXPECTED_TABLES <= set(inspect(engine).get_table_names())
-        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _alembic_revisions(engine) == ["0003_report_signature"]
         assert _schema_diffs(engine) == []
     finally:
         engine.dispose()
@@ -185,7 +187,7 @@ def test_sqlite_incremental_0001_para_0002_e_downgrade_parcial(tmp_path):
         assert "rate_limit_entry" not in set(inspect(engine).get_table_names())
 
         run_migrations(engine)
-        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _alembic_revisions(engine) == ["0003_report_signature"]
         assert "rate_limit_entry" in set(inspect(engine).get_table_names())
         assert _schema_diffs(engine) == []
 
@@ -197,9 +199,41 @@ def test_sqlite_incremental_0001_para_0002_e_downgrade_parcial(tmp_path):
         assert "rate_limit_entry" not in set(inspect(engine).get_table_names())
 
         run_migrations(engine)
-        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _alembic_revisions(engine) == ["0003_report_signature"]
         assert "rate_limit_entry" in set(inspect(engine).get_table_names())
         assert _schema_diffs(engine) == []
+    finally:
+        engine.dispose()
+
+
+def test_sqlite_0003_preserva_dados_e_downgrade_para_0002(tmp_path):
+    url = f"sqlite:///{tmp_path / 'sig.db'}"
+    engine = make_engine(url)
+    try:
+        run_migrations(engine, revision="0002_rate_limit_entry")
+        assert "agent_public_keys" not in set(inspect(engine).get_table_names())
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO organization (id, name, slug, active, created_at) "
+                              "VALUES (7, 'O', 'o', 1, '2026-01-01')"))
+            conn.execute(text("INSERT INTO area (id, org_id, name) VALUES (7, 7, 'A')"))
+            conn.execute(text("INSERT INTO agent (id, org_id, area_id, slug, name, active) "
+                              "VALUES (7, 7, 7, 'ag', 'Ag', 1)"))
+        run_migrations(engine)
+        assert _alembic_revisions(engine) == ["0003_report_signature"]
+        assert _schema_diffs(engine) == []
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT require_signature FROM agent")).scalar() in (0, False)
+
+        cfg = alembic_config(url)
+        with engine.connect() as conn:
+            cfg.attributes["connection"] = conn
+            command.downgrade(cfg, "0002_rate_limit_entry")
+        insp = inspect(engine)
+        assert "agent_public_keys" not in set(insp.get_table_names())
+        assert "require_signature" not in {c["name"] for c in insp.get_columns("agent")}
+        assert {"signed", "key_fingerprint"}.isdisjoint(
+            {c["name"] for c in insp.get_columns("report_version")}
+        )
     finally:
         engine.dispose()
 
@@ -248,7 +282,7 @@ def test_cli_migrate_upgrade_current_heads_independente_de_cwd(tmp_path):
         text=True,
         check=True,
     )
-    assert "0002_rate_limit_entry" in heads.stdout
+    assert "0003_report_signature" in heads.stdout
 
     subprocess.run(
         [sys.executable, "-m", "aok_platform.migrate", "upgrade", "--url", url],
@@ -265,7 +299,7 @@ def test_cli_migrate_upgrade_current_heads_independente_de_cwd(tmp_path):
         text=True,
         check=True,
     )
-    assert "0002_rate_limit_entry" in current.stdout
+    assert "0003_report_signature" in current.stdout
 
     engine = make_engine(url)
     try:
@@ -288,7 +322,7 @@ def test_postgres_novo_upgrade_idempotente_e_roundtrip():
 
         insp = inspect(engine)
         assert EXPECTED_TABLES <= set(insp.get_table_names())
-        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _alembic_revisions(engine) == ["0003_report_signature"]
         assert _schema_diffs(engine) == []
         for table, expected_ix in EXPECTED_INDEXES.items():
             assert expected_ix <= {ix["name"] for ix in insp.get_indexes(table)}
@@ -301,7 +335,7 @@ def test_postgres_novo_upgrade_idempotente_e_roundtrip():
         assert "rate_limit_entry" not in set(inspect(engine).get_table_names())
 
         run_migrations(engine)
-        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _alembic_revisions(engine) == ["0003_report_signature"]
         assert _schema_diffs(engine) == []
 
         with engine.connect() as conn:
@@ -311,7 +345,7 @@ def test_postgres_novo_upgrade_idempotente_e_roundtrip():
 
         run_migrations(engine)
         assert EXPECTED_TABLES <= set(inspect(engine).get_table_names())
-        assert _alembic_revisions(engine) == ["0002_rate_limit_entry"]
+        assert _alembic_revisions(engine) == ["0003_report_signature"]
         assert _schema_diffs(engine) == []
     finally:
         engine.dispose()

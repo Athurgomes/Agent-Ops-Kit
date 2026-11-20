@@ -46,6 +46,8 @@ class ReportItem(BaseModel):
     published_at: datetime
     generated_at: str | None
     status_semaforo: str
+    signed: bool  # assinatura Ed25519 verificada na publicação; False = "não assinado"
+    key_fingerprint: str | None
 
 
 class ReportDetail(ReportItem):
@@ -139,6 +141,8 @@ def build_portal_router(get_session, current_user, current_org_admin, data_dir: 
             published_at=row.published_at,
             generated_at=_generated_at(row, data_dir),
             status_semaforo=row.status_semaforo,
+            signed=row.signed,
+            key_fingerprint=row.key_fingerprint,
         )
 
     @r.get("/areas", response_model=list[AreaNode])

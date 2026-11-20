@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
+from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import FileResponse, JSONResponse
@@ -33,6 +37,7 @@ from .models import (
     AdminEvent,
     Agent,
     AgentCredential,
+    AgentPublicKey,
     Area,
     Membership,
     ReportVersion,
@@ -86,6 +91,7 @@ class AgentPatch(_In):  # slug é imutável: é o agent_id usado nos pacotes
     name: str | None = Field(default=None, min_length=1, max_length=200)
     area_id: int | None = None
     active: bool | None = None
+    require_signature: bool | None = None
 
 
 class AgentOut(BaseModel):
@@ -94,6 +100,18 @@ class AgentOut(BaseModel):
     slug: str
     name: str
     active: bool
+    require_signature: bool
+
+
+class KeyIn(_In):
+    public_key_pem: str  # sem limites no esquema: o erro do pydantic repetiria o valor recebido
+
+
+class KeyOut(BaseModel):  # nunca devolve o PEM recebido
+    key_id: int
+    fingerprint: str
+    created_at: datetime
+    revoked_at: datetime | None = None
 
 
 class TokenOut(BaseModel):
@@ -166,6 +184,7 @@ class AgentListItem(BaseModel):
     area_id: int
     area_name: str
     active: bool
+    require_signature: bool
     tokens_active_count: int
     last_report_at: datetime | None
 
@@ -258,6 +277,29 @@ def _guard_last_admin(s: Session, org_id: int, user: User) -> None:
         raise HTTPException(
             409, "esta é a última conta org_admin ativa; a organização ficaria sem administrador"
         )
+
+
+def _parse_public_key(pem: str) -> tuple[str, str]:
+    """(PEM normalizado, fingerprint) de uma chave pública Ed25519. Erro genérico: nunca repete a entrada."""
+    bad = HTTPException(422, "chave pública Ed25519 em PEM inválida")
+    if len(pem) > 2048:
+        raise bad
+    try:
+        key = serialization.load_pem_public_key(pem.encode("utf-8"))
+    except (ValueError, TypeError, UnsupportedAlgorithm):  # inclui chave privada e lixo
+        raise bad from None
+    if not isinstance(key, Ed25519PublicKey):
+        raise bad
+    norm = key.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    return norm.decode("ascii"), hashlib.sha256(norm).hexdigest()
+
+
+def _key_out(k: AgentPublicKey) -> KeyOut:
+    return KeyOut(
+        key_id=k.id, fingerprint=k.fingerprint, created_at=k.created_at, revoked_at=k.revoked_at
+    )
 
 
 def _log(s: Session, actor: Actor, action: str, target_type: str, target_id: int | None) -> None:
@@ -383,6 +425,7 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
                 area_id=a.area_id,
                 area_name=area_name,
                 active=a.active,
+                require_signature=a.require_signature,
                 tokens_active_count=tokens.get(a.id, 0),
                 last_report_at=last.get(a.id),
             )
@@ -617,11 +660,13 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
         data = body.model_dump(exclude_none=True)
         if "area_id" in data:
             _area_or_404(s, data["area_id"], actor.org_id)
-        was_active = agent.active
+        was_active, was_required = agent.active, agent.require_signature
         for k, v in data.items():
             setattr(agent, k, v)
         if data.keys() & {"name", "area_id"}:
             _log(s, actor, "agent.update", "agent", agent.id)
+        if "require_signature" in data and data["require_signature"] != was_required:
+            _log(s, actor, "agent.require_signature", "agent", agent.id)
         if "active" in data and data["active"] != was_active:
             _log(s, actor, "agent.activate" if data["active"] else "agent.deactivate", "agent", agent.id)
         s.commit()
@@ -656,6 +701,55 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
             _log(s, actor, "token.revoke", "agent_token", cred.id)
             s.commit()
         return TokenOut(token_id=cred.id, created_at=cred.created_at, revoked_at=cred.revoked_at)
+
+    @r.get("/agents/{agent_id}/keys", response_model=list[KeyOut])
+    def list_keys(
+        agent_id: int, actor: Actor = Depends(require_admin), s: Session = Depends(get_session)
+    ):
+        _agent_or_404(s, agent_id, actor.org_id)
+        rows = s.scalars(
+            select(AgentPublicKey)
+            .where(AgentPublicKey.agent_id == agent_id)
+            .order_by(AgentPublicKey.id.desc())
+        )
+        return [_key_out(k) for k in rows]
+
+    @r.post("/agents/{agent_id}/keys", status_code=201, response_model=KeyOut)
+    def register_key(
+        agent_id: int,
+        body: KeyIn,
+        actor: Actor = Depends(require_admin),
+        s: Session = Depends(get_session),
+    ):
+        _agent_or_404(s, agent_id, actor.org_id)
+        pem, fingerprint = _parse_public_key(body.public_key_pem)
+        key = AgentPublicKey(agent_id=agent_id, fingerprint=fingerprint, public_key_pem=pem)
+        s.add(key)
+        try:
+            s.flush()
+            _log(s, actor, "key.register", "agent_key", key.id)
+            s.commit()
+        except IntegrityError as exc:
+            s.rollback()
+            raise HTTPException(409, "chave já cadastrada para este agente") from exc
+        return _key_out(key)
+
+    @r.delete("/agents/{agent_id}/keys/{key_id}", response_model=KeyOut)
+    def revoke_key(
+        agent_id: int,
+        key_id: int,
+        actor: Actor = Depends(require_admin),
+        s: Session = Depends(get_session),
+    ):
+        _agent_or_404(s, agent_id, actor.org_id)
+        key = s.get(AgentPublicKey, key_id)
+        if key is None or key.agent_id != agent_id:
+            raise HTTPException(404, "chave não encontrada")
+        if key.revoked_at is None:  # revogar de novo preserva a data original
+            key.revoked_at = utcnow()
+            _log(s, actor, "key.revoke", "agent_key", key.id)
+            s.commit()
+        return _key_out(key)
 
     @r.post("/users", status_code=201, response_model=UserOut)
     def create_user(
