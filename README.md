@@ -73,6 +73,17 @@ Saída real de ambos neste repositório: `Pacote gravado em reports/pacote/ (rel
 - O log de auditoria nunca entra no pacote: com `--audit`, só entram o resultado da verificação da cadeia e a âncora.
 - O semáforo usa regras provisórias, e verde não significa seguro.
 
+**Assinar o relatório (opcional, Ed25519, ADR-029).** A chave privada fica fora do repositório.
+
+```bash
+aok audit keygen --private-out ~/.aok/relatorio.pem --public-out relatorio.pub   # uma vez; guarde a privada fora do git
+export AOK_SIGNING_KEY_FILE=~/.aok/relatorio.pem     # ou AOK_SIGNING_KEY_PEM com o conteúdo (secret do CI)
+aok report build --out reports/pacote                # grava também relatorio.json.sig
+aok report verify reports/pacote --public-key relatorio.pub [--require-signature]
+```
+
+Sem chave nada é assinado. Sem `.sig` o `verify` diz "não assinado" (informativo; `--require-signature` torna falha); com `.sig` e sem `--public-key`, "não verificável". A assinatura prova quem publicou e que os bytes não mudaram; não prova que o eval e o red team rodaram. No CI, guarde a chave como secret (`AOK_SIGNING_KEY_PEM`) de um environment protegido; PR de fork não recebe secret e o pacote sai sem assinatura.
+
 Verificação offline por um auditor, sem confiar no autor (sem rede, sem Ollama):
 
 ```bash
