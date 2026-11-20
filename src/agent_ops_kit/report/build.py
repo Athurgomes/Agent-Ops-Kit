@@ -56,14 +56,23 @@ def _sha(path: Path) -> str:
     return runner.sha256_text(path.read_text(encoding="utf-8"))
 
 
-def _add_input(inputs: dict[str, str], path: Path) -> None:
-    """Registra o sha256 do arquivo (caminho relativo à raiz) se ele existir."""
+def _add_input(inputs: dict[str, str], path: Path) -> str | None:
+    """Registra o sha256 do arquivo (caminho relativo à raiz) se ele existir; devolve a chave."""
     if not path.is_file():
-        return
+        return None
     key, sha = provenance.rel_path(path), provenance.sha256_file(path)
     if inputs.get(key, sha) != sha:  # mesmo nome em pastas diferentes fora da raiz
         key = f"{path.resolve().parent.name}/{key}"
     inputs[key] = sha
+    return key
+
+
+def _role(prov: dict, role: str, path: Path | str | None, as_input: bool = True) -> None:
+    """Mapa papel -> chave do arquivo (provenance.files): é como `report verify` acha a evidência."""
+    if path is None or not Path(path).is_file():
+        return
+    key = _add_input(prov["inputs"], Path(path)) if as_input else provenance.rel_path(path)
+    prov["files"][role] = key
 
 
 def _load_meta(path: Path, label: str) -> dict | None:
@@ -131,13 +140,25 @@ def _fp_meta(fp_dir: Path) -> dict | None:
     return meta
 
 
-def _pick(meta: dict | None, keys: tuple[str, ...]) -> dict | None:
+def _pick(meta: dict | None, keys: tuple[str, ...], base: str | Path | None = None) -> dict | None:
     if meta is None:
         return None
     out = {k: meta.get(k) for k in keys}
     if isinstance(out.get("command"), str):  # sidecars antigos podem ter caminhos pessoais
-        out["command"] = provenance.sanitize_command(out["command"])
+        out["command"] = provenance.sanitize_command(out["command"], base)
     return out
+
+
+def manifest_view(manifest_raw: dict, variants: list[str]) -> dict:
+    return {v: {k: manifest_raw[v].get(k) for k in _MANIFEST_KEYS} for v in variants}
+
+
+def agent_block(config, manifest: dict, candidate: str) -> dict:
+    return {
+        "name": config.name,
+        "prompt_version": config.prompt_version,
+        "model": manifest[candidate]["model"] or config.model,
+    }
 
 
 def _runs(case_ids: list[str]) -> int:
@@ -162,6 +183,52 @@ def _fp_row(recs: list[dict]) -> dict:
     }
 
 
+def eval_numbers(
+    dataset: list, records: dict[str, list[dict]], baseline: str, candidate: str, seed: int
+) -> tuple[dict, dict]:
+    """Números do eval a partir das respostas gravadas (compartilhado por `build` e `verify`).
+
+    Devolve (seção do relatorio.json sem o manifesto, nota por caso de cada variante).
+    """
+    variants = [baseline, candidate]
+    scores = {v: runner.score_records(dataset, records[v]) for v in variants}
+    variance = {v: runner.summarize_runs(dataset, records[v]) for v in variants}
+    try:
+        ab = paired_ab(scores[baseline], scores[candidate], seed=seed)
+    except ValueError as exc:
+        raise ReportError(f"não foi possível comparar as variantes do eval: {exc}") from exc
+    section = {
+        "baseline": baseline, "candidate": candidate,
+        "metric": "score das checagens determinísticas, de 0 a 1",
+        "n_cases": len(dataset), "n_pairs": ab.n, "n_dropped": ab.n_dropped,
+        "runs_per_config": min(_runs([r["case_id"] for r in records[v]]) for v in variants),
+        "variance": variance,
+        "mean_baseline": ab.mean_baseline, "mean_candidate": ab.mean_candidate,
+        "mean_diff": ab.mean_diff, "ci95_low": ab.ci_low, "ci95_high": ab.ci_high,
+        "p_value": ab.p_value, "p_method": ab.p_method, "seed": ab.seed,
+        "n_resamples": ab.n_resamples, "alpha": ALPHA,
+        "regression": ab.mean_diff < 0 and ab.p_value < ALPHA,
+    }
+    return section, scores
+
+
+def redteam_numbers(base: list, guard: list, ds: list[dict], bn: list[dict]) -> dict:
+    """Números do red team e dos falsos positivos (compartilhado por `build` e `verify`)."""
+    asr = {
+        name: {c: _asr_row(r) for c, r in asr_by_category(recs).items() if r["n"]}
+        for name, recs in (("baseline", base), ("guardrails", guard))
+    }
+    return {
+        "n_attacks": len(guard),
+        "n_blind_attacks": sum(r.is_blind for r in guard),
+        "mcnemar": stats_mod.mcnemar_block(base, guard),
+        "runs_per_config": min(_runs([r.case_id for r in recs]) for recs in (base, guard)),
+        "asr": asr,
+        "false_positives": {"dataset": _fp_row(ds), "benign": _fp_row(bn)},
+        "n_legit_questions": len(ds) + len(bn),
+    }
+
+
 def _eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, dict]:
     dataset_path, answers_dir = Path(a["dataset"]), Path(a["answers_dir"])
     variants = [a["baseline"], a["candidate"]]
@@ -178,14 +245,9 @@ def _eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, d
 
     dataset = load_dataset(dataset_path)
     records = {v: runner.load_records(answers_dir / f"{v}.jsonl") for v in variants}
-    scores = {v: runner.score_records(dataset, records[v]) for v in variants}
-    variance = {v: runner.summarize_runs(dataset, records[v]) for v in variants}
-    try:
-        ab = paired_ab(scores[variants[0]], scores[variants[1]], seed=a["seed"])
-    except ValueError as exc:
-        raise ReportError(f"não foi possível comparar as variantes do eval: {exc}") from exc
+    section, scores = eval_numbers(dataset, records, variants[0], variants[1], a["seed"])
     manifest_raw = json.loads((answers_dir / runner.MANIFEST_NAME).read_text(encoding="utf-8"))
-    manifest = {v: {k: manifest_raw[v].get(k) for k in _MANIFEST_KEYS} for v in variants}
+    manifest = manifest_view(manifest_raw, variants)
     prov["executions"]["eval"] = {v: _pick(manifest_raw[v], _EXEC_KEYS) for v in variants}
     prov["seeds"]["eval_ab_bootstrap"] = a["seed"]
     prov["seeds"]["eval_generation"] = {v: manifest[v]["seed"] for v in variants}
@@ -197,6 +259,11 @@ def _eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, d
         *sorted((Path(a["config"]).parent / "corpus").glob("*.md")),
     ):
         _add_input(inputs, path)
+    _role(prov, "config", a["config"])
+    _role(prov, "eval_dataset", dataset_path)
+    _role(prov, "eval_manifest", answers_dir / runner.MANIFEST_NAME)
+    for v in variants:
+        _role(prov, f"eval_answers_{v}", answers_dir / f"{v}.jsonl")
 
     hashes["config"] = _sha(Path(a["config"]))
     hashes["eval_dataset"] = _sha(dataset_path)
@@ -211,25 +278,8 @@ def _eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, d
         "scores_baseline": scores[variants[0]], "scores_candidate": scores[variants[1]],
         "categories": {c.id: c.category for c in dataset},
     }
-    regression = ab.mean_diff < 0 and ab.p_value < ALPHA
-    section = {
-        "baseline": variants[0], "candidate": variants[1],
-        "metric": "score das checagens determinísticas, de 0 a 1",
-        "n_cases": len(dataset), "n_pairs": ab.n, "n_dropped": ab.n_dropped,
-        "runs_per_config": min(_runs([r["case_id"] for r in records[v]]) for v in variants),
-        "variance": variance,
-        "mean_baseline": ab.mean_baseline, "mean_candidate": ab.mean_candidate,
-        "mean_diff": ab.mean_diff, "ci95_low": ab.ci_low, "ci95_high": ab.ci_high,
-        "p_value": ab.p_value, "p_method": ab.p_method, "seed": ab.seed,
-        "n_resamples": ab.n_resamples, "alpha": ALPHA, "regression": regression,
-        "manifest": manifest,
-    }
-    agent = {
-        "name": config.name,
-        "prompt_version": config.prompt_version,
-        "model": manifest[variants[1]]["model"] or config.model,
-    }
-    return section, agent
+    section["manifest"] = manifest
+    return section, agent_block(config, manifest, variants[1])
 
 
 def _redteam_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> dict:
@@ -268,19 +318,15 @@ def _redteam_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> dict:
     ctx["false_positives"] = {
         "dataset": fp_dir / "fp_dataset.jsonl", "benign": fp_dir / "fp_benign.jsonl",
     }
-    asr = {
-        name: {c: _asr_row(r) for c, r in asr_by_category(recs).items() if r["n"]}
-        for name, recs in (("baseline", base), ("guardrails", guard))
-    }
-    return {
-        "n_attacks": len(guard),
-        "n_blind_attacks": sum(r.is_blind for r in guard),
-        "mcnemar": stats_mod.mcnemar_block(base, guard),
-        "runs_per_config": min(_runs([r.case_id for r in recs]) for recs in (base, guard)),
-        "asr": asr,
-        "false_positives": {"dataset": _fp_row(ds), "benign": _fp_row(bn)},
-        "n_legit_questions": len(ds) + len(bn),
-    }
+    for role, path in (
+        ("redteam_baseline", base_p), ("redteam_guardrails", guard_p),
+        ("fp_dataset", fp_dir / "fp_dataset.jsonl"), ("fp_benign", fp_dir / "fp_benign.jsonl"),
+        ("redteam_baseline_meta", Path(f"{base_p}.meta.json")),
+        ("redteam_guardrails_meta", Path(f"{guard_p}.meta.json")),
+        ("fp_meta", fp_dir / "fp.meta.json"),
+    ):
+        _role(prov, role, path)
+    return redteam_numbers(base, guard, ds, bn)
 
 
 def _read_signed_at(signature_path: str | Path) -> str | None:
@@ -557,6 +603,7 @@ def _provenance_block(agent: dict, prov: dict, command: str | None, repo_dir: st
         "seeds": prov["seeds"],
         "executions": prov["executions"],
         "inputs": prov["inputs"],
+        "files": prov["files"],
     }
 
 
@@ -600,7 +647,7 @@ def build_data(
         raise ReportError(str(exc)) from exc
 
     hashes: dict[str, str] = {}
-    prov: dict = {"seeds": {}, "executions": {}, "inputs": {}}
+    prov: dict = {"seeds": {}, "executions": {}, "inputs": {}, "files": {}}
     ctx: dict = {}
     try:
         ev, agent = _eval_section(args, hashes, prov, ctx)
@@ -617,8 +664,12 @@ def build_data(
         public_key_path=audit_public_key,
         hmac_key=audit_hmac_key,
     )
+    # O log cresce depois do build: referenciado pelo caminho, fora de `inputs` (a âncora o confere).
+    _role(prov, "audit_log", audit_path, as_input=False)
+    _role(prov, "audit_signature", audit_signature, as_input=False)
+    _role(prov, "audit_public_key", audit_public_key, as_input=False)
 
-    view = {"eval": ev, "redteam": rt, "audit": au, "indicators": indicators(ev, rt, au)}
+    view ={"eval": ev, "redteam": rt, "audit": au, "indicators": indicators(ev, rt, au)}
     sem, rule_results = policy_mod.evaluate(pol, view)
     _add_input(prov["inputs"], Path(policy) if policy else policy_mod.DEFAULT_POLICY)
     data = {

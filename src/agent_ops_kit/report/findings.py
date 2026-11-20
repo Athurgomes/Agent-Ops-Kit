@@ -54,12 +54,13 @@ def read_lines(path: Path) -> list[tuple[int, dict]]:
 class _Files:
     """Chave estável (caminho relativo à raiz) de cada arquivo citado como evidência."""
 
-    def __init__(self) -> None:
+    def __init__(self, base: Path | None = None) -> None:
+        self.base = base
         self.paths: dict[str, Path] = {}
         self._sha: dict[str, str] = {}
 
     def key(self, path: Path) -> str:
-        key = provenance.rel_path(path)
+        key = provenance.rel_path(path, self.base)
         if self.paths.get(key, path.resolve()) != path.resolve():
             key = f"{path.resolve().parent.name}/{key}"
         self.paths[key] = path.resolve()
@@ -159,10 +160,13 @@ def _sort_key(f: dict) -> tuple:
 
 
 def collect(
-    *, redteam: dict[str, Path], false_positives: dict[str, Path], eval_ctx: dict | None = None
+    *, redteam: dict[str, Path], false_positives: dict[str, Path], eval_ctx: dict | None = None,
+    base: Path | None = None,
 ) -> tuple[list[dict], dict[str, Path]]:
-    """Achados em ordem determinística e o mapa arquivo -> caminho real (para `verify`)."""
-    files = _Files()
+    """Achados em ordem determinística e o mapa arquivo -> caminho real (para `verify`).
+
+    `base`: raiz para as chaves relativas (padrão: diretório atual)."""
+    files = _Files(base)
     found: list[dict] = []
     for config, path in redteam.items():
         found += _redteam(files, path, config)

@@ -629,11 +629,34 @@ def _write_package(args: argparse.Namespace) -> dict:
     return data
 
 
+def cmd_report_verify(args: argparse.Namespace) -> int:
+    """`aok report verify`: confere offline um pacote contra os arquivos de evidência (exit 0/1/2)."""
+    import json
+
+    from agent_ops_kit.report import verify
+
+    try:
+        hmac_key = _resolve_hmac_env(args.audit_hmac_key_env)
+        result = verify.verify_package(args.package, args.repo_root, hmac_key)
+    except (verify.PackageError, ValueError) as exc:
+        print(f"erro: {exc}", file=sys.stderr)
+        return 2
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(verify.format_table(result))
+    return 0 if result["ok"] else 1
+
+
 def cmd_report(args: argparse.Namespace) -> int:
-    """`aok report build`: pacote relatorio.{json,md,html} a partir dos resultados gravados."""
+    """`aok report build|verify`: pacote relatorio.{json,md,html} e sua verificação offline."""
     from agent_ops_kit.redteam.report import ReportError
     from agent_ops_kit.report import render
 
+    if args.report_cmd == "verify":
+        return cmd_report_verify(args)
     try:
         data = _write_package(args)
     except (ReportError, OSError) as exc:
@@ -870,6 +893,11 @@ def build_parser() -> argparse.ArgumentParser:
     rsub = p.add_subparsers(dest="report_cmd", required=True)
     r = rsub.add_parser("build", help="gera relatorio.md, relatorio.html e relatorio.json")
     add_package_args(r, DEFAULT_CONFIG)
+    r = rsub.add_parser("verify", help="confere offline um pacote contra os arquivos de evidência")
+    r.add_argument("package", help="pasta do pacote (com relatorio.json)")
+    r.add_argument("--repo-root", default=".", help="raiz a que os caminhos do pacote se referem")
+    r.add_argument("--json", action="store_true", help="saída em JSON")
+    r.add_argument("--audit-hmac-key-env", default=None, help="variável de ambiente com a chave HMAC da assinatura de auditoria")
     p.set_defaults(func=cmd_report)
 
     p = sub.add_parser("check", help="gera o pacote a partir dos resultados gravados e, opcional, publica")
