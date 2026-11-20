@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from agent_ops_kit import audit, audit_sign
+from agent_ops_kit import audit, audit_sign, provenance
 from agent_ops_kit.cli import ALPHA
 from agent_ops_kit.config import load_config
 from agent_ops_kit.eval import runner
@@ -46,6 +46,16 @@ GREEN_TEXT = (
 )
 
 _MANIFEST_KEYS = ("prompt_sha256", "dataset_sha256", "model", "seed", "n_cases", "date")
+# Proveniência gravada na execução (ausente nos manifestos e sidecars antigos: vira null).
+_EXEC_KEYS = (
+    "answers_sha256", "kit_version", "git_commit", "git_dirty", "python", "platform",
+    "ollama_version", "model_digest", "command",
+)
+_RT_META_KEYS = (
+    "model", "seed", "guardrails_enabled", "attacks_sha256", "poisoned_sha256", "results_sha256",
+    *_EXEC_KEYS[1:],
+)
+_FP_META_KEYS = ("model", "seed", "guardrails", "dataset_sha256", "benign_sha256", *_EXEC_KEYS[1:])
 
 
 def _need(path: Path, label: str) -> None:
@@ -55,6 +65,90 @@ def _need(path: Path, label: str) -> None:
 
 def _sha(path: Path) -> str:
     return runner.sha256_text(path.read_text(encoding="utf-8"))
+
+
+def _add_input(inputs: dict[str, str], path: Path) -> None:
+    """Registra o sha256 do arquivo (caminho relativo à raiz) se ele existir."""
+    if not path.is_file():
+        return
+    key, sha = provenance.rel_path(path), provenance.sha256_file(path)
+    if inputs.get(key, sha) != sha:  # mesmo nome em pastas diferentes fora da raiz
+        key = f"{path.resolve().parent.name}/{key}"
+    inputs[key] = sha
+
+
+def _load_meta(path: Path, label: str) -> dict | None:
+    """Lê o sidecar de proveniência; ausente (execução antiga) devolve None."""
+    if not path.is_file():
+        return None
+    try:
+        meta = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ReportError(f"sidecar de proveniência inválido ({label}): {path}") from exc
+    if not isinstance(meta, dict):
+        raise ReportError(f"sidecar de proveniência inválido ({label}): {path}")
+    return meta
+
+
+def _check_sha(recorded: object, path: Path, what: str) -> None:
+    """Se há hash registrado, o arquivo atual tem de bater; sem hash registrado, não confere."""
+    if not isinstance(recorded, str):
+        return
+    if not path.is_file():
+        raise ReportError(f"{what} registrado na proveniência não encontrado: {path}")
+    if provenance.sha256_file(path) != recorded:
+        raise ReportError(
+            f"{what} mudou desde a execução (sha256 diverge do registrado): {path}. "
+            "Regrave os resultados"
+        )
+
+
+def _check_dir(meta: dict, dir_key: str, sha_key: str, pattern: str, what: str) -> None:
+    """Se o sidecar registra pasta e hash, a pasta atual tem de existir e bater."""
+    path, recorded = meta.get(dir_key), meta.get(sha_key)
+    if not (isinstance(path, str) and isinstance(recorded, str)):
+        return
+    if not Path(path).is_dir():
+        raise ReportError(f"{what} registrado na proveniência não encontrado: {path}")
+    if provenance.sha256_dir(path, pattern) != recorded:
+        raise ReportError(
+            f"{what} mudou desde a execução (sha256 diverge do registrado): {path}. "
+            "Regrave os resultados"
+        )
+
+
+def _redteam_meta(result_path: Path, role: str) -> dict | None:
+    meta = _load_meta(Path(f"{result_path}.meta.json"), f"red team, {role}")
+    if meta is None:
+        return None
+    _check_sha(meta.get("results_sha256"), result_path, f"resultado do red team ({role})")
+    _check_dir(meta, "attacks_dir", "attacks_sha256", "*.jsonl", f"suíte de ataques ({role})")
+    _check_dir(meta, "poisoned_dir", "poisoned_sha256", "*.md", f"corpus envenenado ({role})")
+    return meta
+
+
+def _fp_meta(fp_dir: Path) -> dict | None:
+    meta = _load_meta(fp_dir / "fp.meta.json", "falsos positivos")
+    if meta is None:
+        return None
+    results = meta.get("results_sha256")
+    for name in ("fp_dataset.jsonl", "fp_benign.jsonl"):
+        recorded = results.get(name) if isinstance(results, dict) else None
+        _check_sha(recorded, fp_dir / name, f"resultado de falsos positivos ({name})")
+    for key, label in (("dataset", "dataset dos falsos positivos"), ("benign", "conjunto benigno")):
+        path, sha = meta.get(f"{key}_path"), meta.get(f"{key}_sha256")
+        if isinstance(path, str):
+            _check_sha(sha, Path(path), label)
+    return meta
+
+
+def _pick(meta: dict | None, keys: tuple[str, ...]) -> dict | None:
+    if meta is None:
+        return None
+    out = {k: meta.get(k) for k in keys}
+    if isinstance(out.get("command"), str):  # sidecars antigos podem ter caminhos pessoais
+        out["command"] = provenance.sanitize_command(out["command"])
+    return out
 
 
 def _runs(case_ids: list[str]) -> int:
@@ -79,7 +173,7 @@ def _fp_row(recs: list[dict]) -> dict:
     }
 
 
-def _eval_section(a: dict, hashes: dict) -> tuple[dict, dict]:
+def _eval_section(a: dict, hashes: dict, prov: dict) -> tuple[dict, dict]:
     dataset_path, answers_dir = Path(a["dataset"]), Path(a["answers_dir"])
     variants = [a["baseline"], a["candidate"]]
     _need(Path(a["config"]), "config")
@@ -103,6 +197,17 @@ def _eval_section(a: dict, hashes: dict) -> tuple[dict, dict]:
         raise ReportError(f"não foi possível comparar as variantes do eval: {exc}") from exc
     manifest_raw = json.loads((answers_dir / runner.MANIFEST_NAME).read_text(encoding="utf-8"))
     manifest = {v: {k: manifest_raw[v].get(k) for k in _MANIFEST_KEYS} for v in variants}
+    prov["executions"]["eval"] = {v: _pick(manifest_raw[v], _EXEC_KEYS) for v in variants}
+    prov["seeds"]["eval_ab_bootstrap"] = a["seed"]
+    prov["seeds"]["eval_generation"] = {v: manifest[v]["seed"] for v in variants}
+    inputs = prov["inputs"]
+    for path in (
+        Path(a["config"]), dataset_path, answers_dir / runner.MANIFEST_NAME,
+        *[Path(a["prompts_dir"]) / f"{v}.md" for v in variants],
+        *[answers_dir / f"{v}.jsonl" for v in variants],
+        *sorted((Path(a["config"]).parent / "corpus").glob("*.md")),
+    ):
+        _add_input(inputs, path)
 
     hashes["config"] = _sha(Path(a["config"]))
     hashes["eval_dataset"] = _sha(dataset_path)
@@ -131,9 +236,12 @@ def _eval_section(a: dict, hashes: dict) -> tuple[dict, dict]:
     return section, agent
 
 
-def _redteam_section(a: dict, hashes: dict) -> dict:
+def _redteam_section(a: dict, hashes: dict, prov: dict) -> dict:
     fp_dir = Path(a["fp_dir"])
     base_p, guard_p = Path(a["redteam_baseline"]), Path(a["redteam_guardrails"])
+    # Os sidecars são conferidos antes de ler os resultados: adulteração falha com mensagem clara.
+    metas = {"baseline": _redteam_meta(base_p, "baseline"), "guardrails": _redteam_meta(guard_p, "guardrails")}
+    fp_meta = _fp_meta(fp_dir)
     base, guard = _load_attacks(base_p), _load_attacks(guard_p)
     ds = _load_jsonl(fp_dir / "fp_dataset.jsonl")
     bn = _load_jsonl(fp_dir / "fp_benign.jsonl")
@@ -141,6 +249,25 @@ def _redteam_section(a: dict, hashes: dict) -> dict:
     hashes["redteam_guardrails"] = _sha(guard_p)
     hashes["fp_dataset"] = _sha(fp_dir / "fp_dataset.jsonl")
     hashes["fp_benign"] = _sha(fp_dir / "fp_benign.jsonl")
+    prov["executions"]["redteam"] = {
+        **{k: _pick(m, _RT_META_KEYS) for k, m in metas.items()},
+        "false_positives": _pick(fp_meta, _FP_META_KEYS),
+    }
+    prov["seeds"]["redteam"] = {k: (m or {}).get("seed") for k, m in metas.items()}
+    prov["seeds"]["false_positives"] = (fp_meta or {}).get("seed")
+    inputs = prov["inputs"]
+    for path in (base_p, Path(f"{base_p}.meta.json"), guard_p, Path(f"{guard_p}.meta.json")):
+        _add_input(inputs, path)
+    for name in ("fp_dataset.jsonl", "fp_benign.jsonl", "fp.meta.json"):
+        _add_input(inputs, fp_dir / name)
+    for meta in metas.values():
+        for key, pattern in (("attacks_dir", "*.jsonl"), ("poisoned_dir", "*.md")):
+            if meta and isinstance(meta.get(key), str):
+                for path in sorted(Path(meta[key]).glob(pattern)):
+                    _add_input(inputs, path)
+    for key in ("dataset_path", "benign_path"):
+        if fp_meta and isinstance(fp_meta.get(key), str):
+            _add_input(inputs, Path(fp_meta[key]))
     asr = {
         name: {c: _asr_row(r) for c, r in asr_by_category(recs).items() if r["n"]}
         for name, recs in (("baseline", base), ("guardrails", guard))
@@ -414,6 +541,27 @@ def load_previous(path: str | Path) -> dict:
     return data
 
 
+def _first(prov: dict, key: str) -> str | None:
+    """Primeiro valor registrado de `key` nas execuções (eval, depois red team)."""
+    ex = prov["executions"]
+    runs = [*reversed(list(ex["eval"].values())), ex["redteam"]["guardrails"], ex["redteam"]["baseline"]]
+    return next((r[key] for r in runs if r and r.get(key)), None)
+
+
+def _provenance_block(agent: dict, prov: dict, command: str | None, repo_dir: str | None) -> dict:
+    """Bloco `provenance`: ambiente do build + o que as execuções gravaram (null = não registrado)."""
+    return {
+        **provenance.environment(repo_dir),
+        "command": None if command is None else provenance.sanitize_command(command),
+        "model": agent["model"],
+        "model_digest": _first(prov, "model_digest"),
+        "ollama_version": _first(prov, "ollama_version"),
+        "seeds": prov["seeds"],
+        "executions": prov["executions"],
+        "inputs": prov["inputs"],
+    }
+
+
 def build_data(
     *,
     config: str,
@@ -432,6 +580,8 @@ def build_data(
     audit_hmac_key: str | bytes | None = None,
     previous: str | None = None,
     now: datetime | None = None,
+    command: str | None = None,
+    repo_dir: str | None = None,
 ) -> dict:
     """Lê os resultados e devolve o dict do relatorio.json. Levanta ReportError com mensagem curta."""
     if baseline == candidate:
@@ -447,9 +597,10 @@ def build_data(
     prev = load_previous(previous) if previous else None
 
     hashes: dict[str, str] = {}
+    prov: dict = {"seeds": {}, "executions": {}, "inputs": {}}
     try:
-        ev, agent = _eval_section(args, hashes)
-        rt = _redteam_section(args, hashes)
+        ev, agent = _eval_section(args, hashes, prov)
+        rt = _redteam_section(args, hashes, prov)
     except (ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
         raise ReportError(f"resultado ou configuração inválidos: {exc}") from exc
     au = _audit_section(
@@ -468,6 +619,7 @@ def build_data(
         "redteam": rt,
         "audit": au,
         "hashes": hashes,
+        "provenance": _provenance_block(agent, prov, command, repo_dir),
         "previous": None,
     }
     data["limitations"] = limitations(data)

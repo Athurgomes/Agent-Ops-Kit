@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
+import sys
 from pathlib import Path
 
+from agent_ops_kit import provenance
 from agent_ops_kit.config import AgentConfig, load_config
 from agent_ops_kit.eval.ab import ABResult, format_ab_markdown, paired_ab
 from agent_ops_kit.eval.checks import run_checks
@@ -85,6 +88,39 @@ def run_benign(
         if out:
             out.close()
     return records
+
+
+FP_META_NAME = "fp.meta.json"
+
+
+def write_fp_meta(
+    out_dir: str | Path,
+    model: str,
+    seed: int,
+    guardrails: list[str],
+    dataset_path: str | Path,
+    benign_path: str | Path,
+    command: str,
+    extra: dict | None = None,
+) -> Path:
+    """Sidecar `<out_dir>/fp.meta.json`: proveniência da medição de falsos positivos."""
+    out_dir = Path(out_dir)
+    results = {n: provenance.sha256_file(out_dir / n) for n in ("fp_dataset.jsonl", "fp_benign.jsonl")}
+    payload = {
+        "model": model,
+        "seed": seed,
+        "guardrails": list(guardrails),
+        "command": provenance.sanitize_command(command),
+        "dataset_path": provenance.rel_path(dataset_path),
+        "dataset_sha256": provenance.sha256_file(dataset_path),
+        "benign_path": provenance.rel_path(benign_path),
+        "benign_sha256": provenance.sha256_file(benign_path),
+        "results_sha256": results,
+        **(extra or {}),
+    }
+    path = out_dir / FP_META_NAME
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def fp_rate(records: list[dict]) -> dict:
@@ -178,6 +214,13 @@ def main(argv: list[str] | None = None) -> int:
         f"Dataset de avaliação ({len(rec_ds)})": rec_ds,
         f"Benignas novas ({len(rec_bn)})": rec_bn,
     }
+    command = "python -m agent_ops_kit.redteam.false_positives " + shlex.join(
+        sys.argv[1:] if argv is None else argv
+    )
+    write_fp_meta(
+        out_dir, config.model, args.seed, names, args.dataset, args.benign, command,
+        extra=provenance.execution_info(config.model, command),
+    )
     ids = {c.id for c in dataset}
     base = [r for r in load_records(args.v1_answers) if r["case_id"] in ids]
     parts = [

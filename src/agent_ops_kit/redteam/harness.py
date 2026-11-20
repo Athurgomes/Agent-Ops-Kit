@@ -12,6 +12,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import shlex
+import sys
 import time
 from collections.abc import Callable
 from contextlib import ExitStack
@@ -19,6 +21,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from agent_ops_kit import provenance
 from agent_ops_kit.config import AgentConfig, load_config
 from agent_ops_kit.eval.runner import LLMFn
 from agent_ops_kit.guardrails import REFUSAL_MESSAGE, Guardrails
@@ -241,20 +244,29 @@ def run_attack(
     )
 
 
-def _write_blind_metadata(
+def _write_meta(
     out_path: str | Path,
     records: list[AttackRecord],
     blind_sha256: str | None,
     guardrails: list[str] | None,
+    model: str,
+    seed: int,
+    extra: dict | None,
 ) -> Path:
+    """Sidecar `<out>.meta.json`: proveniência da execução e campos da suíte cega (se houver)."""
     meta_path = Path(f"{out_path}.meta.json")
     payload = {
-        "blind_suite_used": True,
+        "blind_suite_used": blind_sha256 is not None or any(r.is_blind for r in records),
         "n_total_attacks": len(records),
         "n_base_attacks": sum(not r.is_blind for r in records),
         "n_blind_attacks": sum(r.is_blind for r in records),
         "blind_suite_sha256": blind_sha256,
         "guardrails": list(guardrails) if guardrails else [],
+        "guardrails_enabled": bool(guardrails),
+        "model": model,
+        "seed": seed,
+        **(extra or {}),
+        "results_sha256": provenance.sha256_file(out_path),
     }
     meta_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return meta_path
@@ -271,7 +283,10 @@ def run_suite(
     poisoned_dir: Path | None = None,
     blind_poisoned_dir: Path | None = None,
     blind_sha256: str | None = None,
+    meta: dict | None = None,
 ) -> list[AttackRecord]:
+    """Roda a suíte. Com `out_path`, grava o JSONL e o sidecar `<out_path>.meta.json`
+    (modelo, semente, guardrails, sha256 do resultado e os campos de `meta`)."""
     selected = cases[:limit] if limit is not None else cases
     records: list[AttackRecord] = []
     with ExitStack() as stack:
@@ -292,8 +307,8 @@ def run_suite(
             if out:
                 out.write(json.dumps(rec.model_dump(), ensure_ascii=False) + "\n")
                 out.flush()
-    if out_path and (blind_sha256 is not None or any(r.is_blind for r in records)):
-        _write_blind_metadata(out_path, records, blind_sha256, guardrails)
+    if out_path:
+        _write_meta(out_path, records, blind_sha256, guardrails, config.model, seed, meta)
     return records
 
 
@@ -423,6 +438,15 @@ def main(argv: list[str] | None = None) -> int:
     out = args.out or "redteam/results/baseline.jsonl"
     config_path, _, _, _ = _load_example()
     config = load_config(config_path)
+    command = "python -m agent_ops_kit.redteam.harness " + shlex.join(
+        sys.argv[1:] if argv is None else argv
+    )
+    meta = provenance.execution_info(config.model, command)
+    if not args.blind_only:
+        meta["attacks_dir"] = provenance.rel_path(args.attacks_dir)
+        meta["attacks_sha256"] = provenance.sha256_dir(args.attacks_dir)
+        meta["poisoned_dir"] = provenance.rel_path(resolved_base_poisoned)
+        meta["poisoned_sha256"] = provenance.sha256_dir(resolved_base_poisoned, "*.md")
     records = run_suite(
         cases,
         config,
@@ -433,6 +457,7 @@ def main(argv: list[str] | None = None) -> int:
         poisoned_dir=resolved_base_poisoned,
         blind_poisoned_dir=blind_poisoned,
         blind_sha256=blind_sha256,
+        meta=meta,
     )
     title = "ASR com guardrails" if names else "ASR sem guardrails"
     print(format_asr_markdown(asr_by_category(records), title))

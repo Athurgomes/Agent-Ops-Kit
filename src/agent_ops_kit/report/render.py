@@ -636,6 +636,85 @@ def _conclusion_blocks(d: dict) -> list[Block]:
     ]
 
 
+_NOT_RECORDED = "não registrado"
+
+
+def _val(v: object, none: str = _NOT_RECORDED) -> str:
+    return none if v is None else str(v)
+
+
+def _dirty_text(v: object) -> str:
+    return "não disponível" if v is None else "sim (mudanças locais)" if v else "não"
+
+
+def _seed_text(seeds: dict) -> str:
+    """Sementes como `chave=valor` (valores ausentes: não registrado)."""
+    parts: list[str] = []
+    for key, value in seeds.items():
+        if isinstance(value, dict):
+            parts += [f"{key}.{k}={_val(v)}" for k, v in value.items()]
+        else:
+            parts.append(f"{key}={_val(value)}")
+    return "; ".join(parts) or _NOT_RECORDED
+
+
+def _provenance_blocks(d: dict) -> list[Block]:
+    """A.7: de onde vieram os números (relatórios antigos, sem o bloco, mostram só um aviso)."""
+    pv = d.get("provenance")
+    blocks: list[Block] = [("h2", "A.7 Proveniência da execução")]
+    if not isinstance(pv, dict):
+        return [*blocks, ("p", "Proveniência não registrada neste relatório.")]
+    blocks += [
+        (
+            "p",
+            (
+                "Origem dos números: versão do kit, código, ambiente e modelo. Campos marcados "
+                "como não registrado vêm de execuções gravadas antes deste controle."
+            ),
+        ),
+        (
+            "table",
+            ["Item", "Valor"],
+            [
+                ["Versão do kit", _val(pv.get("kit_version"))],
+                ["Commit git", _val(pv.get("git_commit"), "não disponível")],
+                ["Árvore com mudanças locais", _dirty_text(pv.get("git_dirty"))],
+                ["Python", _val(pv.get("python"))],
+                ["Sistema operacional", _val(pv.get("platform"))],
+                ["Modelo", _val(pv.get("model"))],
+                ["Digest do modelo", _val(pv.get("model_digest"))],
+                ["Versão do Ollama", _val(pv.get("ollama_version"))],
+                ["Comando que gerou o pacote", _val(pv.get("command"))],
+                ["Sementes", _seed_text(pv.get("seeds") or {})],
+            ],
+        ),
+    ]
+    ex = pv.get("executions") or {}
+    runs = [(f"eval {v}", r) for v, r in (ex.get("eval") or {}).items()]
+    runs += [(f"red team {k}", r) for k, r in (ex.get("redteam") or {}).items()]
+    rows = []
+    for name, r in runs:
+        r = r or {}
+        commit = r.get("git_commit")
+        rows.append([
+            name, _val(r.get("seed")), _val(r.get("model_digest")), _val(r.get("ollama_version")),
+            f"{commit} ({_dirty_text(r.get('git_dirty'))})" if commit else _NOT_RECORDED,
+            _val(r.get("command")),
+        ])
+    if rows:
+        blocks += [
+            ("h3", "A.7.1 Execuções que geraram os resultados"),
+            ("table", ["Execução", "Semente", "Digest do modelo", "Ollama", "Commit", "Comando"], rows),
+        ]
+    inputs = pv.get("inputs") or {}
+    if inputs:
+        blocks += [
+            ("h3", "A.7.2 Arquivos de entrada (SHA-256)"),
+            ("table", ["Arquivo", "SHA-256"], [[k, v] for k, v in inputs.items()]),
+        ]
+    return blocks
+
+
 def _appendix_blocks(d: dict) -> list[Block]:
     ev, rt, au = d["eval"], d["redteam"], d["audit"]
     fp = rt["false_positives"]
@@ -802,7 +881,7 @@ def _appendix_blocks(d: dict) -> list[Block]:
             rows.append(["Assinatura da âncora", "não informada (sem assinatura)"])
         blocks.append(("table", ["Item", "Valor"], rows))
         blocks.append(("p", _audit_signature_limitation(sig if isinstance(sig, dict) else None)))
-    return blocks
+    return [*blocks, *_provenance_blocks(d)]
 
 
 def build_blocks(d: dict) -> list[Block]:

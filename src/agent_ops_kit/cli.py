@@ -193,6 +193,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
 def _run_eval(args: argparse.Namespace) -> int:
     import yaml
 
+    from agent_ops_kit import provenance
     from agent_ops_kit.config import load_config
     from agent_ops_kit.eval import judge as judge_mod
     from agent_ops_kit.eval import runner
@@ -254,6 +255,7 @@ def _run_eval(args: argparse.Namespace) -> int:
             raise CliError(str(exc)) from exc
 
     records: dict[str, list[dict]] = {}
+    exec_info: dict | None = None  # capturado uma vez, só quando o modelo roda (sem --reuse)
     for v in variants:
         path = answers_dir / f"{v}.jsonl"
         if args.reuse:
@@ -269,8 +271,11 @@ def _run_eval(args: argparse.Namespace) -> int:
                 prompts_dir=args.prompts_dir,
                 runs=args.runs,
             )
+            if exec_info is None:
+                exec_info = provenance.execution_info(config.model, _reproducible_command(args))
             entry = runner.manifest_entry(
-                v, config, args.dataset, len(records[v]), args.seed, args.prompts_dir
+                v, config, args.dataset, len(records[v]), args.seed, args.prompts_dir,
+                answers_path=path, extra=exec_info,
             )
             runner.write_manifest_entry(answers_dir, v, entry)
 
@@ -609,6 +614,7 @@ def _write_package(args: argparse.Namespace) -> dict:
         audit_public_key=args.audit_public_key,
         audit_hmac_key=hmac_key,
         previous=args.previous,
+        command="aok " + shlex.join(getattr(args, "argv", None) or sys.argv[1:]),
     )
     blocks = render.build_blocks(data)
     out = Path(args.out)
@@ -874,6 +880,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    args.argv = list(sys.argv[1:] if argv is None else argv)  # comando registrado na proveniência
     return args.func(args)
 
 

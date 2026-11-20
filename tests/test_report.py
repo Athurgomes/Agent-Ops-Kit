@@ -252,7 +252,7 @@ def test_cli_writes_package_without_leaks(tmp_path, rt_dir, capsys):
     }
     assert set(data) == {
         "schema_version", "generated_at", "agent", "semaphore", "eval", "redteam", "audit",
-        "hashes", "previous", "limitations",
+        "hashes", "provenance", "previous", "limitations",
     }
     for name in files:
         text = (out / name).read_text(encoding="utf-8")
@@ -291,6 +291,7 @@ def test_cli_same_input_same_content(tmp_path, rt_dir):
     a = json.loads((tmp_path / "a/relatorio.json").read_text(encoding="utf-8"))
     b = json.loads((tmp_path / "b/relatorio.json").read_text(encoding="utf-8"))
     a.pop("generated_at"), b.pop("generated_at")
+    a["provenance"].pop("command"), b["provenance"].pop("command")  # traz o --out de cada execução
     assert a == b
 
 

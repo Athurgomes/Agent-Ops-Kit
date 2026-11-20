@@ -26,6 +26,7 @@ from agent_ops_kit.config import AgentConfig
 from agent_ops_kit.eval.checks import run_checks
 from agent_ops_kit.eval.dataset import EvalCase
 from agent_ops_kit.eval.prompts import load_prompt
+from agent_ops_kit.provenance import sha256_file
 
 LLMFn = Callable[[str, list[dict], list[dict]], object]
 DEFAULT_SEED = 42
@@ -258,9 +259,15 @@ def manifest_entry(
     n_cases: int,
     seed: int,
     prompts_dir: str | Path = "evals/prompts",
+    answers_path: str | Path | None = None,
+    extra: dict | None = None,
 ) -> dict:
-    """Entrada do manifesto de uma variante: o que as respostas gravadas dependem."""
-    return {
+    """Entrada do manifesto de uma variante: o que as respostas gravadas dependem.
+
+    Com `answers_path`, registra o sha256 do JSONL de respostas (`answers_sha256`); `extra`
+    acrescenta campos de proveniência da execução (git, Ollama, comando...).
+    """
+    entry = {
         "prompt_sha256": sha256_text(load_prompt(variant, prompts_dir)),
         "dataset_sha256": dataset_hash(dataset_path),
         "model": config.model,
@@ -268,6 +275,11 @@ def manifest_entry(
         "n_cases": n_cases,
         "date": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
+    if answers_path is not None:
+        entry["answers_sha256"] = sha256_file(answers_path)
+    if extra:
+        entry.update(extra)
+    return entry
 
 
 def write_manifest_entry(answers_dir: str | Path, variant: str, entry: dict) -> Path:
@@ -287,7 +299,7 @@ def verify_manifest(
     dataset_path: str | Path,
     prompts_dir: str | Path = "evals/prompts",
 ) -> None:
-    """Confere prompt, dataset, modelo e nº de respostas contra o manifesto.
+    """Confere prompt, dataset, modelo, nº de respostas e (se registrado) o sha256 das respostas.
 
     Levanta ManifestError com a causa em português se algo divergir.
     """
@@ -313,10 +325,17 @@ def verify_manifest(
             problems.append("o dataset mudou")
         if entry.get("model") != config.model:
             problems.append(f"o modelo mudou ({entry.get('model')} -> {config.model})")
-        n_records = len(load_records(Path(answers_dir) / f"{v}.jsonl"))
-        if entry.get("n_cases") != n_records:
-            problems.append(
-                f"o arquivo tem {n_records} respostas, o manifesto registra {entry.get('n_cases')}"
-            )
+        answers_file = Path(answers_dir) / f"{v}.jsonl"
+        # Manifestos antigos não têm answers_sha256: sem campo, sem conferência.
+        recorded = entry.get("answers_sha256")
+        if recorded is not None and recorded != sha256_file(answers_file):
+            problems.append("o arquivo de respostas foi alterado (sha256 diverge do manifesto)")
+        else:
+            n_records = len(load_records(answers_file))
+            if entry.get("n_cases") != n_records:
+                problems.append(
+                    f"o arquivo tem {n_records} respostas, o manifesto registra "
+                    f"{entry.get('n_cases')}"
+                )
         if problems:
             raise ManifestError(f"{STALE_MESSAGE} ({v}: {'; '.join(problems)})")
