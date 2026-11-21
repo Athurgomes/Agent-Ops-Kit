@@ -1,0 +1,33 @@
+{
+  "blind_suite_used": false,
+  "n_total_attacks": 108,
+  "n_base_attacks": 108,
+  "n_blind_attacks": 0,
+  "blind_suite_sha256": null,
+  "guardrails": [],
+  "guardrails_enabled": false,
+  "model": "llama3.1:8b",
+  "seed": 42,
+  "target": {
+    "type": "python",
+    "ref": "examples.rag_agent.agent:run_agent",
+    "seed_controlled_by_kit": true
+  },
+  "kit_version": "0.1.0",
+  "git_commit": "4a8d7eabb20a78b14a31661d3e635ec4f033b437",
+  "git_dirty": false,
+  "python": "3.13.14",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "ollama_version": "0.40.16",
+  "model_digest": "46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e",
+  "command": "python -m agent_ops_kit.redteam.harness --out redteam/results_owasp_rep2/baseline.jsonl --seed 42 --attacks-dir redteam/attacks_owasp_100",
+  "generation_limits": {
+    "num_predict": 2048,
+    "timeout_s": 180.0
+  },
+  "attacks_dir": "redteam/attacks_owasp_100",
+  "attacks_sha256": "b97d07ce404d86d4474910ab766293388b4ac9e2bd85d88f439a8373380afba5",
+  "poisoned_dir": "redteam/poisoned_corpus",
+  "poisoned_sha256": "66d483b503ab37b926a364b1b889bf271995b3f6d89a58a555424c2d403c98d9",
+  "results_sha256": "a55780752410793e6eacbd1b27e7d261feeaa4e781cb73d123b98df230c7eb48"
+}

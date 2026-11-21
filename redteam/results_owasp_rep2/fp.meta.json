@@ -1,0 +1,36 @@
+{
+  "model": "llama3.1:8b",
+  "seed": 42,
+  "guardrails": [
+    "input_filter",
+    "untrusted_content",
+    "tool_allowlist",
+    "output_filter",
+    "canary"
+  ],
+  "command": "python -m agent_ops_kit.redteam.false_positives --out-dir redteam/results_owasp_rep2 --guardrails all --benign redteam/benign_expanded/benign_50.jsonl --seed 42",
+  "dataset_path": "evals/dataset.jsonl",
+  "dataset_sha256": "26677672e98532fa9317768a021ccbb337d42441511a4bfdf4e68624d88892e5",
+  "benign_path": "redteam/benign_expanded/benign_50.jsonl",
+  "benign_sha256": "c095eef1d1d4448e3678a2ce84815f7abe0723107bce034545f7782d5efdecd6",
+  "results_sha256": {
+    "fp_dataset.jsonl": "72ae6c9b8233dccbee0fdec4a38dc619c89164f0e7d32f1d9ead932d6dd33875",
+    "fp_benign.jsonl": "c1cee579c090200138ed6e7da9f54ef5d3c006c896d5991b08def0feb2b2d0d9"
+  },
+  "kit_version": "0.1.0",
+  "git_commit": "4a8d7eabb20a78b14a31661d3e635ec4f033b437",
+  "git_dirty": false,
+  "python": "3.13.14",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "ollama_version": "0.40.16",
+  "model_digest": "46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e",
+  "generation_limits": {
+    "num_predict": 2048,
+    "timeout_s": 180.0
+  },
+  "target": {
+    "type": "python",
+    "ref": "examples.rag_agent.agent:run_agent",
+    "seed_controlled_by_kit": true
+  }
+}
