@@ -16,7 +16,7 @@ flowchart LR
     RT[aok redteam<br/>ASR + falsos positivos] --> A
 ```
 
-Detalhes, tabela de módulos e decisões: [docs/arquitetura.md](docs/arquitetura.md) e [docs/decisoes.md](docs/decisoes.md).
+Detalhes, tabela de módulos e decisões: [docs/arquitetura.md](docs/arquitetura.md) e [docs/decisoes.md](docs/decisoes.md). Inventário completo do que está implementado (comandos, relatório, plataforma, portal, testes): [docs/funcionalidades.md](docs/funcionalidades.md).
 
 ![Demonstração da CLI com respostas gravadas (semente 42)](docs/demo-cli.gif)
 
@@ -217,7 +217,7 @@ Para desligar o tracing: `AOK_TRACING=off`.
 
 ## Estado e testes
 
-Conferido em 19/11/2026 sobre o código do commit `8a2e3be`: `python -m pytest -q` deu `719 passed, 5 skipped` (135.35s); `python -m ruff check .` passou (`All checks passed!`). Os 5 skips são ambientais no Windows: verificação de permissões POSIX `0o600` na assinatura de auditoria, um teste do demo que precisa criar link simbólico sem privilégio neste sistema e 3 testes que só rodam com `AOK_TEST_DATABASE_URL` apontando para um Postgres. Os testes locais não usam Ollama nem Docker. Em `postgres:16` efêmero via `AOK_TEST_DATABASE_URL`, a suíte completa de plataforma passou em 19/11/2026 (`286 passed, 0 skipped` em 281.87s, commit `fff746f`; ver [platform/README.md](platform/README.md)).
+Conferido em 21/11/2026 sobre o código do commit `f31c42f` (Windows, árvore sem mudanças nos arquivos de código): `python -m pytest -q` deu `1059 passed, 5 skipped` (193.30s numa execução e 148.14s em outra, mesmo resultado); `python -m ruff check .` passou (`All checks passed!`). Os 5 skips são ambientais: verificação de permissões POSIX `0o600` na assinatura de auditoria, um teste do demo que precisa criar link simbólico sem privilégio neste sistema e 3 testes que só rodam com `AOK_TEST_DATABASE_URL` apontando para um Postgres. Os testes locais não usam Ollama nem Docker. Em `postgres:16` efêmero via `AOK_TEST_DATABASE_URL`, a suíte completa de plataforma passou em 19/11/2026 (`286 passed, 0 skipped` em 281.87s, commit `fff746f`; ver [platform/README.md](platform/README.md)). Essa contagem é anterior às mudanças A1 a A8; a assinatura (ADR-029) foi validada depois em Postgres 16 descartável, mas a contagem da suíte de plataforma em Postgres sobre o commit `f31c42f` não foi reconfirmada.
 
 Workflows (`.github/workflows/`): `ci.yml` (jobs `test`, `portal` e `postgres`) e `eval.yml` (gate de prompts com respostas gravadas). Além do run #20 (`88dc3fc`, em [evidencias/03-ci-github/](evidencias/03-ci-github/)), o run #45, do commit `fff746f` (conferido em 19/11/2026), passou nos três jobs (`test`, `portal` e `postgres`) em `ubuntu-latest`, onde os testes POSIX e de link simbólico rodam sem skip.
 
@@ -332,13 +332,20 @@ Limitações:
 - O CI valida respostas gravadas e o manifesto; não reexecuta o modelo (ADR-001).
 - O gate do eval foi exercitado em 2 PRs de teste, fechados sem mesclar ([#1](https://github.com/Athurgomes/Agent-Ops-Kit/pull/1) e [#2](https://github.com/Athurgomes/Agent-Ops-Kit/pull/2)); resultados em [docs/resultados.md](docs/resultados.md). Ele usa respostas gravadas, o prompt piorado foi degradado de propósito e foi uma execução por PR: é um teste de mecanismo, não uma medida de qualidade.
 - O agente de referência usa documentos fictícios; nada aqui foi validado com dados reais.
+- O relatório é autodeclarado. `aok report verify` prova que o pacote é coerente com os arquivos de evidência recebidos e a assinatura prova quem publicou e que os bytes não mudaram; nenhum dos dois prova que o eval e o red team rodaram de fato (ADR-026 e ADR-029). A plataforma não reexecuta nem roda o `verify`.
+- Auditar agente de terceiro: só Python, com semente e modelo fora do controle do kit; sem `aok reproduce`, ninguém reexecuta a medição por este kit. O mapa OWASP é julgamento do kit, não certificação. Severidade dos achados e limiares de aviso (n abaixo de 30, IC acima de 0,20) são provisórios.
 
 ## Próximos passos
 
 Nada disto existe ainda:
 
+- `aok reproduce`: reexecutar a medição e registrar a reexecução no log assinado.
+- Adaptador de agente por HTTP (`target: type: http`); hoje só existe o adaptador Python (ADR-028).
+- Mapa de cobertura NIST AI RMF e ISO/IEC 42001 (hoje só OWASP LLM Top 10; ADR-027).
+- A plataforma reconferir o `report verify` (hoje ela só confere a assinatura Ed25519 contra a chave cadastrada do agente; ADR-029).
+- Tela de gestão de chaves públicas no portal (hoje só pela API admin; o portal mostra o selo "Assinado" ou "Não assinado").
 - Eventos do agente em Kafka, com consumidores de auditoria e métricas.
-- Adaptador para um segundo framework de agentes.
+- Adaptador para um framework de agentes (além do agente Python acima).
 - Exportar métricas para Prometheus e Grafana.
 - Execução em AWS/Bedrock.
 - Publicar o pacote (hoje só instala a partir do repositório).
@@ -353,7 +360,7 @@ examples/rag_agent/  agente de referência e corpus fictício
 evals/               dataset padrão (50 casos), dataset de auditoria (200 casos), prompts v1/v2, respostas gravadas, manifesto, relatórios
 redteam/             ataques (40 originais + 108 OWASP expandidos), benignas (12 + 54), resultados gravados
 platform/            plataforma: aok_platform/ (API FastAPI), portal/ (React), Dockerfile, docker-compose.yml
-docs/                arquitetura, decisões (ADRs), resultados, demo-cli.gif
+docs/                arquitetura, funcionalidades, decisões (ADRs), resultados, demo-cli.gif
 scripts/demo.sh      demo reproduzível do kit (respostas gravadas)
 scripts/demo_plataforma.py   sobe a plataforma de demonstração com um comando
 evidencias/          capturas de tela reais (terminal, Jaeger, GitHub, portal), com índice
