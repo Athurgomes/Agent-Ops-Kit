@@ -179,7 +179,7 @@ ollama pull nomic-embed-text
 python -m examples.rag_agent "Quantos dias de férias a Lumina concede por ano?"
 ```
 
-Na primeira execução o corpus fictício é indexado em `chroma/`. Só uma pergunta foi executada para confirmar este comando; os demais comandos que usam o modelo (`aok eval` sem `--reuse`, `--judge`, `aok redteam run`) estão em [docs/resultados.md](docs/resultados.md) e não foram reexecutados ao escrever este README.
+Na primeira execução o corpus fictício é indexado em `chroma/`. Só uma pergunta foi executada para confirmar este comando; os demais comandos que usam o modelo (`aok eval` sem `--reuse`, `--judge`, `aok redteam run`) estão em [docs/resultados.md](docs/resultados.md). Foram reexecutados em 21/11/2026 (seção E): o eval de 50 casos reproduziu os números exatamente; a auditoria de 200 casos e o red team OWASP reproduziram o sentido dos resultados, mas não todos os valores (v1 `0.7544` vs `0.7750` gravado; ASR `16/108` e `3/108` vs `22/108` e `5/108`, por mudança posterior no tratamento de gerações truncadas).
 
 Para medir variância e consistência entre múltiplas execuções por caso (ex.: 3 execuções usando sementes `seed`, `seed+1`, `seed+2`; respostas gravadas em `evals/answers_multirun/` e relatório em `evals/results/v1_vs_v2_multirun.md`, resumidos em [docs/resultados.md](docs/resultados.md)):
 
@@ -256,7 +256,7 @@ Ressalvas essenciais:
 
 Uma das 12 perguntas legítimas novas foi bloqueada (estágio output, motivo canary_leak). O conjunto benigno foi escrito depois de dois falsos positivos de teste já serem conhecidos.
 
-Medições adicionais de 20/11/2026 (suíte ampliada de 108 ataques OWASP LLM Top 10 e 54 benignas, `llama3.1:8b`, semente 42, fontes e ressalvas na seção B.1 em [docs/resultados.md](docs/resultados.md)):
+Medições adicionais gravadas em 19-20/11/2026, antes do commit `94bec65` (suíte ampliada de 108 ataques OWASP LLM Top 10 e 54 benignas, `llama3.1:8b`, semente 42, fontes e ressalvas na seção B.1 em [docs/resultados.md](docs/resultados.md); a reexecução de 21/11 deu `16/108` e `3/108`, ver seção E):
 
 - **ASR (`redteam/attacks_owasp_100/`, 9 categorias)**: sem guardrails `20.4%` (22/108, IC 95% `[13.9; 28.9]`) vs com `--guardrails all` `4.6%` (5/108, IC 95% `[2.0; 10.4]`); 1 erro do agente na baseline (owasp-107, HTTP 500 do Ollama).
 - **Falsos positivos**: `0/54` nas benignas novas (IC 95% `[0.0; 6.6]`) e `0/50` no dataset de avaliação (IC 95% `[0.0; 7.1]`).
@@ -286,10 +286,10 @@ Nota do juiz (1 a 5):
 
 Ressalvas: pelas checagens, a diferença não é distinguível de zero a 5%. O juiz é o mesmo modelo de 8B que gera as respostas (viés de autopreferência), as notas são ordinais e a rubrica não foi calibrada contra humanos; ele complementa as checagens, não as substitui. Detalhes (taxa por checagem, execução com guardrails) em [docs/resultados.md](docs/resultados.md).
 
-Medições adicionais de 19/11/2026 (checagens determinísticas sem `--judge`, modelo `llama3.1:8b`, `temperature=0`, fontes em [docs/resultados.md](docs/resultados.md)):
+Medições adicionais gravadas em 19/11/2026, antes do commit `94bec65` (checagens determinísticas sem `--judge`, modelo `llama3.1:8b`, `temperature=0`, fontes em [docs/resultados.md](docs/resultados.md)):
 
 - **Multi-execução (`evals/dataset.jsonl`, 50 casos × 3 execuções, sementes 42, 43 e 44, `evals/results/v1_vs_v2_multirun.md`)**: v1 `0.7067` (`run_stdev` `0.0000`, consistência de score `100.0%` e de resposta `98.0%`) vs v2 `0.6133` (`run_stdev` `0.0000`, consistência `100.0%` / `100.0%`), diferença `-0.0933`, IC 95% `[-0.1933, +0.0067]`, `p = 0.0929`.
-- **Auditoria ampliada (`evals/dataset_audit_200.jsonl`, 200 casos × 1 execução, semente 42, `evals/results/audit_200_v1_vs_v2.md`)**: v1 `0.7750` vs v2 `0.6217`, diferença `-0.1533`, IC 95% `[-0.2100, -0.0950]`, `p = 0.0001` (v2 melhora formato `99.0%` vs `86.5%`, mas piora citação `44.5%` vs `82.5%` e termos esperados `35.8%` vs `58.8%`).
+- **Auditoria ampliada (`evals/dataset_audit_200.jsonl`, 200 casos × 1 execução, semente 42, `evals/results/audit_200_v1_vs_v2.md`)**: v1 `0.7750` vs v2 `0.6217`, diferença `-0.1533`, IC 95% `[-0.2100, -0.0950]`, `p = 0.0001` (v2 melhora formato `99.0%` vs `86.5%`, mas piora citação `44.5%` vs `82.5%` e termos esperados `35.8%` vs `58.8%`); a reexecução de 21/11 com 3 execuções deu v1 `0.7544`, v2 `0.6206`, diferença `-0.1339`, ver seção E).
 
 ## Auditar seu próprio agente
 
@@ -327,7 +327,7 @@ Limitações:
 - Modelo local pequeno (llama3.1:8b): tudo foi medido com ele. O ASR não generaliza para outros modelos, prompts ou dados, e o modelo às vezes responde "não encontrei" sem consultar os documentos.
 - Dataset de 50 casos e 40 ataques: intervalos de confiança largos, uma execução por configuração.
 - Os guardrails combinam heurísticas (padrões de texto, normalização anti-homoglyphs e anti-token-splitting, decodificação segura de Base64/Hex e janela multi-turn), allowlist, canary e classificador semântico local TF-IDF opcional, mas ainda podem ser contornados por paráfrases inéditas, outros idiomas ou ofuscações em múltiplas camadas. Não são proteção garantida.
-- A suíte padrão versionada de 40 ataques e a suíte expandida (`redteam/attacks_owasp_100/`, 108 ataques) não são reservadas nem cegas; a avaliação cega exige fornecer um diretório externo fora do controle de versão via `--blind-attacks-dir` ou `AOK_BLIND_ATTACKS_DIR`. As medições com modelo local sobre a suíte expandida e as 54 benignas de `redteam/benign_expanded/benign_50.jsonl` foram feitas entre 19 e 20/11/2026, com uma execução por configuração (seção B.1 em [docs/resultados.md](docs/resultados.md)).
+- A suíte padrão versionada de 40 ataques e a suíte expandida (`redteam/attacks_owasp_100/`, 108 ataques) não são reservadas nem cegas; a avaliação cega exige fornecer um diretório externo fora do controle de versão via `--blind-attacks-dir` ou `AOK_BLIND_ATTACKS_DIR`. As medições com modelo local sobre a suíte expandida e as 54 benignas de `redteam/benign_expanded/benign_50.jsonl` foram feitas entre 19 e 20/11/2026, com uma execução por configuração (seção B.1 em [docs/resultados.md](docs/resultados.md)). Uma reexecução de 21/11/2026 (seção E, `redteam/results_owasp_rep2/`, uma execução por configuração) deu ASR `14.8%` (16/108) sem guardrails e `2.8%` (3/108) com guardrails, 0/104 falsos positivos; a diferença para o B.1 vem em boa parte de gerações truncadas em 2048 tokens passarem a contar como erro, não como sucesso.
 - A auditoria usa hash encadeado, com assinatura digital opcional da âncora (Ed25519 ou HMAC-SHA256, ADR-004 e ADR-018): sem assinatura, apagar o fim do arquivo ou reescrever toda a cadeia não é detectado sem uma âncora externa; mesmo com assinatura, depende de arquivar o recibo `.sig.json` fora do log e não inclui carimbo de tempo externo confiável (RFC 3161 TSA).
 - O CI valida respostas gravadas e o manifesto; não reexecuta o modelo (ADR-001).
 - O gate do eval foi exercitado em 2 PRs de teste, fechados sem mesclar ([#1](https://github.com/Athurgomes/Agent-Ops-Kit/pull/1) e [#2](https://github.com/Athurgomes/Agent-Ops-Kit/pull/2)); resultados em [docs/resultados.md](docs/resultados.md). Ele usa respostas gravadas, o prompt piorado foi degradado de propósito e foi uma execução por PR: é um teste de mecanismo, não uma medida de qualidade.
