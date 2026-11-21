@@ -1,5 +1,6 @@
 import hashlib
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -148,3 +149,22 @@ def test_corrupt_index_exit_2(tmp_path, rt_dir):
     (pub / "ag").mkdir(parents=True)
     (pub / "ag" / "index.json").write_text("{nao é json", encoding="utf-8")
     assert cli.main(_argv(tmp_path, rt_dir, "--publish", str(pub), "--agent-id", "ag")) == 2
+
+
+def test_check_reconfigura_stdout_e_stderr_para_utf8(monkeypatch, tmp_path):
+    calls = []
+
+    class Stream:
+        def reconfigure(self, **kw):
+            calls.append(kw)
+
+        def write(self, _s):
+            return 0
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(sys, "stdout", Stream())
+    monkeypatch.setattr(sys, "stderr", Stream())
+    assert cli.main(["check", "--out", str(tmp_path / "pk"), "--publish", str(tmp_path / "p")]) == 2
+    assert calls == [{"encoding": "utf-8"}, {"encoding": "utf-8"}]

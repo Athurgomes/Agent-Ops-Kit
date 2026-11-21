@@ -732,6 +732,9 @@ def cmd_check(args: argparse.Namespace) -> int:
     from agent_ops_kit.redteam.report import ReportError
     from agent_ops_kit.report import publish, render
 
+    for stream in (sys.stdout, sys.stderr):  # avisos e erros também saem com acento correto no Windows
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     config_given = args.config is not None
     if not config_given:
         args.config = DEFAULT_CONFIG
@@ -759,8 +762,6 @@ def cmd_check(args: argparse.Namespace) -> int:
     except (ReportError, publish.PublishError, OSError, ValueError) as exc:
         print(f"erro: {exc}", file=sys.stderr)
         return 2
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
     print(f"Pacote gravado em {Path(args.out).as_posix()}/ (relatorio.md, relatorio.html, relatorio.json)")
     print(f"Semáforo (regras provisórias): {render.COLOR_LABEL[data['semaphore']['color']]}")
     if args.publish and remote:
