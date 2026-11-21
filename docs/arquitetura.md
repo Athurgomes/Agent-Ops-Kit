@@ -35,11 +35,11 @@ Os guardrails também atuam na allowlist de tools (antes de cada chamada) e marc
 
 - **Agente** (`examples/rag_agent/agent.py`): loop simples com tool calling nativo do Ollama, no máximo 5 iterações. Cada passo gera spans e eventos de auditoria.
 - **Tracing**: spans `agent.run`, `llm.call`, `tool.call` e `retrieval.query`, com atributos no estilo das convenções GenAI do OpenTelemetry, exportados por OTLP gRPC (padrão `localhost:4317`) para o Jaeger do `docker-compose.yml`. Desliga com `AOK_TRACING=off`.
-- **Auditoria**: JSONL append-only; cada linha traz `prev_hash` e `hash` (sha256). `aok audit verify` recalcula a cadeia, `report` gera markdown, `anchor` imprime o último hash para guardar fora do arquivo. Não há assinatura (ver ADR-004).
+- **Auditoria**: JSONL append-only; cada linha traz `prev_hash` e `hash` (sha256). `aok audit verify` recalcula a cadeia, `report` gera markdown, `anchor` imprime o último hash para guardar fora do arquivo. A assinatura da âncora (Ed25519 ou HMAC) é opcional (ADR-004 e ADR-018).
 - **Guardrails**: filtro de entrada (heurísticas PT/EN, mais classificador opcional fail-open), allowlist de tools, marcação de conteúdo não confiável, canary no prompt do sistema e filtro de saída. São heurísticas, contornáveis.
 - **Avaliação**: dataset de 50 casos, checagens determinísticas, juiz opcional (mesmo modelo de 8B), A/B pareado (permutação e bootstrap, semente fixa) e gate de CI que reavalia respostas gravadas conferindo um manifesto.
 - **Red team**: ataques em arquivos do repositório (`redteam/`), critérios de sucesso por categoria, ASR com intervalo de Wilson e medição de falsos positivos em perguntas legítimas.
-- **Relatório** (`aok report build`, `aok check --publish`): resultados gravados (eval e red team, mais o resultado da verificação da auditoria, se houver) viram um pacote determinístico (`relatorio.md`, `relatorio.html`, `relatorio.json` e `pacote.json`) que `--publish` copia para uma pasta local versionada (`<pasta>/<agent-id>/<timestamp UTC>/`, com `index.json` listando as versões) ou envia à plataforma (`https://...`). `relatorio.md` e `relatorio.html` seguem estrutura técnico-executiva baseada na ABNT NBR 10719:2015 e NBR 6024:2012 (identificação documental, resumo executivo, leitura de negócios, encaminhamentos, quadro de ciência para auditoria e Apêndice A com evidências técnicas e SHA-256), com CSS estático A4 (`3cm 2cm 2cm 3cm`) pronto para impressão ou salvamento em PDF pelo navegador. Não roda modelo e o log de auditoria não entra no pacote (ADR-006 e ADR-013).
+- **Relatório** (`aok report build`, `aok check --publish`): resultados gravados (eval e red team, mais o resultado da verificação da auditoria, se houver) viram um pacote determinístico (`relatorio.md`, `relatorio.html`, `relatorio.json` e `pacote.json`, mais `relatorio.json.sig` se houver chave de assinatura) com proveniência (ADR-022), política com limiar e valor observado por regra (ADR-023), achados rastreáveis (ADR-024), McNemar e ressalvas geradas dos dados (ADR-025) e mapa OWASP (ADR-027). `aok report verify` recalcula tudo offline (ADR-026). O pacote `--publish` copia para uma pasta local versionada (`<pasta>/<agent-id>/<timestamp UTC>/`, com `index.json` listando as versões) ou envia à plataforma (`https://...`). `relatorio.md` e `relatorio.html` seguem estrutura técnico-executiva baseada na ABNT NBR 10719:2015 e NBR 6024:2012 (identificação documental, resumo executivo, leitura de negócios, encaminhamentos, quadro de ciência para auditoria e Apêndice A com evidências técnicas e SHA-256), com CSS estático A4 (`3cm 2cm 2cm 3cm`) pronto para impressão ou salvamento em PDF pelo navegador. Não roda modelo e o log de auditoria não entra no pacote (ADR-006 e ADR-013).
 - **Plataforma** (`platform/`): serviço FastAPI que recebe o pacote por `POST /v1/reports` e, para pessoas com sessão, serve a leitura e o portal **Farol.** em `pt-BR`. Entregue em fases: API (ADR-007), portal (ADR-008), administração (ADR-009), operador e várias organizações (ADR-010 e ADR-011), recuperação de senha opcional (ADR-012), prontidão para operação online em instância única (ADR-014) e consolidação do portal **Farol.** em `pt-BR` (ADR-015); ver abaixo.
 - **Template** (`aok new`): gera um agente já instrumentado a partir de `src/agent_ops_kit/templates/agent/`.
 
@@ -117,7 +117,18 @@ Configuração completa e limites (instância única; múltiplas réplicas ainda
 | `src/agent_ops_kit/redteam/testbed.py` | constantes do testbed (tools proibidas falsas, dados fictícios) |
 | `src/agent_ops_kit/redteam/false_positives.py` | taxa de falsos positivos |
 | `src/agent_ops_kit/redteam/report.py` | relatório (ASR, Wilson, atribuição por estágio) |
-| `src/agent_ops_kit/report/` | pacote de relatório: `build` (agrega resultados gravados), `render` (md/html determinístico em estrutura ABNT NBR 10719 pronta para impressão A4/PDF), `publish` (pasta local versionada) |
+| `src/agent_ops_kit/report/` | pacote de relatório: `build` (agrega resultados gravados), `render` (md/html determinístico em estrutura ABNT NBR 10719 pronta para impressão A4/PDF), `publish` (pasta local versionada ou envio à plataforma) |
+| `src/agent_ops_kit/report/policy.py` | política de classificação (semáforo) lida de YAML, com limiar, valor observado e resultado por regra (ADR-023) |
+| `src/agent_ops_kit/report/findings.py` | `findings[]` rastreáveis até arquivo, linha e sha256 do registro; tabela de severidade provisória (ADR-024) |
+| `src/agent_ops_kit/report/stats.py` | McNemar exato, efeito mínimo detectável e ressalvas geradas dos dados (ADR-025) |
+| `src/agent_ops_kit/report/coverage.py` | mapa de cobertura OWASP LLM Top 10 no relatório (ADR-027) |
+| `src/agent_ops_kit/report/verify.py` | `aok report verify`: recalcula números, semáforo e hashes do pacote, offline (ADR-026) |
+| `src/agent_ops_kit/provenance.py` | proveniência: versão, commit, ambiente, Ollama, sementes e sha256 das entradas (ADR-022) |
+| `src/agent_ops_kit/target.py` | adaptador de agente Python (`target` no `agent.yaml`): contrato, validação da saída e `resolve_target` (ADR-028) |
+| `src/agent_ops_kit/ollama_chat.py` | chamada ao Ollama com limite de geração e timeout (ADR-028, correções de validação) |
+| `src/agent_ops_kit/audit_sign.py` | assinatura Ed25519 ou HMAC da âncora de auditoria; `sign_bytes` e `verify_bytes` assinam e conferem bytes, usados no `relatorio.json` (ADR-018 e ADR-029) |
+| `policies/default.yaml` | política padrão (regras "provisoria-1"), versionada fora do pacote Python |
+| `policies/coverage/owasp_llm_2025.yaml` | mapa OWASP LLM Top 10 (2025): categorias de ataque e controles por risco, e riscos não cobertos com o motivo |
 | `src/agent_ops_kit/templates/agent/` | template do `aok new` |
 | `examples/rag_agent/` | agente de referência (agent, tools, indexer, corpus fictício) |
 | `.github/workflows/` | `ci.yml` (jobs `test`: ruff check e pytest; `portal`: build do front-end; `postgres`: suíte de plataforma em Postgres 16) e `eval.yml` (gate com respostas gravadas) |
@@ -125,6 +136,10 @@ Configuração completa e limites (instância única; múltiplas réplicas ainda
 | `scripts/demo_plataforma.py` | sobe a plataforma de demonstração com um comando (SQLite, só em 127.0.0.1; seed, operador e organização `beta`; `--publicar`, `--reset`, `--dados`) |
 | `docker-compose.yml` | Jaeger (all-in-one) |
 | `platform/aok_platform/` | API da plataforma: `app` (inclui `/v1/health`, `AOK_DOCS_ENABLED` e headers HTTP), `auth` (senha, token, papéis), `sessions` (login, sessão, throttle), `portal` (leitura, download, histórico), `models` (inclui `admin_event`), `reports`, `db`, `seed_demo` |
+| `platform/aok_platform/models.py` (`agent_public_keys`), `migrations/versions/0003_report_signature.py` | chaves públicas por agente (fingerprint, PEM, `revoked_at`) e colunas de assinatura do relatório; migração 0003 (ADR-029) |
+| `platform/aok_platform/reports.py` (`_check_signature`) | no `POST /v1/reports`, confere o campo opcional `signature` contra a chave ativa do agente com `verify_bytes` (ADR-029) |
+| `platform/aok_platform/app.py` (`/v1/admin/agents/{id}/keys`) | endpoints admin de chaves: listar, cadastrar e revogar (sem tela no portal) |
+| `platform/portal/src/pages/ReportView.tsx` | selo "Assinado" / "Não assinado" no detalhe do relatório |
 | `platform/aok_platform/ops.py` | rotas `/v1/ops/*` do operador (ADR-010): organizações com contagens, criar e desativar, criar admin e reset de senha, visão geral só de metadados, trilhas |
 | `platform/aok_platform/recovery.py`, `mailer.py` | recuperação de senha (ADR-012) e `client_ip` com `AOK_TRUSTED_PROXIES`: rotas `/v1/auth/password/forgot`, `/reset` e `/v1/auth/capabilities`; token com hash SHA-256 na tabela `password_reset`; envio SMTP por stdlib. Só ativos com `AOK_SMTP_HOST` e `AOK_PUBLIC_URL` |
 | `platform/portal/src/pages/ForgotPassword.tsx`, `ResetPassword.tsx` | telas `/forgot-password` e `/reset-password` (token lido do fragmento e removido da URL) |
@@ -142,7 +157,7 @@ As decisões e suas limitações estão em [decisoes.md](decisoes.md):
 - ADR-001: como o CI roda sem modelo (respostas gravadas e manifesto).
 - ADR-002: teste de permutação pareado e bootstrap com semente fixa.
 - ADR-003: o juiz é o mesmo modelo de 8B.
-- ADR-004: auditoria com hash encadeado (sem assinatura).
+- ADR-004: auditoria com hash encadeado; a assinatura opcional da âncora veio depois (ADR-018).
 - ADR-005: template do `aok new` dentro do pacote, com cópia do núcleo do agente.
 - ADR-006: relatório publicado em pasta local versionada, só agregados e hashes.
 - ADR-007: plataforma em `platform/`, relatório autodeclarado, só agregados e hashes.
@@ -154,16 +169,21 @@ As decisões e suas limitações estão em [decisoes.md](decisoes.md):
 - ADR-013: relatório técnico-executivo em linguagem de negócios e estrutura ABNT NBR 10719 (determinístico, CSS A4 para impressão/PDF pelo navegador).
 - ADR-014: prontidão para operação online em instância única (`GET /v1/health`, `AOK_DOCS_ENABLED`, `AOK_HSTS_ENABLED`, `AOK_TRUSTED_PROXIES`) e simplicidade de manutenção (D1, D2, D3, D5).
 - ADR-015: portal oficial **Farol.** em `pt-BR` (`copy.ts`), foco B2B sem cadastro/preços (`CONTACT_URL`), direção visual Diário de Bordo / Carta Náutica com tipografia autohospedada (`@fontsource`) e semáforo com glifos distintos além da cor.
+- ADR-016 a ADR-021: Alembic, limitadores no banco, assinatura da âncora de auditoria, variância multi-execução, anti-ofuscação e suíte OWASP com suíte cega externa.
+- ADR-022 a ADR-030: proveniência, política, achados, McNemar, `report verify`, cobertura OWASP, adaptador de agente, assinatura do relatório e evidências fora do repositório.
+
+Inventário completo do que está implementado, com comandos, rotas e testes: [funcionalidades.md](funcionalidades.md).
 
 Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 
 ## O que NÃO existe ainda
 
 - Kafka (eventos do agente em tópico, consumidores de auditoria e métricas).
-- Adaptador para outro framework de agentes: só existe o loop do agente de referência.
+- Adaptador de framework de agentes. Existe o adaptador de agente Python (`target` no `agent.yaml`, ADR-028), que chama uma função sua; o adaptador HTTP é recusado na validação e não existe.
+- `aok reproduce` (reexecução registrada no log assinado), mapeamento NIST AI RMF e ISO/IEC 42001 e tela de chaves no portal (as chaves só se gerenciam pela API admin).
 - Prometheus e Grafana: as métricas são calculadas em Python, não exportadas.
-- Na plataforma: SSO, cadastro aberto (Sign Up), recuperação por e-mail para operadores (a recuperação de senha por e-mail dos usuários das organizações existe, opcional: ADR-012), Alembic (migração formal), store compartilhado para os limitadores de tentativa (necessário para múltiplas réplicas), dark mode, geração direta de binário PDF no servidor (o HTML já sai no formato A4 ABNT NBR 10719 para impressão/PDF pelo navegador) e paginação das listagens do admin. Trilha de login e de leitura também não existe (só download e escritas administrativas).
+- Na plataforma: SSO, cadastro aberto (Sign Up), recuperação por e-mail para operadores (a recuperação de senha por e-mail dos usuários das organizações existe, opcional: ADR-012), dark mode e geração direta de binário PDF no servidor (o HTML já sai no formato A4 ABNT NBR 10719 para impressão/PDF pelo navegador). Migrações com Alembic (ADR-016), limitadores no banco (ADR-017) e paginação `limit`/`offset` das listagens do admin (só a tela de Atividade a usa no portal) existem. Trilha de login e de leitura também não existe (só download e escritas administrativas).
 - Provisionamento automatizado de deploy em nuvem (existe container/compose pronto para operação online em instância única atrás de proxy reverso HTTPS, sem scripts de infraestrutura gerenciada).
 - Publicação em PyPI: o pacote se instala a partir do repositório.
 - Validação do gate como medida de qualidade: ele foi exercitado em 2 PRs de teste (ver a seção D de [resultados.md](resultados.md)), que provam o mecanismo, não a qualidade.
-- Relatório verificado pela plataforma: o relatório é autodeclarado e a plataforma não reexecuta eval nem red team (ADR-007).
+- Relatório verificado pela plataforma quanto à execução: o relatório continua autodeclarado e a plataforma não reexecuta eval nem red team (ADR-007). Hoje existe a verificação offline `aok report verify` (ADR-026) e a plataforma confere a assinatura Ed25519 do `relatorio.json` contra a chave cadastrada do agente (ADR-029); ela não roda o `verify` completo sobre as evidências.
