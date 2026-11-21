@@ -121,9 +121,9 @@ export function Loading({ label = copy.common.loading }: { label?: string }) {
   );
 }
 
-export function ErrorBox({ children }: { children: ReactNode }) {
+export function ErrorBox({ children, id }: { children: ReactNode; id?: string }) {
   return (
-    <div role="alert" className="flex items-start gap-3 border border-[#991b1b] bg-[#fef2f2] p-4 text-[#991b1b]">
+    <div id={id} role="alert" className="flex items-start gap-3 border border-[#991b1b] bg-[#fef2f2] p-4 text-[#991b1b]">
       <span aria-hidden="true" className="font-mono font-semibold">
         [!]
       </span>
@@ -202,8 +202,16 @@ export function Field({
   id,
   aside,
   hint,
+  errorId,
   ...p
-}: { label: string; id: string; aside?: ReactNode; hint?: string } & InputHTMLAttributes<HTMLInputElement>) {
+}: {
+  label: string;
+  id: string;
+  aside?: ReactNode;
+  hint?: string;
+  errorId?: string; // id of the message that describes the error: marks the field as invalid
+} & InputHTMLAttributes<HTMLInputElement>) {
+  const describedBy = [hint ? `${id}-hint` : "", errorId ?? ""].filter(Boolean).join(" ") || undefined;
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-4">
@@ -214,7 +222,8 @@ export function Field({
       </div>
       <input
         id={id}
-        aria-describedby={hint ? `${id}-hint` : undefined}
+        aria-describedby={describedBy}
+        aria-invalid={errorId ? true : undefined}
         className="rounded-[2px] border border-ink/35 bg-paper px-4 py-3 text-ink focus:border-accent"
         {...p}
       />
@@ -254,13 +263,13 @@ export function Select({
 export type Crumb = { to?: string; label: string };
 export function Breadcrumbs({ items }: { items: Crumb[] }) {
   return (
-    <nav aria-label={copy.aria.breadcrumbs}>
-      <ol className="m-0 flex list-none flex-wrap items-center gap-x-2 gap-y-1 p-0 font-mono text-xs uppercase tracking-[0.06em] text-subtle">
+    <nav aria-label={copy.aria.breadcrumbs} className="min-w-0 max-w-full">
+      <ol className="m-0 flex min-w-0 list-none flex-wrap items-center gap-x-2 gap-y-1 p-0 font-mono text-xs uppercase tracking-[0.06em] text-subtle">
         {items.map((c, i) => (
-          <li key={i} className="flex min-w-0 items-center gap-2">
+          <li key={i} className="flex min-w-0 max-w-full items-center gap-2">
             {i > 0 && <span aria-hidden="true">/</span>}
             {c.to ? (
-              <Link to={c.to} className="underline hover:text-accent">
+              <Link to={c.to} className="truncate underline hover:text-accent">
                 {c.label}
               </Link>
             ) : (

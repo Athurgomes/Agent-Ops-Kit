@@ -15,31 +15,62 @@ type AuthState = {
 };
 const AuthCtx = createContext<AuthState | null>(null);
 
+// Marca local (não é segredo nem credencial): indica que houve login neste navegador.
+const HINT_KEY = "aok_session_hint";
+function hasSessionHint(): boolean {
+  try {
+    return window.localStorage.getItem(HINT_KEY) === "1";
+  } catch {
+    return true; // sem localStorage: mantém o comportamento anterior
+  }
+}
+function setSessionHint(on: boolean) {
+  try {
+    if (on) window.localStorage.setItem(HINT_KEY, "1");
+    else window.localStorage.removeItem(HINT_KEY);
+  } catch {
+    /* ignora */
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggedOut, setLoggedOut] = useState(false);
 
   useEffect(() => {
-    setUnauthorizedHandler(() => setMe(null)); // 401 em qualquer chamada limpa o estado
+    setUnauthorizedHandler(() => {
+      setSessionHint(false);
+      setMe(null); // 401 em qualquer chamada limpa o estado
+    });
     if (window.location.pathname.startsWith("/ops")) {
       setLoading(false); // o console do operador tem sessão própria: o portal não consulta /v1/auth/me lá
       return;
     }
+    // Páginas públicas sem sinal de sessão: não consulta /v1/auth/me (evita um 401 esperado no console).
+    if (!window.location.pathname.startsWith("/app") && !hasSessionHint()) {
+      setLoading(false);
+      return;
+    }
     api
       .me()
-      .then(setMe)
+      .then((m) => {
+        setSessionHint(m !== null);
+        setMe(m);
+      })
       .catch(() => setMe(null))
       .finally(() => setLoading(false));
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     setMe(await api.login(email, password));
+    setSessionHint(true);
     setLoggedOut(false);
   }, []);
   // Only clears the local state after the server confirmed the session ended; otherwise it throws.
   const logout = useCallback(async () => {
     await api.logout();
+    setSessionHint(false);
     setLoggedOut(true);
     setMe(null);
   }, []);

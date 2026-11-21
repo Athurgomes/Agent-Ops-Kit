@@ -89,8 +89,9 @@ function CreateOrg({ onClose }: { onClose: () => void }) {
           value={slug}
           onChange={(e) => setSlug(e.target.value)}
           hint={fCopy.slugHint}
+          errorId={error === copy.opsErrors.orgSlugInUse ? "org-slug-error" : undefined}
         />
-        {error && <ErrorBox>{error}</ErrorBox>}
+        {error && <ErrorBox id="org-slug-error">{error}</ErrorBox>}
         <div className="flex flex-wrap justify-end gap-3 border-t border-line pt-4">
           <Button onClick={onClose} disabled={busy}>
             {copy.common.cancel}

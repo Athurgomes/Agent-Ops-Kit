@@ -95,6 +95,7 @@ export function AgentReports() {
                 <p className="heading text-4xl lg:text-5xl">{copy.agentReports.latestVersion(latest.seq)}</p>
                 <SemaforoBadge value={latest.status_semaforo} size="lg" />
                 <p className="text-sm text-subtle">{copy.agentReports.latestSemaforoNote}</p>
+                <SignatureBadge signed={latest.signed} fingerprint={latest.key_fingerprint} />
               </div>
 
               <dl className="col-span-12 m-0 grid grid-cols-1 gap-4 border-t border-line pt-4 md:col-span-4 md:border-l md:border-t-0 md:pl-6 md:pt-0">

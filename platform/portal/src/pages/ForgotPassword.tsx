@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
@@ -13,6 +13,11 @@ export function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [enabled, setEnabled] = useState<boolean | null>(null); // null = ainda verificando
+
+  useEffect(() => {
+    api.capabilities().then((c) => setEnabled(c.password_reset));
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -34,7 +39,18 @@ export function ForgotPassword() {
       art="compass"
     >
       <h1 className="heading text-3xl sm:text-5xl">{copy.auth.forgot.title}</h1>
-      {sent ? (
+      {enabled === false ? (
+        <>
+          <p role="status" className="mt-6 border border-ink border-l-4 border-l-accent bg-surface p-4 font-semibold text-ink">
+            {copy.auth.forgot.disabledMessage}
+          </p>
+          <p className="mt-8 text-sm">
+            <Link to="/login" className="link">
+              {copy.auth.forgot.backToLogin}
+            </Link>
+          </p>
+        </>
+      ) : sent ? (
         <>
           <p role="status" className="mt-6 border border-ink border-l-4 border-l-accent bg-surface p-4 font-semibold text-ink">
             {FORGOT_MESSAGE}

@@ -65,7 +65,7 @@ export const copy = {
   },
   dialogs: {
     secretAnnouncement: "Segredo gerado. Exibido uma única vez; guarde agora.",
-    secretWarning: "Guarde agora; ele não será mostrado novamente.",
+    secretWarning: "Guarde agora; este valor não será mostrado novamente.",
     secretStored: "Já guardei",
   },
   aria: {
@@ -343,6 +343,7 @@ export const copy = {
       submitting: "Enviando…",
       sentMessage: "Se existir uma conta para este e-mail, enviamos um link de redefinição. Ele expira em 30 minutos.",
       backToLogin: "← Voltar para entrar",
+      disabledMessage: "A recuperação de senha por e-mail está desabilitada neste servidor. Peça a redefinição ao administrador da sua organização.",
     },
     reset: {
       sheetCode: "FOLHA 03",
@@ -875,6 +876,8 @@ export const copy = {
         "agent.deactivate": "Desativou agente",
         "token.issue": "Emitiu token de agente",
         "token.revoke": "Revogou token de agente",
+        "key.register": "Registrou chave de assinatura",
+        "key.revoke": "Revogou chave de assinatura",
         "user.create": "Criou usuário",
         "user.update": "Editou usuário",
         "user.activate": "Ativou usuário",
@@ -887,6 +890,7 @@ export const copy = {
         area: "Área",
         agent: "Agente",
         agent_token: "Token",
+        agent_key: "Chave de assinatura",
         user: "Usuário",
         membership: "Concessão de acesso",
       } as Record<string, string>,
