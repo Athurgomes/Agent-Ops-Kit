@@ -1135,7 +1135,7 @@ def to_markdown(blocks: list[Block]) -> str:
 
 
 _CSS = (
-    "@page{size:A4;margin:3cm 2cm 2cm 3cm}"
+    "@page{size:A4;margin:3cm 2cm 2cm 3cm;@top-right{content:counter(page);font-size:10pt}}"
     "body{font-family:Arial,Helvetica,sans-serif;max-width:210mm;margin:1.5rem auto;"
     "padding:2rem 2.2rem;background:#fff;color:#1a1a1a;line-height:1.5;font-size:11pt;"
     "border:1px solid #d4d4d8}"
@@ -1156,7 +1156,8 @@ _CSS = (
     "th,td{border:1px solid #94a3b8;padding:.35rem .5rem;text-align:left;vertical-align:top;"
     "overflow-wrap:anywhere;word-break:break-word}"
     "th{background:#f1f5f9;color:#0f172a;font-weight:bold}"
-    "tbody tr:nth-child(even) td{background:#f8fafc}"
+    "tbody tr:nth-child(even) td{background:#f8fafc;"
+    "print-color-adjust:exact;-webkit-print-color-adjust:exact}"
     ".light{color:#fff;padding:.9rem 1rem;border-radius:4px;font-size:1.08rem;font-weight:bold;"
     "margin:.6rem 0 .9rem;page-break-inside:avoid;break-inside:avoid}"
     ".short-table{page-break-inside:avoid;break-inside:avoid}"
@@ -1198,6 +1199,7 @@ def to_html(blocks: list[Block], title: str) -> str:
         '<!DOCTYPE html>\n<html lang="pt-BR"><head><meta charset="utf-8">'
         '<meta http-equiv="Content-Security-Policy" '
         "content=\"default-src 'none'; style-src 'unsafe-inline'\">"
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{escape(title)}</title><style>{_CSS}</style></head><body>\n"
         + "\n".join(body)
         + "\n</body></html>\n"

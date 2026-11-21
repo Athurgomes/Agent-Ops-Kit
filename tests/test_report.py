@@ -215,6 +215,13 @@ def test_abnt_structure_and_print_css(real_data):
     assert "overflow-wrap:anywhere" in html or "overflow-wrap: anywhere" in html
 
 
+def test_html_has_viewport_page_number_and_print_colors(real_data):
+    html = render.to_html(render.build_blocks(real_data), "Relatório")
+    assert '<meta name="viewport" content="width=device-width, initial-scale=1">' in html
+    assert "@top-right{content:counter(page)" in html
+    assert "print-color-adjust:exact" in html
+
+
 # ---- escape de HTML ----
 
 def test_html_escapes_data(real_data):
