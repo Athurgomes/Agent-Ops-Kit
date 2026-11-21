@@ -3,8 +3,9 @@
 from typing import ClassVar
 
 import httpx
-import ollama
 import pytest
+
+ollama = pytest.importorskip("ollama")  # extra rag; sem ele o módulo inteiro é pulado
 
 from agent_ops_kit import ollama_chat, provenance
 from agent_ops_kit.eval import runner
