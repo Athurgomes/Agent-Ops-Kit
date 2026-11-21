@@ -242,6 +242,12 @@ def test_command_paths_are_relative_or_external(tmp_path, monkeypatch):
     assert "fulano" not in win and "<externo>/pk.json" in win
 
 
+def test_command_windows_style_paths_are_external():
+    cmd = provenance.sanitize_command(["aok", "--out", r"\\servidor\pasta\x", "C:/x/y"])
+    assert "servidor" not in cmd and "pasta" not in cmd and "C:" not in cmd
+    assert "<externo>/x" in cmd and "<externo>/y" in cmd
+
+
 def test_command_secrets_are_redacted():
     cmd = provenance.sanitize_command(
         "aok check --token abc123 --key=xyz789 --password hunter2 --api-key k1 "

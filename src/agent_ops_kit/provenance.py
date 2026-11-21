@@ -16,7 +16,7 @@ import shlex
 import subprocess
 import urllib.request
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 NOT_RECORDED = "não registrado"
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
@@ -88,6 +88,13 @@ def _clean_path(value: str, base: Path) -> str:
     """Caminho relativo à raiz se estiver dentro dela; fora dela, `<externo>/nome`."""
     if "://" in value or (not re.search(r"[/\\]", value) and not value.startswith("~")):
         return value
+    if os.name != "nt" and (re.match(r"^(?:[A-Za-z]:[\\/]|\\\\)", value) or "\\" in value):
+        # estilo Windows (unidade, UNC, barras invertidas) em Linux/macOS: Path não o reconhece
+        win = PureWindowsPath(value)
+        if win.is_absolute() or win.drive or ".." in win.parts:
+            name = re.split(r"[/\\]", value.rstrip("/\\"))[-1]
+            return f"<externo>/{name}"
+        return win.as_posix()
     path = Path(value).expanduser()
     if not path.is_absolute() and ".." not in path.parts:
         return path.as_posix()
