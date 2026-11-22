@@ -172,13 +172,19 @@ As decisões e suas limitações estão em [decisoes.md](decisoes.md):
 - ADR-014: prontidão para operação online em instância única (`GET /v1/health`, `AOK_DOCS_ENABLED`, `AOK_HSTS_ENABLED`, `AOK_TRUSTED_PROXIES`) e simplicidade de manutenção (D1, D2, D3, D5).
 - ADR-015: portal oficial **Farol.** em `pt-BR` (`copy.ts`), foco B2B sem cadastro/preços (`CONTACT_URL`), direção visual Diário de Bordo / Carta Náutica com tipografia autohospedada (`@fontsource`) e semáforo com glifos distintos além da cor.
 - ADR-016 a ADR-021: Alembic, limitadores no banco, assinatura da âncora de auditoria, variância multi-execução, anti-ofuscação e suíte OWASP com suíte cega externa.
-- ADR-022 a ADR-031: proveniência, política, achados, McNemar, `report verify`, cobertura OWASP, adaptador de agente, assinatura do relatório, evidências fora do repositório e reprodução de auditorias (`aok reproduce`).
+- ADR-022 a ADR-032: rumo de auditoria de terceiros (ADR-032), proveniência, política, achados, McNemar, `report verify`, cobertura OWASP, adaptador de agente, assinatura do relatório, evidências fora do repositório e reprodução de auditorias (`aok reproduce`).
 
 Inventário completo do que está implementado, com comandos, rotas e testes: [funcionalidades.md](funcionalidades.md).
 
 Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 
 ## O que NÃO existe ainda
+
+- Target HTTP (`type: http` é recusado, ADR-028) e perfil do agente no `agent.yaml`.
+- Bateria universal de ataques parametrizada por perfil: a suíte atual é parcialmente genérica, mas usa ferramentas falsas, dados fictícios e canary do agente de exemplo.
+- Calibração do juiz contra rotulagem humana (o juiz local de 8B não foi calibrado).
+- Guia de integração para quem desenvolve um agente externo.
+- Validação em agentes reais diferentes do de exemplo: o veredito medido vale só para ele. Rumo e prioridades: [ADR-032](decisoes.md).
 
 - Kafka (eventos do agente em tópico, consumidores de auditoria e métricas).
 - Adaptador de framework de agentes. Existe o adaptador de agente Python (`target` no `agent.yaml`, ADR-028), que chama uma função sua; o adaptador HTTP é recusado na validação e não existe.

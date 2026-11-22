@@ -162,6 +162,8 @@ Não há tela de gestão de chaves públicas: elas são cadastradas pela API adm
 
 ## 10. O que não existe
 
+- Target HTTP, perfil do agente, bateria universal de ataques, calibração do juiz contra rotulagem humana e guia de integração; o veredito medido vale só para o agente de exemplo (ADR-032).
+
 - Adaptador de agente por HTTP e adaptador de framework; só o agente Python (ADR-028).
 - Vereditos de `aok reproduce` para o juiz, suíte cega externa e agente por HTTP; e verificação do `reproducao.json` pelo `report verify` ou pela plataforma (ADR-031).
 - Mapa NIST AI RMF e ISO/IEC 42001; só OWASP LLM Top 10 (ADR-027).
