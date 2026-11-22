@@ -92,6 +92,18 @@ aok report verify reports/pacote --repo-root .   # opcional: --json, --audit-hma
 
 Recalcula, a partir dos arquivos de evidência, o eval (médias, IC, p), o ASR com IC de Wilson, o McNemar exato e os falsos positivos; reavalia o semáforo com a política gravada (sha256 em disco igual ao gravado); confere os hashes de `hashes`, `provenance.inputs` e dos achados (linha e registro), a cadeia e a assinatura do log de auditoria (se referenciado), execuções e sementes, as limitações e se `relatorio.md`/`.html` são a renderização do JSON. Exit 0 = tudo confere; 1 = falha ou evidência ausente ("não verificável" não é ok); 2 = pacote ilegível. Detalhes e limites na ADR-026.
 
+### Reproduzir uma auditoria
+
+Quem recebe um pacote pode reexecutar a medição com o modelo e comparar com o declarado (ADR-031). Rode na raiz do repositório, com o Ollama ligado e o dataset, a suíte e o `agent.yaml` iguais aos do pacote:
+
+```bash
+aok reproduce reports/pacote [--only eval|redteam] [--out PASTA] [--evidence-root PASTA] [--limit N]
+```
+
+Antes de rodar, o comando executa o `report verify` e confere o sha256 das entradas; pacote que falha ou entrada diferente é recusado (exit 2). A reexecução não usa `--reuse`, vai para pasta nova (`<pacote>_reproducao`, sem sobrescrever) e grava `reproducao.json`, `reproducao.md` e o evento `reproduction` no log de auditoria encadeado. Exit 0 significa que reexecutou, não que aprovou. Vereditos por item: `reproduzido` (número exatamente igual), `dentro da variância` (só se o relatório declara variância entre execuções e a diferença é menor que o desvio), `divergente` (qualquer outra diferença) e `não reproduzível` (com o motivo). O ambiente sai "igual", "diferente" ou "não confirmado". Limites: o Ollama pode não ser determinístico mesmo com semente; o juiz não é reexecutado; o `target.ref` do `agent.yaml` é código Python que será executado, então não reproduza pacote de origem não confiável sem revisá-lo.
+
+Verificado em 21 e 22/11/2026 (llama3.1:8b, semente 42, uma reexecução por pacote): pacote pequeno (eval de 4 casos, red team de 6, falsos positivos 3+3), 12 `reproduzido` e 2 `divergente` (só nas respostas por caso: 3 de 4 idênticas no eval v1 e 5 de 6 no baseline do red team; médias, ASR, falsos positivos e p exatos); eval de 50 casos (pacote gerado das evidências versionadas, cerca de 10 min), 6 `reproduzido`, 0 `divergente`, 50 de 50 respostas idênticas em v1 e v2, ambiente "não confirmado" porque o original não registrou digest do modelo nem versão do Ollama. A recusa com exit 2 para byte adulterado e para dataset alterado foi exercitada ao vivo e está coberta por testes (`tests/test_reproduce.py`); o `aok audit verify` do log da reprodução deu ok. O comando de exemplo acima usa `reports/pacote`; as execuções verificadas usaram pacotes em outra pasta.
+
 ### Plataforma (fase 2: API)
 
 Serviço opcional em `platform/` que recebe o pacote publicado. Como subir: ver [platform/README.md](platform/README.md). Como publicar, com o token emitido pelo admin só em variável de ambiente:
@@ -217,7 +229,7 @@ Para desligar o tracing: `AOK_TRACING=off`.
 
 ## Estado e testes
 
-Conferido em 21/11/2026 sobre o código do commit `581d574` (Windows, árvore sem mudanças nos arquivos de código): `python -m pytest -q` deu `1062 passed, 5 skipped` (196.11s); `python -m ruff check .` passou (`All checks passed!`). Os 5 skips são ambientais: verificação de permissões POSIX `0o600` na assinatura de auditoria, um teste do demo que precisa criar link simbólico sem privilégio neste sistema e 3 testes que só rodam com `AOK_TEST_DATABASE_URL` apontando para um Postgres. Os testes locais não usam Ollama nem Docker. Em `postgres:16` efêmero via `AOK_TEST_DATABASE_URL`, a suíte completa de plataforma passou em 19/11/2026 (`286 passed, 0 skipped` em 281.87s, commit `fff746f`; ver [platform/README.md](platform/README.md)). Essa contagem é anterior às mudanças A1 a A8; a assinatura (ADR-029) foi validada depois em Postgres 16 descartável, mas a contagem da suíte de plataforma em Postgres sobre o commit `581d574` não foi reconfirmada.
+Conferido em 22/11/2026 sobre o código do commit `226f48a` (Windows; commits posteriores só alteram documentação): `python -m pytest -q` deu `1085 passed, 6 skipped` (161.44s) e `python -m ruff check .` passou (`All checks passed!`). No Linux (`python:3.11`) a suíte deu `1069 passed, 10 skipped` e o CI ficou verde no `226f48a`. Os 6 skips no Windows são ambientais: permissões POSIX `0o600` na assinatura de auditoria, links simbólicos sem privilégio (um teste do demo e um de `aok reproduce`) e 3 testes que só rodam com `AOK_TEST_DATABASE_URL` apontando para um Postgres. Os testes locais não usam Ollama nem Docker. Em `postgres:16` efêmero via `AOK_TEST_DATABASE_URL`, a suíte completa de plataforma passou em 19/11/2026 (`286 passed, 0 skipped` em 281.87s, commit `fff746f`; ver [platform/README.md](platform/README.md)). Essa contagem é anterior às mudanças A1 a A8; a assinatura (ADR-029) foi validada depois em Postgres 16 descartável, mas a contagem da suíte de plataforma em Postgres sobre o commit `581d574` não foi reconfirmada.
 
 Workflows (`.github/workflows/`): `ci.yml` (jobs `test`, `portal` e `postgres`) e `eval.yml` (gate de prompts com respostas gravadas). Além do run #20 (`88dc3fc`, em [evidencias/03-ci-github/](evidencias/03-ci-github/)), o run #45, do commit `fff746f` (conferido em 19/11/2026), passou nos três jobs (`test`, `portal` e `postgres`) em `ubuntu-latest`, onde os testes POSIX e de link simbólico rodam sem skip.
 
@@ -332,14 +344,14 @@ Limitações:
 - O CI valida respostas gravadas e o manifesto; não reexecuta o modelo (ADR-001).
 - O gate do eval foi exercitado em 2 PRs de teste, fechados sem mesclar ([#1](https://github.com/Athurgomes/Agent-Ops-Kit/pull/1) e [#2](https://github.com/Athurgomes/Agent-Ops-Kit/pull/2)); resultados em [docs/resultados.md](docs/resultados.md). Ele usa respostas gravadas, o prompt piorado foi degradado de propósito e foi uma execução por PR: é um teste de mecanismo, não uma medida de qualidade.
 - O agente de referência usa documentos fictícios; nada aqui foi validado com dados reais.
-- O relatório é autodeclarado. `aok report verify` prova que o pacote é coerente com os arquivos de evidência recebidos e a assinatura prova quem publicou e que os bytes não mudaram; nenhum dos dois prova que o eval e o red team rodaram de fato (ADR-026 e ADR-029). A plataforma não reexecuta nem roda o `verify`.
-- Auditar agente de terceiro: só Python, com semente e modelo fora do controle do kit; sem `aok reproduce`, ninguém reexecuta a medição por este kit. O mapa OWASP é julgamento do kit, não certificação. Severidade dos achados e limiares de aviso (n abaixo de 30, IC acima de 0,20) são provisórios.
+- O relatório é autodeclarado; `aok reproduce` (ADR-031) o reexecuta, mas o Ollama pode não ser determinístico e o juiz não é reexecutado. `aok report verify` prova que o pacote é coerente com os arquivos de evidência recebidos e a assinatura prova quem publicou e que os bytes não mudaram; nenhum dos dois prova que o eval e o red team rodaram de fato (ADR-026 e ADR-029). A plataforma não reexecuta nem roda o `verify`.
+- Auditar agente de terceiro: só Python, com semente e modelo fora do controle do kit; `aok reproduce` reexecuta pacotes do kit, mas não reproduz suíte cega externa nem agente HTTP. O mapa OWASP é julgamento do kit, não certificação. Severidade dos achados e limiares de aviso (n abaixo de 30, IC acima de 0,20) são provisórios.
 
 ## Próximos passos
 
 Nada disto existe ainda:
 
-- `aok reproduce`: reexecutar a medição e registrar a reexecução no log assinado.
+- Verificação do `reproducao.json` pelo `report verify` (hoje o `aok reproduce` grava o resultado, mas nada o confere; ADR-031).
 - Adaptador de agente por HTTP (`target: type: http`); hoje só existe o adaptador Python (ADR-028).
 - Mapa de cobertura NIST AI RMF e ISO/IEC 42001 (hoje só OWASP LLM Top 10; ADR-027).
 - A plataforma reconferir o `report verify` (hoje ela só confere a assinatura Ed25519 contra a chave cadastrada do agente; ADR-029).

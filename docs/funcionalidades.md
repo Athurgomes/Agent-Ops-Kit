@@ -31,6 +31,7 @@ O comando pode não estar no PATH; use `python -m agent_ops_kit.cli` no lugar.
 | `aok report build --previous`, `--redteam-baseline`, `--redteam-guardrails`, `--fp-dir`, `--evidence-root` | compara com relatório anterior; aponta os resultados do red team (os três juntos ou nenhum); evidências externas | ADR-028, ADR-030, `test_target_report.py` |
 | `aok report verify PASTA [--repo-root] [--json]` | confere o pacote offline contra os arquivos de evidência | ADR-026, `test_report_verify.py` |
 | `aok report verify --public-key`, `--require-signature`, `--audit-hmac-key-env`, `--evidence-root` | confere `relatorio.json.sig`; torna a falta de assinatura uma falha; chave HMAC do log; raiz das evidências | ADR-029, ADR-030, `test_report_signature.py`, `test_report_verify.py` |
+| `aok reproduce PACOTE [--only all\|eval\|redteam] [--out PASTA] [--evidence-root] [--audit-log] [--signing-key] [--public-key] [--audit-hmac-key-env] [--limit N]` | reexecuta o pacote com o modelo (sem `--reuse`, mesmos parâmetros, pasta nova) depois de `report verify` e de conferir os sha256 das entradas; grava `reproducao.json` e `reproducao.md` com vereditos por item e registra o evento `reproduction` no log encadeado (âncora assinada se houver chave). Exit 0 = reexecutou; 2 = recusa ou erro | ADR-031, `test_reproduce.py` |
 | `aok check [--publish PASTA\|URL] [--agent-id]` | gera o pacote (mesmos argumentos do `report build`) e publica em pasta local versionada ou na plataforma (token em `AOK_PLATFORM_TOKEN`) | ADR-006, ADR-007, `test_publish.py`, `test_platform_reports.py` |
 
 ## 2. Relatório
@@ -52,6 +53,7 @@ O comando pode não estar no PATH; use `python -m agent_ops_kit.cli` no lugar.
 | Agente auditado | mostra qual agente foi medido e avisa quando eval, red team e falsos positivos apontam agentes diferentes ou há casos "não avaliados" | ADR-028, `test_target_report.py` |
 | `aok report verify` | recalcula médias, IC, p-valor, ASR com Wilson, McNemar, falsos positivos, semáforo, hashes, achados, cobertura, cadeia e assinatura do log, sementes e a renderização do md e do html. Exit 0 só se tudo confere; 1 se falha ou evidência ausente; 2 se o pacote é ilegível | ADR-026, `test_report_verify.py` |
 | Assinatura | prova quem publicou e que os bytes não mudaram; não prova que o eval e o red team rodaram | ADR-029, `test_report_signature.py` |
+| `aok reproduce` | reexecuta eval, red team e falsos positivos com os mesmos parâmetros e compara com o declarado: `reproduzido`, `dentro da variância` (só com variância declarada), `divergente` ou `não reproduzível`; recusa pacote que falha no `verify` ou cujo dataset, suíte ou `agent.yaml` tem outro sha256. Descreve, não aprova; o Ollama pode não ser determinístico | ADR-031, `test_reproduce.py` |
 
 O relatório é autodeclarado: nem o `verify` nem a assinatura reexecutam a medição.
 
@@ -161,7 +163,7 @@ Não há tela de gestão de chaves públicas: elas são cadastradas pela API adm
 ## 10. O que não existe
 
 - Adaptador de agente por HTTP e adaptador de framework; só o agente Python (ADR-028).
-- `aok reproduce` (reexecução registrada no log assinado).
+- Vereditos de `aok reproduce` para o juiz, suíte cega externa e agente por HTTP; e verificação do `reproducao.json` pelo `report verify` ou pela plataforma (ADR-031).
 - Mapa NIST AI RMF e ISO/IEC 42001; só OWASP LLM Top 10 (ADR-027).
 - A plataforma rodar `report verify` ou reexecutar eval e red team; ela só confere a assinatura (ADR-029).
 - Tela de chaves públicas no portal.
