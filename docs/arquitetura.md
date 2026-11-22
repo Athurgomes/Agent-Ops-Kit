@@ -40,6 +40,7 @@ Os guardrails também atuam na allowlist de tools (antes de cada chamada) e marc
 - **Avaliação**: dataset de 50 casos, checagens determinísticas, juiz opcional (mesmo modelo de 8B), A/B pareado (permutação e bootstrap, semente fixa) e gate de CI que reavalia respostas gravadas conferindo um manifesto.
 - **Red team**: ataques em arquivos do repositório (`redteam/`), critérios de sucesso por categoria, ASR com intervalo de Wilson e medição de falsos positivos em perguntas legítimas.
 - **Relatório** (`aok report build`, `aok check --publish`): resultados gravados (eval e red team, mais o resultado da verificação da auditoria, se houver) viram um pacote determinístico (`relatorio.md`, `relatorio.html`, `relatorio.json` e `pacote.json`, mais `relatorio.json.sig` se houver chave de assinatura) com proveniência (ADR-022), política com limiar e valor observado por regra (ADR-023), achados rastreáveis (ADR-024), McNemar e ressalvas geradas dos dados (ADR-025) e mapa OWASP (ADR-027). `aok report verify` recalcula tudo offline (ADR-026). O pacote `--publish` copia para uma pasta local versionada (`<pasta>/<agent-id>/<timestamp UTC>/`, com `index.json` listando as versões) ou envia à plataforma (`https://...`). `relatorio.md` e `relatorio.html` seguem estrutura técnico-executiva baseada na ABNT NBR 10719:2015 e NBR 6024:2012 (identificação documental, resumo executivo, leitura de negócios, encaminhamentos, quadro de ciência para auditoria e Apêndice A com evidências técnicas e SHA-256), com CSS estático A4 (`3cm 2cm 2cm 3cm`) pronto para impressão ou salvamento em PDF pelo navegador. Não roda modelo e o log de auditoria não entra no pacote (ADR-006 e ADR-013).
+- **Reprodução** (`aok reproduce`, ADR-031): fora do pacote. Fluxo: `report verify` -> conferência dos sha256 de dataset, suíte e `agent.yaml` (recusa com exit 2 se mudou) -> reexecução de eval, red team e falsos positivos com o modelo, sem `--reuse`, em pasta nova -> comparação (`reproduzido`, `dentro da variância`, `divergente`, `não reproduzível`) -> `reproducao.json`/`.md` e evento `reproduction` no log encadeado, com âncora assinada se houver chave. O juiz não é reexecutado e o Ollama pode não ser determinístico.
 - **Plataforma** (`platform/`): serviço FastAPI que recebe o pacote por `POST /v1/reports` e, para pessoas com sessão, serve a leitura e o portal **Farol.** em `pt-BR`. Entregue em fases: API (ADR-007), portal (ADR-008), administração (ADR-009), operador e várias organizações (ADR-010 e ADR-011), recuperação de senha opcional (ADR-012), prontidão para operação online em instância única (ADR-014) e consolidação do portal **Farol.** em `pt-BR` (ADR-015); ver abaixo.
 - **Template** (`aok new`): gera um agente já instrumentado a partir de `src/agent_ops_kit/templates/agent/`.
 
@@ -99,7 +100,7 @@ Configuração completa e limites (instância única; múltiplas réplicas ainda
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `src/agent_ops_kit/cli.py` | CLI `aok`: `new`, `eval`, `redteam`, `audit`, `report`, `check` |
+| `src/agent_ops_kit/cli.py` | CLI `aok`: `new`, `eval`, `redteam`, `audit`, `report`, `reproduce`, `check` |
 | `src/agent_ops_kit/config.py` | leitura e validação do `agent.yaml` |
 | `src/agent_ops_kit/tracing.py` | setup do OpenTelemetry e helpers de span |
 | `src/agent_ops_kit/audit.py` | log JSONL com hash encadeado, `verify`, `anchor` |
@@ -123,6 +124,7 @@ Configuração completa e limites (instância única; múltiplas réplicas ainda
 | `src/agent_ops_kit/report/stats.py` | McNemar exato, efeito mínimo detectável e ressalvas geradas dos dados (ADR-025) |
 | `src/agent_ops_kit/report/coverage.py` | mapa de cobertura OWASP LLM Top 10 no relatório (ADR-027) |
 | `src/agent_ops_kit/report/verify.py` | `aok report verify`: recalcula números, semáforo e hashes do pacote, offline (ADR-026) |
+| `src/agent_ops_kit/reproduce.py` | `aok reproduce`: `report verify` prévio, confere sha256 das entradas, reexecuta eval, red team e falsos positivos sem `--reuse`, compara com o declarado (vereditos fixos), grava `reproducao.json`/`.md` e o evento `reproduction` no log encadeado (ADR-031) |
 | `src/agent_ops_kit/provenance.py` | proveniência: versão, commit, ambiente, Ollama, sementes e sha256 das entradas (ADR-022) |
 | `src/agent_ops_kit/target.py` | adaptador de agente Python (`target` no `agent.yaml`): contrato, validação da saída e `resolve_target` (ADR-028) |
 | `src/agent_ops_kit/ollama_chat.py` | chamada ao Ollama com limite de geração e timeout (ADR-028, correções de validação) |
@@ -170,7 +172,7 @@ As decisões e suas limitações estão em [decisoes.md](decisoes.md):
 - ADR-014: prontidão para operação online em instância única (`GET /v1/health`, `AOK_DOCS_ENABLED`, `AOK_HSTS_ENABLED`, `AOK_TRUSTED_PROXIES`) e simplicidade de manutenção (D1, D2, D3, D5).
 - ADR-015: portal oficial **Farol.** em `pt-BR` (`copy.ts`), foco B2B sem cadastro/preços (`CONTACT_URL`), direção visual Diário de Bordo / Carta Náutica com tipografia autohospedada (`@fontsource`) e semáforo com glifos distintos além da cor.
 - ADR-016 a ADR-021: Alembic, limitadores no banco, assinatura da âncora de auditoria, variância multi-execução, anti-ofuscação e suíte OWASP com suíte cega externa.
-- ADR-022 a ADR-030: proveniência, política, achados, McNemar, `report verify`, cobertura OWASP, adaptador de agente, assinatura do relatório e evidências fora do repositório.
+- ADR-022 a ADR-031: proveniência, política, achados, McNemar, `report verify`, cobertura OWASP, adaptador de agente, assinatura do relatório, evidências fora do repositório e reprodução de auditorias (`aok reproduce`).
 
 Inventário completo do que está implementado, com comandos, rotas e testes: [funcionalidades.md](funcionalidades.md).
 
@@ -180,10 +182,11 @@ Os números medidos e as ressalvas estão em [resultados.md](resultados.md).
 
 - Kafka (eventos do agente em tópico, consumidores de auditoria e métricas).
 - Adaptador de framework de agentes. Existe o adaptador de agente Python (`target` no `agent.yaml`, ADR-028), que chama uma função sua; o adaptador HTTP é recusado na validação e não existe.
-- `aok reproduce` (reexecução registrada no log assinado), mapeamento NIST AI RMF e ISO/IEC 42001 e tela de chaves no portal (as chaves só se gerenciam pela API admin).
+- Mapeamento NIST AI RMF e ISO/IEC 42001 e tela de chaves no portal (as chaves só se gerenciam pela API admin).
 - Prometheus e Grafana: as métricas são calculadas em Python, não exportadas.
 - Na plataforma: SSO, cadastro aberto (Sign Up), recuperação por e-mail para operadores (a recuperação de senha por e-mail dos usuários das organizações existe, opcional: ADR-012), dark mode e geração direta de binário PDF no servidor (o HTML já sai no formato A4 ABNT NBR 10719 para impressão/PDF pelo navegador). Migrações com Alembic (ADR-016), limitadores no banco (ADR-017) e paginação `limit`/`offset` das listagens do admin (só a tela de Atividade a usa no portal) existem. Trilha de login e de leitura também não existe (só download e escritas administrativas).
 - Provisionamento automatizado de deploy em nuvem (existe container/compose pronto para operação online em instância única atrás de proxy reverso HTTPS, sem scripts de infraestrutura gerenciada).
 - Publicação em PyPI: o pacote se instala a partir do repositório.
 - Validação do gate como medida de qualidade: ele foi exercitado em 2 PRs de teste (ver a seção D de [resultados.md](resultados.md)), que provam o mecanismo, não a qualidade.
+- Verificação do `reproducao.json` pelo `report verify` e reprodução de suíte cega externa ou agente HTTP (ADR-031).
 - Relatório verificado pela plataforma quanto à execução: o relatório continua autodeclarado e a plataforma não reexecuta eval nem red team (ADR-007). Hoje existe a verificação offline `aok report verify` (ADR-026) e a plataforma confere a assinatura Ed25519 do `relatorio.json` contra a chave cadastrada do agente (ADR-029); ela não roda o `verify` completo sobre as evidências.
