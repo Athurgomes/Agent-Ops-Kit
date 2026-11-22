@@ -771,6 +771,43 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reproduce(args: argparse.Namespace) -> int:
+    """`aok reproduce PACOTE`: reexecuta o pacote e compara com o declarado (exit 0 = reexecutou;
+    os vereditos estão no reproducao.json; 2 = recusa ou erro). Roda na raiz do repositório."""
+    from agent_ops_kit import reproduce
+
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+    cwd = os.getcwd()
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+    try:
+        res = reproduce.reproduce(
+            args.package, only=args.only, out=args.out, repo_root=".",
+            evidence_root=args.evidence_root, audit_log=args.audit_log,
+            signing_key=args.signing_key, public_key=args.public_key,
+            hmac_key=_resolve_hmac_env(args.audit_hmac_key_env), limit=args.limit,
+            command=reproduce.command_from_argv(args.argv),
+            log=lambda msg: print(msg, flush=True),
+        )
+    except (reproduce.ReproduceError, ValueError, OSError) as exc:
+        print(f"erro: {reproduce.scrub(str(exc), {'cwd': Path.cwd()})}", file=sys.stderr)
+        return 2
+    d = res["data"]
+    counts = ", ".join(f"{k} {v}" for k, v in d["verdict_counts"].items())
+    print(f"Reexecução gravada em {res['out'].as_posix()}/ (reproducao.json, reproducao.md)")
+    print(f"Ambiente: {d['environment']['status']}" + (" (reexecução parcial)" if d["parameters"]["partial"] else ""))
+    print(f"Vereditos: {counts}")
+    print("Descrição, não aprovação: veja reproducao.md.")
+    print(f"Log de auditoria: {res['audit_log'].as_posix()} (evento reproduction, seq {res['audit_seq']})")
+    if res["signature"]:
+        print(f"Âncora assinada: {res['signature'].as_posix()}")
+    elif res["stale_signature"]:
+        print("AVISO: há uma assinatura anterior ao lado do log; ela não cobre o novo evento (reassine).")
+    return 0
+
+
 NAME_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 _TEMPLATE_TEXT_SUFFIXES = {".py", ".md", ".yaml"}
 
@@ -980,6 +1017,21 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--require-signature", action="store_true", help="falha se o pacote não tiver relatorio.json.sig")
     r.add_argument("--evidence-root", default=None, help="raiz das evidências fora do repositório (@evidence/...)")
     p.set_defaults(func=cmd_report)
+
+    p = sub.add_parser(
+        "reproduce",
+        help="reexecuta um pacote de relatório já emitido e compara com o declarado (usa o modelo)",
+    )
+    p.add_argument("package", help="pasta do pacote (com relatorio.json) ou o próprio relatorio.json")
+    p.add_argument("--only", choices=("all", "eval", "redteam"), default="all", help="o que reexecutar")
+    p.add_argument("--out", default=None, help="pasta nova de saída (padrão: <pacote>_reproducao ao lado)")
+    p.add_argument("--evidence-root", default=None, help="raiz das evidências fora do repositório (@evidence/...)")
+    p.add_argument("--audit-log", default=None, help="log de auditoria existente a que acrescentar o evento (padrão: novo, em <out>/audit)")
+    p.add_argument("--signing-key", default=None, help="chave privada Ed25519 (PEM) para assinar a âncora do log (padrão: AOK_SIGNING_KEY_FILE/PEM)")
+    p.add_argument("--public-key", default=None, help="chave pública Ed25519 (PEM) para conferir relatorio.json.sig")
+    p.add_argument("--audit-hmac-key-env", default=None, help="variável de ambiente com a chave HMAC da assinatura de auditoria do pacote")
+    p.add_argument("--limit", type=int, default=None, help="reexecuta só os N primeiros casos (teste rápido; reexecução parcial)")
+    p.set_defaults(func=cmd_reproduce)
 
     p = sub.add_parser("check", help="gera o pacote a partir dos resultados gravados e, opcional, publica")
     add_package_args(p, None)

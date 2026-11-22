@@ -204,10 +204,14 @@ def sign_anchor(
     private_key_path: str | Path | None = None,
     hmac_key: str | bytes | None = None,
     out_path: str | Path | None = None,
+    private_key_pem: bytes | None = None,
 ) -> dict[str, Any]:
-    """Valida a cadeia do log e assina sua âncora com Ed25519 ou HMAC-SHA256."""
+    """Valida a cadeia do log e assina sua âncora com Ed25519 ou HMAC-SHA256.
+
+    A chave Ed25519 vem de `private_key_path` ou do conteúdo PEM em `private_key_pem` (ex.:
+    `signing_key_from_env`, sem gravar a chave em disco)."""
     hmac_bytes = _normalize_hmac_key(hmac_key)
-    has_priv = private_key_path is not None and str(private_key_path) != ""
+    has_priv = (private_key_path is not None and str(private_key_path) != "") or bool(private_key_pem)
     has_hmac = hmac_bytes is not None and len(hmac_bytes) > 0
 
     if has_priv and has_hmac:
@@ -225,7 +229,10 @@ def sign_anchor(
     payload_bytes = build_anchor_payload(res.n_lines, last_hash, signed_at_utc)
 
     if has_priv:
-        priv_bytes = Path(private_key_path).read_bytes()  # type: ignore[arg-type]
+        if private_key_pem:
+            priv_bytes = private_key_pem
+        else:
+            priv_bytes = Path(private_key_path).read_bytes()  # type: ignore[arg-type]
         try:
             loaded = serialization.load_pem_private_key(priv_bytes, password=None)
         except (ValueError, TypeError, UnsupportedAlgorithm) as exc:
