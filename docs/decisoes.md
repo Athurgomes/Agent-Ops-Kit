@@ -512,3 +512,23 @@ Alternativa descartada: modelo minúsculo no runner. Custo zero, mas mede outro 
 - A variância do red team não é medida (uma execução por configuração); por isso ele só recebe `reproduzido` ou `divergente`.
 - O `report verify` ainda não confere o `reproducao.json`; a plataforma não recebe nem confere reproduções.
 - Validação ao vivo (21 e 22/11/2026, llama3.1:8b, semente 42): pacote pequeno (eval de 4 casos, red team de 6, falsos positivos 3+3) deu 12 `reproduzido` e 2 `divergente`, ambiente "igual"; a divergência ficou só nas respostas por caso (3 de 4 idênticas no eval v1, 5 de 6 no baseline do red team), com médias, ASR, falsos positivos e p reproduzidos exatos. O eval original de 50 casos, reexecutado de um pacote gerado das evidências versionadas, sem `--reuse` (cerca de 10 min), deu 6 `reproduzido`, 0 `divergente`, 50 de 50 respostas idênticas em v1 e v2, com ambiente "não confirmado" (o original não registrou digest do modelo nem versão do Ollama). Byte adulterado ou dataset alterado: recusa com exit 2, exercitada ao vivo e coberta por testes. `aok audit verify` do log da reprodução: ok. Uma reexecução por pacote: não é medida de variância. Testes: `tests/test_reproduce.py`.
+
+
+## ADR-032: Rumo: auditoria de agentes de terceiros
+
+**Contexto.** O objetivo declarado do projeto é um kit que times de desenvolvimento integrem a qualquer agente, de qualquer função. O trabalho até aqui concentrou-se em tornar o relatório verificável (ADR-022 a ADR-031) e em medir o agente de exemplo. O dataset de 50 e 200 casos, os prompts v1 e v2 e o A/B, e os guardrails do kit só valem para o agente de exemplo; o target externo é só Python (ADR-028) e `type: http` é recusado. A suíte de ataques é genérica em parte, mas usa ferramentas falsas, dados fictícios e um canary do agente de exemplo. O adaptador HTTP foi adiado "para quando houver agente externo real", o que inverteu a prioridade: sem HTTP não há agente externo real para testar.
+
+**Decisão.**
+- O agente de exemplo passa a ser tratado só como testbed. Nada no kit deve assumir que o agente auditado é ele.
+- Prioridade (fila B, em ordem): target HTTP com mapeamento configurável e limites de rede; perfil do agente no `agent.yaml` (função, escopo, dados sensíveis, ações proibidas, ferramentas); bateria universal de testes parametrizados pelo perfil, sobre o mapa OWASP LLM Top 10; critérios de sucesso e calibração do juiz contra rotulagem humana; camada funcional opcional (sem dataset, o relatório diz "não avaliado"); seção do relatório sobre o que foi e não foi testado; guia de integração; validação em 2 a 3 agentes reais diferentes do de exemplo.
+- Toda feature nova é testada contra ao menos um agente que não seja o de exemplo.
+- O kit roda na máquina ou no CI de quem desenvolve o agente; rodar dentro da plataforma contra agentes de terceiros fica fora do escopo sem um desenho de segurança próprio.
+- Referência cruzada com o ADR-028: o adaptador HTTP, antes adiado, passa a ser a primeira prioridade.
+
+**Consequências e limites.**
+- Até a validação em agentes diferentes, nenhum documento deve afirmar que o kit audita qualquer agente. Hoje o veredito medido vale para o agente de exemplo; agente externo só tem o contrato Python.
+- Só entrada e saída: sem canary no prompt do agente alheio, o vazamento só é detectável por padrões e pelo juiz. O juiz local de 8B é fraco para julgar ataques em agentes diversos; a calibração contra rotulagem humana está na fila.
+- Agente externo não é determinístico: `aok reproduce` tende a dar "dentro da variância" ou "divergente". Chamar a API de um agente tem custo e pode ter efeitos colaterais; use ambiente de staging.
+- Guardrails do kit só são mensuráveis por meio de um proxy; o desenho está em aberto.
+- O resultado vale só para o que foi testado e o relatório não é atestado de segurança.
+- Pendências de decisão do dono: esquema do perfil do agente, proxy de guardrails, política de custo, limiares provisórios (n abaixo de 30, IC acima de 0,20), severidade dos achados e política padrão.

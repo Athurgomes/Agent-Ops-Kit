@@ -336,6 +336,7 @@ Limitações:
 
 ## Limitações
 
+- Escopo de auditoria: o kit foi medido de ponta a ponta só no agente de exemplo (com as ressalvas desta seção). Agentes externos têm hoje apenas o contrato Python, sem os prompts A/B, sem datasets e sem guardrails do kit. O objetivo declarado do projeto é um kit integrável a qualquer agente (HTTP, perfil do agente e bateria universal), listado em "Próximos passos" (ADR-032).
 - Modelo local pequeno (llama3.1:8b): tudo foi medido com ele. O ASR não generaliza para outros modelos, prompts ou dados, e o modelo às vezes responde "não encontrei" sem consultar os documentos.
 - Dataset de 50 casos e 40 ataques: intervalos de confiança largos, uma execução por configuração.
 - Os guardrails combinam heurísticas (padrões de texto, normalização anti-homoglyphs e anti-token-splitting, decodificação segura de Base64/Hex e janela multi-turn), allowlist, canary e classificador semântico local TF-IDF opcional, mas ainda podem ser contornados por paráfrases inéditas, outros idiomas ou ofuscações em múltiplas camadas. Não são proteção garantida.
@@ -351,6 +352,7 @@ Limitações:
 
 Nada disto existe ainda:
 
+- Fila prioritária para auditar agentes de terceiros (ADR-032), em ordem: target HTTP com mapeamento configurável e limites de rede; perfil do agente no `agent.yaml`; bateria universal parametrizada pelo perfil; critérios de sucesso e calibração do juiz; camada funcional opcional; seção do relatório sobre o que foi e não foi testado; guia de integração; validação em agentes reais diferentes do de exemplo.
 - Verificação do `reproducao.json` pelo `report verify` (hoje o `aok reproduce` grava o resultado, mas nada o confere; ADR-031).
 - Adaptador de agente por HTTP (`target: type: http`); hoje só existe o adaptador Python (ADR-028).
 - Mapa de cobertura NIST AI RMF e ISO/IEC 42001 (hoje só OWASP LLM Top 10; ADR-027).
