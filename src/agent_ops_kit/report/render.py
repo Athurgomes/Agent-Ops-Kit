@@ -11,7 +11,7 @@ import re
 from html import escape
 
 from agent_ops_kit.report import stats as stats_mod
-from agent_ops_kit.report.build import GREEN_TEXT
+from agent_ops_kit.report.build import GREEN_TEXT, is_eval_evaluated
 from agent_ops_kit.report.build import cases_label as _cases
 
 COLOR_LABEL = {"green": "VERDE", "yellow": "AMARELO", "red": "VERMELHO"}
@@ -104,19 +104,29 @@ def _pretextual_blocks(d: dict, doc_code: str) -> list[Block]:
     asr_b = rt["asr"]["baseline"].get("total") or {"n": 0, "successes": 0, "asr": 0.0}
     asr_g = rt["asr"]["guardrails"].get("total") or {"n": 0, "successes": 0, "asr": 0.0}
     fp_blocked, _ = _fp_totals(rt)
-    gate_msg = (
-        "com disparo do gate de regressão"
-        if ev["regression"]
-        else "sem disparo do gate de regressão"
-    )
+    eval_ok = is_eval_evaluated(ev)
+    if eval_ok:
+        gate_msg = (
+            "com disparo do gate de regressão"
+            if ev["regression"]
+            else "sem disparo do gate de regressão"
+        )
+        eval_scope = f"abrangendo {_cases(ev)} de qualidade funcional ({ev['candidate']} vs {ev['baseline']})"
+        eval_summary = (
+            f"Na qualidade funcional, a variante candidata obteve média {_f(ev['mean_candidate'])} "
+            f"({_pct(ev['mean_candidate'])}%) contra {_f(ev['mean_baseline'])} "
+            f"({_pct(ev['mean_baseline'])}%) da referência, {gate_msg}. "
+        )
+        seed_cell = str(ev["seed"])
+    else:
+        eval_scope = "com qualidade funcional não avaliada (dataset funcional não fornecido)"
+        eval_summary = "Na qualidade funcional, o domínio foi marcado como não avaliado (dataset funcional não fornecido). "
+        seed_cell = "não avaliado"
     summary = (
         f"Este parecer apresenta os resultados determinísticos da avaliação do agente {ag['name']} "
-        f"(prompt {ag['prompt_version']}, modelo {ag['model']}), abrangendo {_cases(ev)} "
-        f"de qualidade funcional ({ev['candidate']} vs {ev['baseline']}), {rt['n_attacks']} "
+        f"(prompt {ag['prompt_version']}, modelo {ag['model']}), {eval_scope}, {rt['n_attacks']} "
         f"simulações de manipulação e {rt['n_legit_questions']} consultas legítimas. A classificação "
-        f"consolidada foi {COLOR_LABEL[color]}. Na qualidade funcional, a variante candidata obteve "
-        f"média {_f(ev['mean_candidate'])} ({_pct(ev['mean_candidate'])}%) contra "
-        f"{_f(ev['mean_baseline'])} ({_pct(ev['mean_baseline'])}%) da referência, {gate_msg}. "
+        f"consolidada foi {COLOR_LABEL[color]}. {eval_summary}"
         f"Sob simulações de manipulação, {asr_g['successes']} de {asr_g['n']} tentativas tiveram "
         f"êxito com controles ativos frente a {asr_b['successes']} de {asr_b['n']} sem controles, "
         f"com {fp_blocked} de {rt['n_legit_questions']} perguntas legítimas bloqueadas "
@@ -141,7 +151,7 @@ def _pretextual_blocks(d: dict, doc_code: str) -> list[Block]:
                 ["Agente avaliado", str(ag["name"])],
                 ["Versão de prompt", str(ag["prompt_version"])],
                 ["Modelo avaliado", str(ag["model"])],
-                ["Semente de reprodutibilidade", str(ev["seed"])],
+                ["Semente de reprodutibilidade", seed_cell],
                 [
                     "Esquema / Regra de classificação",
                     f"v{d['schema_version']} / {d['semaphore']['rules_version']}",
@@ -255,7 +265,15 @@ def _profile_blocks(d: dict) -> list[Block]:
 def _scope_blocks(d: dict) -> list[Block]:
     ag, ev, rt, au = d["agent"], d["eval"], d["redteam"], d["audit"]
     fp = rt["false_positives"]
-    dates = sorted({str(m["date"]) for m in ev["manifest"].values()})
+    if is_eval_evaluated(ev):
+        dates = sorted({str(m["date"]) for m in ev["manifest"].values()})
+        eval_item = (
+            f"Avaliação funcional A/B: {ev['candidate']} comparada à referência "
+            f"{ev['baseline']} em {_cases(ev)} ({ev['runs_per_config']} "
+            f"execução(ões) por configuração); respostas gravadas em {', '.join(dates)}."
+        )
+    else:
+        eval_item = "Avaliação funcional: não avaliado (dataset funcional não fornecido)."
     audit_item = (
         "Trilha de auditoria: nenhum log informado neste pacote."
         if au is None
@@ -280,11 +298,7 @@ def _scope_blocks(d: dict) -> list[Block]:
                     f"{ag['prompt_version']}; modelo: {ag['model']})."
                 ),
                 _target_line(d),
-                (
-                    f"Avaliação funcional A/B: {ev['candidate']} comparada à referência "
-                    f"{ev['baseline']} em {_cases(ev)} ({ev['runs_per_config']} "
-                    f"execução(ões) por configuração); respostas gravadas em {', '.join(dates)}."
-                ),
+                eval_item,
                 (
                     f"Simulações de manipulação (red team): {rt['n_attacks']} cenários executados "
                     f"sem controles e com controles ativos ({rt['runs_per_config']} execução(ões) "
@@ -308,21 +322,33 @@ def _business_indicator_rows(d: dict) -> list[list[str]]:
     asr_g = rt["asr"]["guardrails"].get("total") or {"n": 0, "successes": 0, "asr": 0.0}
     fp_blocked, fp_rate = _fp_totals(rt)
 
-    if ev["regression"]:
+    if not is_eval_evaluated(ev):
+        qual_ind = "Não avaliado (dataset funcional não fornecido)"
         qual_read = (
-            "Queda estatisticamente significativa na qualidade das respostas; "
-            "impede liberação imediata até correção."
-        )
-    elif ev["mean_diff"] < 0:
-        qual_read = (
-            "Leve redução na média sem confirmação estatística; recomenda acompanhamento "
-            "em amostra ampliada."
+            "Qualidade funcional não avaliada neste ciclo por ausência de dataset funcional; "
+            "não equivale a aprovação."
         )
     else:
-        qual_read = (
-            "Qualidade funcional mantida ou superior à referência, sem evidência de "
-            "regressão no conjunto avaliado."
+        qual_ind = (
+            f"Média {_f(ev['mean_candidate'])} ({_pct(ev['mean_candidate'])}%) vs "
+            f"{_f(ev['mean_baseline'])} ({_pct(ev['mean_baseline'])}%); "
+            f"diferença {_f(ev['mean_diff'], signed=True)} (p = {_f(ev['p_value'])})"
         )
+        if ev["regression"]:
+            qual_read = (
+                "Queda estatisticamente significativa na qualidade das respostas; "
+                "impede liberação imediata até correção."
+            )
+        elif ev["mean_diff"] < 0:
+            qual_read = (
+                "Leve redução na média sem confirmação estatística; recomenda acompanhamento "
+                "em amostra ampliada."
+            )
+        else:
+            qual_read = (
+                "Qualidade funcional mantida ou superior à referência, sem evidência de "
+                "regressão no conjunto avaliado."
+            )
 
     if asr_g["successes"] == 0:
         rt_read = (
@@ -383,11 +409,7 @@ def _business_indicator_rows(d: dict) -> list[list[str]]:
     return [
         [
             "Qualidade das respostas ao usuário",
-            (
-                f"Média {_f(ev['mean_candidate'])} ({_pct(ev['mean_candidate'])}%) vs "
-                f"{_f(ev['mean_baseline'])} ({_pct(ev['mean_baseline'])}%); "
-                f"diferença {_f(ev['mean_diff'], signed=True)} (p = {_f(ev['p_value'])})"
-            ),
+            qual_ind,
             qual_read,
         ],
         [
@@ -521,6 +543,14 @@ def _has_multirun(ev: dict) -> bool:
 
 
 def _functional_quality_blocks(ev: dict) -> list[Block]:
+    if not is_eval_evaluated(ev):
+        reason = ev.get("reason") if isinstance(ev, dict) else None
+        detail = str(reason) if reason else "Qualidade funcional não avaliada neste relatório."
+        return [
+            ("h2", _SECTIONS[2]),
+            ("p", "Não avaliado (dataset funcional não fornecido)."),
+            ("p", detail),
+        ]
     diff_pp = ev["mean_diff"] * 100
     if ev["regression"]:
         continuity = (
@@ -991,7 +1021,7 @@ def _coverage_blocks(d: dict) -> list[Block]:
 def _appendix_blocks(d: dict) -> list[Block]:
     ev, rt, au = d["eval"], d["redteam"], d["audit"]
     fp = rt["false_positives"]
-    man = ev["manifest"]
+    eval_ok = is_eval_evaluated(ev)
 
     cats = list(dict.fromkeys([*rt["asr"]["guardrails"].keys(), *rt["asr"]["baseline"].keys()]))
     if "total" in cats:
@@ -1019,7 +1049,9 @@ def _appendix_blocks(d: dict) -> list[Block]:
     blocks: list[Block] = [
         ("h1", _SECTIONS[6], "appendix"),
         ("h2", "A.1 Avaliação funcional A/B (checagens determinísticas)"),
-        (
+    ]
+    if eval_ok:
+        blocks.append((
             "table",
             ["Item", "Valor"],
             [
@@ -1042,40 +1074,41 @@ def _appendix_blocks(d: dict) -> list[Block]:
                 ],
                 ["Execuções por configuração", str(ev["runs_per_config"])],
             ],
-        ),
-    ]
-    if _has_multirun(ev):
-        variance = ev["variance"]
-        var_rows = [
-            [
-                v,
-                str(vs["n_runs"]),
-                _f(vs["mean"]),
-                _f(vs["run_stdev"]),
-                _f(vs["mean_case_stdev"]),
-                f"{_pct(vs['exact_score_consistency_rate'])}%",
-                f"{_pct(vs['exact_answer_consistency_rate'])}%",
+        ))
+        if _has_multirun(ev):
+            variance = ev["variance"]
+            var_rows = [
+                [
+                    v,
+                    str(vs["n_runs"]),
+                    _f(vs["mean"]),
+                    _f(vs["run_stdev"]),
+                    _f(vs["mean_case_stdev"]),
+                    f"{_pct(vs['exact_score_consistency_rate'])}%",
+                    f"{_pct(vs['exact_answer_consistency_rate'])}%",
+                ]
+                for v in (ev["baseline"], ev["candidate"])
+                if (vs := variance.get(v))
             ]
-            for v in (ev["baseline"], ev["candidate"])
-            if (vs := variance.get(v))
-        ]
-        if var_rows:
-            blocks += [
-                ("h3", "A.1.1 Variância entre execuções por variante"),
-                (
-                    "table",
-                    [
-                        "Variante",
-                        "Execuções",
-                        "Média",
-                        "Desvio-padrão (execuções)",
-                        "Desvio médio por caso",
-                        "Consistência exata (score)",
-                        "Consistência exata (resposta)",
-                    ],
-                    var_rows,
-                ),
-            ]
+            if var_rows:
+                blocks += [
+                    ("h3", "A.1.1 Variância entre execuções por variante"),
+                    (
+                        "table",
+                        [
+                            "Variante",
+                            "Execuções",
+                            "Média",
+                            "Desvio-padrão (execuções)",
+                            "Desvio médio por caso",
+                            "Consistência exata (score)",
+                            "Consistência exata (resposta)",
+                        ],
+                        var_rows,
+                    ),
+                ]
+    else:
+        blocks.append(("p", "Não avaliado (dataset funcional não fornecido)."))
     blocks += [
         ("h2", "A.2 Taxa de sucesso de ataques (ASR) por categoria (IC 95% de Wilson)"),
         (
@@ -1103,7 +1136,10 @@ def _appendix_blocks(d: dict) -> list[Block]:
             ],
         ),
         ("h2", "A.4 Manifesto das respostas da avaliação funcional"),
-        (
+    ]
+    if eval_ok:
+        man = ev["manifest"]
+        blocks.append((
             "table",
             [
                 "Variante",
@@ -1126,7 +1162,10 @@ def _appendix_blocks(d: dict) -> list[Block]:
                 ]
                 for v, m in man.items()
             ],
-        ),
+        ))
+    else:
+        blocks.append(("p", "Não avaliado (dataset funcional não fornecido; sem manifesto de respostas)."))
+    blocks += [
         ("h2", "A.5 Hashes criptográficos dos arquivos de entrada (SHA-256)"),
         ("table", ["Entrada", "SHA-256"], [[k, v] for k, v in d["hashes"].items()]),
         ("h2", "A.6 Verificação da cadeia de auditoria"),

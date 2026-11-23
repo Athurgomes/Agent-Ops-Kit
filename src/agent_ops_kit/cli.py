@@ -685,9 +685,10 @@ def _write_package(args: argparse.Namespace) -> dict:
     cwd = os.getcwd()  # o runner importa examples.rag_agent, na raiz do repositório
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
+    skip_eval = bool(getattr(args, "no_eval", False))
     data = build.build_data(
         config=args.config,
-        dataset=args.dataset,
+        dataset=None if skip_eval else args.dataset,
         prompts_dir=args.prompts_dir,
         answers_dir=args.answers_dir,
         baseline=args.baseline,
@@ -696,6 +697,7 @@ def _write_package(args: argparse.Namespace) -> dict:
         redteam_baseline=args.redteam_baseline,
         redteam_guardrails=args.redteam_guardrails,
         fp_dir=args.fp_dir,
+        skip_eval=skip_eval,
         audit_path=args.audit,
         audit_signature=args.audit_signature,
         audit_public_key=args.audit_public_key,
@@ -1047,6 +1049,11 @@ def build_parser() -> argparse.ArgumentParser:
         r.add_argument("--baseline", default="v1", help="variante de referência do eval")
         r.add_argument("--candidate", default="v2", help="variante candidata do eval")
         r.add_argument("--dataset", default="evals/dataset.jsonl")
+        r.add_argument(
+            "--no-eval",
+            action="store_true",
+            help="omite a camada funcional (eval); o relatório registra qualidade funcional como não avaliada",
+        )
         r.add_argument("--prompts-dir", default="evals/prompts")
         r.add_argument("--config", default=config_default)
         r.add_argument("--answers-dir", default="evals/answers", help="pasta com as respostas e o manifest.json")

@@ -259,11 +259,29 @@ def profile_summary(cfg: AgentConfig) -> dict:
     }
 
 
-def agent_block(config, manifest: dict, candidate: str) -> dict:
+EVAL_NOT_EVALUATED = {
+    "status": "nao_avaliado",
+    "evaluated": False,
+    "reason": "dataset funcional não fornecido; qualidade funcional não avaliada",
+}
+
+
+def is_eval_evaluated(ev: dict | None) -> bool:
+    return (
+        isinstance(ev, dict)
+        and ev.get("status") != "nao_avaliado"
+        and ev.get("evaluated") is not False
+    )
+
+
+def agent_block(
+    config, manifest: dict | None = None, candidate: str | None = None
+) -> dict:
+    model = (manifest[candidate]["model"] or config.model) if manifest and candidate else config.model
     return {
         "name": config.name,
         "prompt_version": config.prompt_version,
-        "model": manifest[candidate]["model"] or config.model,
+        "model": model,
     }
 
 
@@ -408,6 +426,20 @@ def _eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, d
     ctx["profile"] = profile_summary(config)
     section["manifest"] = manifest
     return section, agent_block(config, manifest, variants[1])
+
+
+def _no_eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, dict]:
+    ev_root = a["evidence_root"]
+    config_path = Path(a["config"])
+    _need(config_path, "config")
+    config = load_config(config_path)
+    prov["executions"]["eval"] = {}
+    _add_input(prov["inputs"], config_path, ev_root)
+    _role(prov, "config", config_path, evidence_root=ev_root)
+    hashes["config"] = _sha(config_path)
+    ctx["eval"] = None
+    ctx["profile"] = profile_summary(config)
+    return dict(EVAL_NOT_EVALUATED), agent_block(config)
 
 
 def _refuse_mixed_targets(metas: dict) -> None:
@@ -556,11 +588,12 @@ def _signature_invalid(au: dict | None) -> bool:
 def indicators(ev: dict, rt: dict, au: dict | None) -> dict:
     """Valores derivados que as regras da política consultam (caminho `indicators.*`)."""
     fp = rt["false_positives"]
+    eval_ok = is_eval_evaluated(ev) and "mean_diff" in ev and "regression" in ev
     return {
         "audit_informed": au is not None,
         "audit_invalid": au is not None and (not au["ok"] or _signature_invalid(au)),
         "fp_blocked_total": fp["dataset"]["blocked"] + fp["benign"]["blocked"],
-        "eval_nonsignificant_drop": ev["mean_diff"] < 0 and not ev["regression"],
+        "eval_nonsignificant_drop": (ev["mean_diff"] < 0 and not ev["regression"]) if eval_ok else None,
     }
 
 
@@ -605,7 +638,15 @@ def _audit_limitation_text(au: dict | None) -> str:
 
 
 def _runs_limitation(ev: dict, rt: dict) -> str:
-    ev_runs, rt_runs = ev["runs_per_config"], rt["runs_per_config"]
+    rt_runs = rt["runs_per_config"]
+    if not is_eval_evaluated(ev):
+        if rt_runs <= 1:
+            return (
+                f"Eval: não avaliado; red team: {_plural(rt_runs)} por configuração. "
+                "Não há medida da variação entre execuções."
+            )
+        return f"Eval: não avaliado; red team: {_plural(rt_runs)} por configuração."
+    ev_runs = ev["runs_per_config"]
     if ev_runs <= 1 and rt_runs <= 1:
         return (
             f"Eval: {_plural(ev_runs)} por configuração; red team: "
@@ -631,15 +672,23 @@ def _runs_limitation(ev: dict, rt: dict) -> str:
 def limitations(data: dict) -> list[str]:
     """Texto fixo do kit mais as ressalvas estatísticas geradas dos dados (stats.statistical_caveats)."""
     ev, rt = data["eval"], data["redteam"]
+    if is_eval_evaluated(ev):
+        size_line = (
+            f"Tamanho do teste: {cases_label(ev)} de avaliação, {rt['n_attacks']} ataques e "
+            f"{rt['n_legit_questions']} perguntas legítimas para medir falsos positivos."
+        )
+    else:
+        size_line = (
+            f"Tamanho do teste: qualidade funcional não avaliada (sem dataset funcional), "
+            f"{rt['n_attacks']} ataques e {rt['n_legit_questions']} perguntas legítimas para medir "
+            "falsos positivos."
+        )
     return [
         (
             f"Modelo local pequeno ({data['agent']['model']}): os resultados não valem para "
             "outros modelos nem para uso em produção."
         ),
-        (
-            f"Tamanho do teste: {cases_label(ev)} de avaliação, {rt['n_attacks']} ataques e "
-            f"{rt['n_legit_questions']} perguntas legítimas para medir falsos positivos."
-        ),
+        size_line,
         _runs_limitation(ev, rt),
         (
             "As defesas são heurísticas (filtros de entrada, ferramentas e saída) e podem ser "
@@ -685,14 +734,22 @@ def summary_values(d: dict) -> dict[str, str]:
     fp = rt["false_positives"]
     blocked = fp["dataset"]["blocked"] + fp["benign"]["blocked"]
     au = d["audit"]
+    if is_eval_evaluated(ev):
+        eval_items = {
+            f"Eval: diferença média ({ev['candidate']} - {ev['baseline']})": (
+                f"{ev['mean_diff']:+.4f} (IC 95% [{ev['ci95_low']:+.4f}; {ev['ci95_high']:+.4f}], "
+                f"p = {ev['p_value']:.4f})"
+            ),
+            f"Eval: média de {ev['candidate']}": f"{ev['mean_candidate']:.4f}",
+        }
+    else:
+        eval_items = {
+            "Qualidade funcional (eval)": "Não avaliado (dataset funcional não fornecido)",
+        }
     return {
         "Semáforo": d["semaphore"]["color"],
         "Modelo": str(d["agent"]["model"]),
-        f"Eval: diferença média ({ev['candidate']} - {ev['baseline']})": (
-            f"{ev['mean_diff']:+.4f} (IC 95% [{ev['ci95_low']:+.4f}; {ev['ci95_high']:+.4f}], "
-            f"p = {ev['p_value']:.4f})"
-        ),
-        f"Eval: média de {ev['candidate']}": f"{ev['mean_candidate']:.4f}",
+        **eval_items,
         "Red team: ataques com sucesso sem guardrails": asr("baseline"),
         "Red team: ataques com sucesso com guardrails": asr("guardrails"),
         "Falsos positivos (perguntas legítimas bloqueadas)": (
@@ -762,15 +819,16 @@ def _provenance_block(agent: dict, prov: dict, command: str | None, repo_dir: st
 def build_data(
     *,
     config: str,
-    dataset: str,
-    prompts_dir: str,
-    answers_dir: str,
-    baseline: str,
-    candidate: str,
-    seed: int,
+    dataset: str | Path | None = None,
+    prompts_dir: str = "evals/prompts",
+    answers_dir: str = "evals/answers",
+    baseline: str = "v1",
+    candidate: str = "v2",
+    seed: int = 42,
     redteam_baseline: str,
     redteam_guardrails: str,
     fp_dir: str,
+    skip_eval: bool = False,
     audit_path: str | None = None,
     audit_signature: str | None = None,
     audit_public_key: str | None = None,
@@ -784,7 +842,8 @@ def build_data(
     evidence_root: str | None = None,
 ) -> dict:
     """Lê os resultados e devolve o dict do relatorio.json. Levanta ReportError com mensagem curta."""
-    if baseline == candidate:
+    no_eval = skip_eval or dataset is None
+    if not no_eval and baseline == candidate:
         raise ReportError("--baseline e --candidate devem ser variantes diferentes")
     args = dict(locals())
     for key, label in (
@@ -808,7 +867,11 @@ def build_data(
     prov: dict = {"seeds": {}, "executions": {}, "inputs": {}, "files": {}}
     ctx: dict = {}
     try:
-        ev, agent = _eval_section(args, hashes, prov, ctx)
+        ev, agent = (
+            _no_eval_section(args, hashes, prov, ctx)
+            if no_eval
+            else _eval_section(args, hashes, prov, ctx)
+        )
         rt = _redteam_section(args, hashes, prov, ctx)
         found, found_paths = findings_mod.collect(
             redteam=ctx["redteam"], false_positives=ctx["false_positives"], eval_ctx=ctx["eval"],

@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from pydantic import BaseModel, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
 class EvalCase(BaseModel):
@@ -11,13 +11,14 @@ class EvalCase(BaseModel):
     question: str
     answerable: bool
     expected: list[str]
-    sources: list[str]
-    category: str
+    sources: list[str] = Field(default_factory=list)
+    category: str = "geral"
+    notes: str | None = None
 
     @model_validator(mode="after")
     def _check_consistency(self) -> "EvalCase":
-        if self.answerable and not (self.expected and self.sources):
-            raise ValueError(f"{self.id}: caso respondível exige expected e sources não vazios")
+        if self.answerable and not self.expected:
+            raise ValueError(f"{self.id}: caso respondível exige expected não vazio")
         if not self.answerable and (self.expected or self.sources):
             raise ValueError(f"{self.id}: caso não respondível exige expected e sources vazios")
         return self

@@ -46,9 +46,11 @@ def contains_expected(case: EvalCase, answer: str) -> bool | None:
     return all(_has_token(ans, _norm(e)) for e in case.expected)
 
 
-def cites_correct_source(case: EvalCase, answer: str) -> bool:
+def cites_correct_source(case: EvalCase, answer: str) -> bool | None:
     ans = _fold(answer)
     if case.answerable:
+        if not case.sources:
+            return None
         return any(_fold(s) in ans for s in case.sources)
     return not _FILE_RE.search(ans)
 
@@ -56,7 +58,7 @@ def cites_correct_source(case: EvalCase, answer: str) -> bool:
 def valid_format(case: EvalCase, answer: str) -> bool:
     if not answer.strip():
         return False
-    if case.answerable:
+    if case.answerable and case.sources:
         return bool(_SOURCE_LINE_RE.search(_fold(answer)))
     return True
 

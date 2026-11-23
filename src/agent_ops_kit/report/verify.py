@@ -221,16 +221,29 @@ class _Verifier:
             )
         return self.cached("audit", run)
 
+    def _eval_skipped(self) -> bool:
+        return self.data["eval"].get("status") == "nao_avaliado"
+
     # -- checagens --
 
     def check_hashes(self) -> str:
         fails, unver = [], []
         hashes = self.data["hashes"]
         ev = self.data["eval"]
-        expected = {
-            "config", "eval_dataset", "eval_manifest", "redteam_baseline", "redteam_guardrails",
-            "fp_dataset", "fp_benign", f"eval_answers_{ev['baseline']}", f"eval_answers_{ev['candidate']}",
-        }
+        if self._eval_skipped():
+            expected = {"config", "redteam_baseline", "redteam_guardrails", "fp_dataset", "fp_benign"}
+            forbidden = {"eval_dataset", "eval_manifest"} | {
+                k for k in set(hashes) | set(self.files) if k.startswith("eval_answers_")
+            }
+            for name in sorted(forbidden & set(hashes)):
+                fails.append(f"hash '{name}' presente com eval não avaliado")
+            for name in sorted(forbidden & set(self.files)):
+                fails.append(f"provenance.files '{name}' presente com eval não avaliado")
+        else:
+            expected = {
+                "config", "eval_dataset", "eval_manifest", "redteam_baseline", "redteam_guardrails",
+                "fp_dataset", "fp_benign", f"eval_answers_{ev['baseline']}", f"eval_answers_{ev['candidate']}",
+            }
         for name in sorted(expected - set(hashes)):
             fails.append(f"hash '{name}' ausente do pacote")
         for name, sha in sorted(hashes.items()):
@@ -255,6 +268,12 @@ class _Verifier:
         return _aggregate(fails, unver, f"{len(inputs)} arquivos de entrada conferem")
 
     def check_eval(self) -> str:
+        if self._eval_skipped():
+            _compare("eval", self.data["eval"], build.EVAL_NOT_EVALUATED)
+            for where, mapping in (("hashes", self.data["hashes"]), ("provenance.files", self.files)):
+                if "eval_dataset" in mapping:
+                    raise _Fail(f"eval_dataset presente em {where} com eval não avaliado")
+            return "eval não avaliado (dataset funcional não fornecido)"
         st = self.eval_state()
         stored = {k: v for k, v in self.data["eval"].items() if k != "manifest"}
         _compare("eval", stored, _norm(st["section"]))
@@ -266,14 +285,22 @@ class _Verifier:
         )
 
     def check_manifest(self) -> str:
+        if self._eval_skipped():
+            for where, mapping in (("hashes", self.data["hashes"]), ("provenance.files", self.files)):
+                if "eval_manifest" in mapping:
+                    raise _Fail(f"eval_manifest presente em {where} com eval não avaliado")
+            return "eval não avaliado (sem manifesto de respostas)"
         st = self.eval_state()
         _compare("eval.manifest", self.data["eval"].get("manifest"), _norm(st["manifest"]))
         return "manifesto das respostas confere com o gravado"
 
     def check_agent(self) -> str:
+        config = load_config(str(self.file("config")))
+        if self._eval_skipped():
+            _compare("agent", self.data["agent"], build.agent_block(config))
+            return "agente (nome, versão do prompt, modelo) confere com agent.yaml"
         st = self.eval_state()
         ev = self.data["eval"]
-        config = load_config(str(self.file("config")))
         _compare("agent", self.data["agent"], build.agent_block(config, st["manifest"], ev["candidate"]))
         return "agente (nome, versão do prompt, modelo) confere com agent.yaml e o manifesto"
 
@@ -335,9 +362,12 @@ class _Verifier:
 
     def _view(self) -> dict:
         stored = self.data
-        ev_state = self.or_stored("eval", self.eval_state, None)
+        if self._eval_skipped():
+            ev = dict(build.EVAL_NOT_EVALUATED)
+        else:
+            ev_state = self.or_stored("eval", self.eval_state, None)
+            ev = _norm({**ev_state["section"], "manifest": ev_state["manifest"]}) if ev_state else stored["eval"]
         rt_state = self.or_stored("redteam", self.redteam_state, None)
-        ev = _norm({**ev_state["section"], "manifest": ev_state["manifest"]}) if ev_state else stored["eval"]
         rt = _norm(rt_state["numbers"]) if rt_state else stored["redteam"]
         au = self.or_stored("audit", self.audit_state, stored.get("audit"))
         return {"eval": ev, "redteam": rt, "audit": au, "indicators": build.indicators(ev, rt, au)}
@@ -372,16 +402,19 @@ class _Verifier:
             raise _NotVerifiable("; ".join(sorted(set(unver))))
         findings_mod.verify(found, paths)  # linha, sha256 do registro e do arquivo de cada achado
         # Achado omitido ou inventado: recoleta pelos mesmos arquivos e compara a lista inteira.
-        st = self.eval_state()
-        ev = self.data["eval"]
-        ctx = {
-            "baseline": ev["baseline"], "candidate": ev["candidate"],
-            "baseline_path": self.file(f"eval_answers_{ev['baseline']}"),
-            "candidate_path": self.file(f"eval_answers_{ev['candidate']}"),
-            "scores_baseline": st["scores"][ev["baseline"]],
-            "scores_candidate": st["scores"][ev["candidate"]],
-            "categories": {c.id: c.category for c in st["dataset"]},
-        }
+        if self._eval_skipped():
+            ctx = None
+        else:
+            st = self.eval_state()
+            ev = self.data["eval"]
+            ctx = {
+                "baseline": ev["baseline"], "candidate": ev["candidate"],
+                "baseline_path": self.file(f"eval_answers_{ev['baseline']}"),
+                "candidate_path": self.file(f"eval_answers_{ev['candidate']}"),
+                "scores_baseline": st["scores"][ev["baseline"]],
+                "scores_candidate": st["scores"][ev["candidate"]],
+                "categories": {c.id: c.category for c in st["dataset"]},
+            }
         fresh, _ = findings_mod.collect(
             redteam={"baseline": self.file("redteam_baseline"), "guardrails": self.file("redteam_guardrails")},
             false_positives={"dataset": self.file("fp_dataset"), "benign": self.file("fp_benign")},
@@ -432,8 +465,6 @@ class _Verifier:
         prov = self.data["provenance"]
         if not self.files:
             raise _NotVerifiable("o pacote não referencia os sidecars (provenance.files)")
-        st = self.eval_state()
-        variants = [self.data["eval"]["baseline"], self.data["eval"]["candidate"]]
 
         def meta(role: str, label: str) -> dict | None:
             return build._load_meta(self.file(role), label) if role in self.files else None
@@ -443,16 +474,28 @@ class _Verifier:
             "guardrails": meta("redteam_guardrails_meta", "guardrails"),
         }
         fp_meta = meta("fp_meta", "falsos positivos")
+        if self._eval_skipped():
+            fresh_eval_exec: dict = {}
+            seed_extra: dict = {}
+        else:
+            st = self.eval_state()
+            variants = [self.data["eval"]["baseline"], self.data["eval"]["candidate"]]
+            fresh_eval_exec = {
+                v: build._pick(st["manifest_raw"][v], build._EXEC_KEYS, self.root) for v in variants
+            }
+            seed_extra = {
+                "eval_ab_bootstrap": self.data["eval"]["seed"],
+                "eval_generation": {v: st["manifest"][v]["seed"] for v in variants},
+            }
         fresh_exec = {
-            "eval": {v: build._pick(st["manifest_raw"][v], build._EXEC_KEYS, self.root) for v in variants},
+            "eval": fresh_eval_exec,
             "redteam": {
                 **{k: build._pick(m, build._RT_META_KEYS, self.root) for k, m in metas.items()},
                 "false_positives": build._pick(fp_meta, build._FP_META_KEYS, self.root),
             },
         }
         fresh_seeds = {
-            "eval_ab_bootstrap": self.data["eval"]["seed"],
-            "eval_generation": {v: st["manifest"][v]["seed"] for v in variants},
+            **seed_extra,
             "redteam": {k: (m or {}).get("seed") for k, m in metas.items()},
             "false_positives": (fp_meta or {}).get("seed"),
         }
@@ -542,8 +585,13 @@ def _structure(data: dict) -> str:
     bad = [k for k, t in shape.items() if not isinstance(data[k], t)]
     if bad:
         raise _Fail(f"tipo inválido em: {', '.join(bad)}")
+    eval_keys = (
+        ("status", "evaluated", "reason")
+        if data["eval"].get("status") == "nao_avaliado"
+        else ("baseline", "candidate", "seed")
+    )
     for k, keys in (
-        ("eval", ("baseline", "candidate", "seed")), ("policy", ("path_relative", "sha256")),
+        ("eval", eval_keys), ("policy", ("path_relative", "sha256")),
         ("provenance", ("inputs",)),
     ):
         absent = [x for x in keys if x not in data[k]]

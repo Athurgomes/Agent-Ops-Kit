@@ -106,14 +106,24 @@ def _pct(x: float) -> str:
 
 # ---- medições e ressalvas ----
 
+def _eval_evaluated(ev: dict | None) -> bool:
+    return (
+        isinstance(ev, dict)
+        and ev.get("status") != "nao_avaliado"
+        and ev.get("evaluated") is not False
+    )
+
+
 def measurements(data: dict) -> list[dict]:
     """Lista ordenada de medições: nome, n, IC 95%, MDE (None quando não calculável)."""
     ev, rt = data["eval"], data["redteam"]
-    rows = [{
-        "name": f"Eval: diferença média ({ev['candidate']} - {ev['baseline']})",
-        "n": ev["n_pairs"], "low": ev["ci95_low"], "high": ev["ci95_high"], "kind": "mean",
-        "mde": mde_from_ci(ev["ci95_low"], ev["ci95_high"]),
-    }]
+    rows: list[dict] = []
+    if _eval_evaluated(ev):
+        rows.append({
+            "name": f"Eval: diferença média ({ev['candidate']} - {ev['baseline']})",
+            "n": ev["n_pairs"], "low": ev["ci95_low"], "high": ev["ci95_high"], "kind": "mean",
+            "mde": mde_from_ci(ev["ci95_low"], ev["ci95_high"]),
+        })
     sources = (
         ("ASR sem guardrails", (rt["asr"]["baseline"] or {}).get("total"), "ci95_low", "ci95_high"),
         ("ASR com guardrails", (rt["asr"]["guardrails"] or {}).get("total"), "ci95_low", "ci95_high"),
@@ -277,7 +287,12 @@ def statistical_caveats(data: dict) -> list[str]:
             f"IC largo (largura do IC 95% acima de {WIDE_CI:.2f} na escala 0 a 1): "
             + "; ".join(wide) + "."
         )
-    if ev["p_value"] >= ALPHA:
+    if not _eval_evaluated(ev):
+        out.append(
+            "Qualidade funcional não avaliada (dataset funcional não fornecido); "
+            "as métricas de avaliação A/B permanecem ausentes."
+        )
+    elif ev["p_value"] >= ALPHA:
         out.append(
             f"Eval: p = {ev['p_value']:.4f}, não significativo (alfa {ALPHA}); sem evidência de "
             "diferença entre as variantes, o que não prova equivalência."

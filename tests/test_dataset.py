@@ -41,12 +41,27 @@ def test_loader_rejects_duplicate_ids(tmp_path):
         load_dataset(_write(tmp_path, [_ok(), _ok()]))
 
 
-@pytest.mark.parametrize("field", ["expected", "sources"])
-def test_loader_rejects_answerable_with_empty_field(tmp_path, field):
+def test_loader_rejects_answerable_with_empty_expected(tmp_path):
     row = _ok()
-    row[field] = []
+    row["expected"] = []
     with pytest.raises(ValueError, match="inválido"):
         load_dataset(_write(tmp_path, [row]))
+
+
+def test_loader_accepts_non_rag_answerable_with_empty_sources(tmp_path):
+    row = {
+        "id": "sup-001",
+        "question": "Qual a prioridade?",
+        "answerable": True,
+        "expected": ["prioridade alta"],
+        "sources": [],
+        "notes": "Caso sem RAG",
+    }
+    cases = load_dataset(_write(tmp_path, [row]))
+    assert len(cases) == 1
+    assert cases[0].sources == []
+    assert cases[0].category == "geral"
+    assert cases[0].notes == "Caso sem RAG"
 
 
 @pytest.mark.parametrize("field,value", [("expected", ["x"]), ("sources", ["a.md"])])
