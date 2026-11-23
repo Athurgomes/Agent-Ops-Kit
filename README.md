@@ -2,7 +2,7 @@
 
 Observabilidade, avaliação e segurança para agentes de IA.
 
-Agentes de IA vão para uso sem que se saiba o que fizeram, se uma mudança de prompt piorou a qualidade ou se resistem a ataques simples. O kit junta, em um repositório local e sem custo, tracing (OpenTelemetry/Jaeger), log de auditoria com hash encadeado, avaliação A/B de prompts com estatística pareada, guardrails e um harness de red team. Tudo foi medido sobre um agente de referência (RAG com documentos fictícios, modelo local de 8B); os resultados e suas ressalvas estão abaixo.
+Agentes de IA vão para uso sem que se saiba o que fizeram, se uma mudança de prompt piorou a qualidade ou se resistem a ataques simples. O kit junta, em um repositório local e sem custo, tracing (OpenTelemetry/Jaeger), log de auditoria com hash encadeado, avaliação A/B de prompts com estatística pareada, guardrails e um harness de red team. A suíte principal foi medida sobre o agente de referência (RAG com documentos fictícios, modelo local de 8B) e o fluxo completo de auditoria externa também foi validado ao vivo em dois agentes distintos do RAG (suporte via HTTP e triagem financeira via Python, sobre `llama3.1:8b` local; ver [docs/validacao_agentes_externos.md](docs/validacao_agentes_externos.md)); os resultados e suas ressalvas estão abaixo.
 
 ## Visão geral
 
@@ -305,7 +305,7 @@ Medições adicionais gravadas em 19/11/2026, antes do commit `94bec65` (checage
 
 ## Auditar seu próprio agente
 
-Para conectar uma API HTTP externa (com exemplo executável, perfil do agente, template de GitHub Actions e limites de caixa-preta), siga o [Guia de integração para desenvolvedores](docs/guia_integracao.md) e, caso queira incluir avaliação funcional própria, [docs/dataset_funcional.md](docs/dataset_funcional.md).
+Para conectar uma API HTTP externa (com exemplo executável, perfil do agente, template de GitHub Actions e limites de caixa-preta), siga o [Guia de integração para desenvolvedores](docs/guia_integracao.md) e, caso queira incluir avaliação funcional própria, [docs/dataset_funcional.md](docs/dataset_funcional.md). Os resultados medidos ao vivo em dois agentes externos distintos do RAG (suporte de pedidos via HTTP e triagem financeira via Python, ambos sobre `llama3.1:8b` local, mantendo limites de caixa-preta) estão em [docs/validacao_agentes_externos.md](docs/validacao_agentes_externos.md).
 
 Por padrão o kit audita o agente de exemplo (`examples.rag_agent`). Para auditar outro agente em Python, acrescente `target` ao `agent.yaml`:
 
@@ -329,7 +329,7 @@ Rode da raiz do projeto: `aok eval ... --config agent.yaml` e `aok redteam run -
 
 Limitações:
 
-- Só Python. `type: http` é recusado na validação (ainda não é suportado; ADR-028).
+- Alvos suportados: `type: python` (módulo local) e `type: http` (API externa com autenticação por variável de ambiente, validação anti-SSRF e limite `max_calls`; ver [docs/guia_integracao.md](docs/guia_integracao.md)).
 - Semente não controlada pelo kit: a semente e o modelo do agente externo são dele; só o agente de exemplo é reproduzido com semente fixa. O sidecar de proveniência registra `target.type`, `target.ref` e `seed_controlled_by_kit: false`.
 - Red team: o kit não executa as ferramentas do agente externo; mede só os `tool_calls` que ele declara. Sem `tool_calls` na resposta, a métrica de ferramenta daquele caso fica "não avaliada" e sai de n e do ASR (nunca conta como bloqueio). Guardrails do kit (`--guardrails`) só se aplicam ao agente de exemplo. Os prompts v1/v2 do eval não se aplicam: o agente externo usa o próprio prompt.
 - Risco: `mod:fn` importa e executa código. O kit só importa módulos que resolvem dentro da raiz do projeto, mas isso não é um sandbox. Não rode target python em PR de fork no CI nem com segredos expostos; o red team envia entradas adversariais, então aponte para um ambiente sem ações reais (e-mail, exclusão).
@@ -338,7 +338,7 @@ Limitações:
 
 ## Limitações
 
-- Escopo de auditoria: o kit foi medido de ponta a ponta só no agente de exemplo (com as ressalvas desta seção). Agentes externos têm hoje apenas o contrato Python, sem os prompts A/B, sem datasets e sem guardrails do kit. O objetivo declarado do projeto é um kit integrável a qualquer agente (HTTP, perfil do agente e bateria universal), listado em "Próximos passos" (ADR-032).
+- Escopo de auditoria: o kit foi medido de ponta a ponta no agente de referência RAG e validado ao vivo em dois agentes externos locais distintos do RAG (HTTP e Python, ambos sobre `llama3.1:8b` local; ver [docs/validacao_agentes_externos.md](docs/validacao_agentes_externos.md)). Em alvos externos, aplicam-se limites de caixa-preta (observação apenas de entrada, saída e `tool_calls` declarados), os prompts A/B e os guardrails do kit não se aplicam ao alvo, e os resultados não representam APIs comerciais em produção.
 - Modelo local pequeno (llama3.1:8b): tudo foi medido com ele. O ASR não generaliza para outros modelos, prompts ou dados, e o modelo às vezes responde "não encontrei" sem consultar os documentos.
 - Dataset de 50 casos e 40 ataques: intervalos de confiança largos, uma execução por configuração.
 - Os guardrails combinam heurísticas (padrões de texto, normalização anti-homoglyphs e anti-token-splitting, decodificação segura de Base64/Hex e janela multi-turn), allowlist, canary e classificador semântico local TF-IDF opcional, mas ainda podem ser contornados por paráfrases inéditas, outros idiomas ou ofuscações em múltiplas camadas. Não são proteção garantida.
@@ -348,15 +348,14 @@ Limitações:
 - O gate do eval foi exercitado em 2 PRs de teste, fechados sem mesclar ([#1](https://github.com/Athurgomes/Agent-Ops-Kit/pull/1) e [#2](https://github.com/Athurgomes/Agent-Ops-Kit/pull/2)); resultados em [docs/resultados.md](docs/resultados.md). Ele usa respostas gravadas, o prompt piorado foi degradado de propósito e foi uma execução por PR: é um teste de mecanismo, não uma medida de qualidade.
 - O agente de referência usa documentos fictícios; nada aqui foi validado com dados reais.
 - O relatório é autodeclarado; `aok reproduce` (ADR-031) o reexecuta, mas o Ollama pode não ser determinístico e o juiz não é reexecutado. `aok report verify` prova que o pacote é coerente com os arquivos de evidência recebidos e a assinatura prova quem publicou e que os bytes não mudaram; nenhum dos dois prova que o eval e o red team rodaram de fato (ADR-026 e ADR-029). A plataforma não reexecuta nem roda o `verify`.
-- Auditar agente de terceiro: só Python, com semente e modelo fora do controle do kit; `aok reproduce` reexecuta pacotes do kit, mas não reproduz suíte cega externa nem agente HTTP. O mapa OWASP é julgamento do kit, não certificação. Severidade dos achados e limiares de aviso (n abaixo de 30, IC acima de 0,20) são provisórios.
+- Auditar agente de terceiro: suporta alvos Python e HTTP com limites de caixa-preta (apenas entrada, saída e `tool_calls` declarados), com semente e modelo fora do controle do kit; `aok reproduce` reexecuta pacotes do kit, mas não reproduz suíte cega externa nem agente HTTP. O mapa OWASP é julgamento do kit, não certificação. Severidade dos achados e limiares de aviso (n abaixo de 30, IC acima de 0,20) são provisórios.
 
 ## Próximos passos
 
 Nada disto existe ainda:
 
-- Fila prioritária para auditar agentes de terceiros (ADR-032), em ordem: target HTTP com mapeamento configurável e limites de rede; perfil do agente no `agent.yaml`; bateria universal parametrizada pelo perfil; critérios de sucesso e calibração do juiz; camada funcional opcional; seção do relatório sobre o que foi e não foi testado; guia de integração; validação em agentes reais diferentes do de exemplo.
+- Calibração humana dos critérios do juiz de red team e avaliação em APIs comerciais de produção (os testes externos atuais usam apenas modelos locais com `llama3.1:8b`).
 - Verificação do `reproducao.json` pelo `report verify` (hoje o `aok reproduce` grava o resultado, mas nada o confere; ADR-031).
-- Adaptador de agente por HTTP (`target: type: http`); hoje só existe o adaptador Python (ADR-028).
 - Mapa de cobertura NIST AI RMF e ISO/IEC 42001 (hoje só OWASP LLM Top 10; ADR-027).
 - A plataforma reconferir o `report verify` (hoje ela só confere a assinatura Ed25519 contra a chave cadastrada do agente; ADR-029).
 - Tela de gestão de chaves públicas no portal (hoje só pela API admin; o portal mostra o selo "Assinado" ou "Não assinado").
@@ -372,7 +371,8 @@ Nada disto existe ainda:
 ```
 src/agent_ops_kit/   pacote: cli (new, eval, redteam, audit, report, check), tracing, audit, metrics,
                      guardrails/, eval/, redteam/, report/, templates/
-examples/rag_agent/  agente de referência e corpus fictício
+examples/rag_agent/           agente de referência e corpus fictício
+examples/validation_agents/ agentes externos locais (HTTP e Python) validados com llama3.1:8b
 evals/               dataset padrão (50 casos), dataset de auditoria (200 casos), prompts v1/v2, respostas gravadas, manifesto, relatórios
 redteam/             ataques (40 originais + 108 OWASP expandidos), benignas (12 + 54), resultados gravados
 platform/            plataforma: aok_platform/ (API FastAPI), portal/ (React), Dockerfile, docker-compose.yml

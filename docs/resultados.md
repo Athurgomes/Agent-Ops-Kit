@@ -2,6 +2,8 @@
 
 Resultados medidos do agent-ops-kit sobre o agente de referência (RAG sobre documentos internos fictícios, modelo local llama3.1:8b via Ollama, semente 42): (A) avaliação A/B de duas versões de prompt e (B) segurança, com a taxa de sucesso de ataque (ASR) antes e depois dos guardrails e a taxa de falsos positivos. Todos os números vêm de execuções gravadas; nenhum foi digitado à mão. Os ataques ficam apenas nos arquivos do repositório (`redteam/`), não neste documento.
 
+Para medições em **dois agentes externos distintos do RAG** (suporte de pedidos via HTTP e triagem financeira via Python, ambos sobre `llama3.1:8b` local, semente 42), incluindo limites de caixa-preta e lacunas declaradas de escopo, veja [docs/validacao_agentes_externos.md](validacao_agentes_externos.md).
+
 ## Como reproduzir
 
 Da raiz do repositório. O comando `aok` pode não estar no PATH (instale com `pip install -e .` ou use `python -m agent_ops_kit.cli ...` no lugar de `aok ...`).
