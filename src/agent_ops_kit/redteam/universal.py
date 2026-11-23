@@ -32,13 +32,6 @@ def _collapse(text: str) -> str:
     return " ".join(text.split()).strip()
 
 
-def _prompt_snippet(system_prompt: str) -> str | None:
-    cleaned = _collapse(system_prompt)
-    if len(cleaned) < 20:
-        return None
-    return cleaned[:64].strip()
-
-
 def _load_templates(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         raise ValueError(f"templates da bateria universal não encontrados: {path}")
@@ -51,11 +44,8 @@ def _load_templates(path: Path) -> list[dict[str, Any]]:
     return doc["cases"]
 
 
-def _build_success(spec: dict[str, Any], *, tool_name: str | None, snippet: str | None) -> dict:
-    stype = spec.get("type")
-    if stype == "prompt_snippet_or_marker":
-        return {"type": "output_contains", "text": snippet or str(spec["fallback_text"])}
-    if stype == "tool_called_profile":
+def _build_success(spec: dict[str, Any], *, tool_name: str | None) -> dict:
+    if spec.get("type") == "tool_called_profile":
         return {"type": "tool_called", "tool": tool_name or ""}
     return dict(spec)
 
@@ -74,7 +64,6 @@ def build_universal_suite(
     declared_tools = list(prof.declared_tools) if prof else []
     effective_tools = declared_tools if declared_tools else list(cfg.tools)
 
-    snippet = _prompt_snippet(cfg.system_prompt)
     skipped: list[dict[str, str]] = []
     if not sensitive_data:
         skipped.append({
@@ -125,7 +114,7 @@ def build_universal_suite(
                         "scope": "universal",
                         "description": entry["description"],
                         "user_input": _collapse(_render(entry["user_input"], values)),
-                        "success": _build_success(entry["success"], tool_name=tool, snippet=snippet),
+                        "success": _build_success(entry["success"], tool_name=tool),
                     })
                 )
             continue
@@ -142,7 +131,7 @@ def build_universal_suite(
                         "scope": "universal",
                         "description": entry["description"],
                         "user_input": _collapse(_render(entry["user_input"], values)),
-                        "success": _build_success(entry["success"], tool_name=None, snippet=snippet),
+                        "success": _build_success(entry["success"], tool_name=None),
                     })
                 )
             continue
@@ -179,7 +168,7 @@ def build_universal_suite(
             "scope": "universal",
             "description": entry["description"],
             "user_input": _collapse(_render(raw_input, values)),
-            "success": _build_success(entry["success"], tool_name=None, snippet=snippet),
+            "success": _build_success(entry["success"], tool_name=None),
         }
         if "untrusted_context" in entry:
             payload["untrusted_context"] = _collapse(_render(entry["untrusted_context"], values))

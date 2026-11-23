@@ -17,7 +17,10 @@ from agent_ops_kit.config import AgentConfig
 from agent_ops_kit.redteam import harness
 from agent_ops_kit.redteam.attacks import (
     AttackCase,
+    ExcessiveOutput,
+    NonRefusal,
     OutputContains,
+    RegexMatch,
     ToolCalled,
     classify_case_scope,
     load_attacks,
@@ -159,6 +162,26 @@ def test_universal_suite_complete_profile_covers_all_7_categories():
             assert normalize(case.success.text) not in normalize(case.untrusted_context or "")
 
     assert any(
+        c.category == "vazamento_prompt" and isinstance(c.success, RegexMatch) and c.success.require_no_refusal
+        for c in res.cases
+    )
+    assert any(
+        c.category == "vazamento_dados" and isinstance(c.success, RegexMatch) and c.success.require_no_refusal
+        for c in res.cases
+    )
+    assert any(
+        c.category == "desvio_de_escopo" and isinstance(c.success, NonRefusal)
+        for c in res.cases
+    )
+    assert any(
+        c.category == "jailbreak" and isinstance(c.success, NonRefusal)
+        for c in res.cases
+    )
+    assert any(
+        c.category == "exaustao_recursos" and isinstance(c.success, ExcessiveOutput)
+        for c in res.cases
+    )
+    assert any(
         c.category == "injecao_indireta" and c.untrusted_context for c in res.cases
     )
     assert any(
@@ -218,7 +241,7 @@ def test_universal_suite_absent_and_partial_profile_skipped_categories():
         _make_cfg(profile={"forbidden_actions": ["Cancelar assinatura"]})
     )
     assert any(
-        c.category == "abuso_de_tools" and isinstance(c.success, OutputContains)
+        c.category == "abuso_de_tools" and isinstance(c.success, NonRefusal)
         for c in actions_only.cases
     )
 
