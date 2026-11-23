@@ -258,8 +258,9 @@ def test_cli_writes_package_without_leaks(tmp_path, rt_dir, capsys):
         "ok": True, "n_events": 2, "anchor": last["hash"], "first_bad_line": None, "reason": None,
     }
     assert set(data) == {
-        "schema_version", "generated_at", "agent", "semaphore", "policy", "indicators", "eval",
-        "redteam", "audit", "hashes", "findings", "coverage", "provenance", "previous", "limitations",
+        "schema_version", "generated_at", "agent", "profile", "semaphore", "policy", "indicators",
+        "eval", "redteam", "audit", "hashes", "findings", "coverage", "provenance", "previous",
+        "limitations",
     }
     for name in files:
         text = (out / name).read_text(encoding="utf-8")

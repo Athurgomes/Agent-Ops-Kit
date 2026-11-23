@@ -9,7 +9,7 @@ from typing import Any, Literal
 from urllib.parse import urlsplit, urlunsplit
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 # "pacote.modulo:funcao": módulo com pontos e um único atributo (sem pontos, sem caminhos).
 REF_PATTERN = re.compile(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*:[A-Za-z_]\w*$", re.ASCII)
@@ -260,6 +260,49 @@ class TargetConfig(BaseModel):
         return self
 
 
+class AgentProfile(BaseModel):
+    """Perfil declarado do agente no agent.yaml (papel, escopo, dados, ações e ferramentas)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: str | None = None
+    allowed_scope: list[str] = Field(default_factory=list)
+    forbidden_scope: list[str] = Field(default_factory=list)
+    sensitive_data: list[str] = Field(default_factory=list)
+    forbidden_actions: list[str] = Field(default_factory=list)
+    declared_tools: list[str] = Field(default_factory=list)
+
+    @field_validator("role")
+    @classmethod
+    def _valid_role(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("profile.role não pode ser vazio")
+        return cleaned
+
+    @field_validator(
+        "allowed_scope",
+        "forbidden_scope",
+        "sensitive_data",
+        "forbidden_actions",
+        "declared_tools",
+    )
+    @classmethod
+    def _valid_list(cls, value: list[str], info: ValidationInfo) -> list[str]:
+        out: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            cleaned = item.strip()
+            if not cleaned:
+                raise ValueError(f"profile.{info.field_name} não pode conter item vazio")
+            if cleaned not in seen:
+                seen.add(cleaned)
+                out.append(cleaned)
+        return out
+
+
 class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -273,6 +316,7 @@ class AgentConfig(BaseModel):
     audit: str | None = None  # caminho do log de auditoria; None = desligado
     platform: PlatformConfig | None = None  # opcional; só a publicação por URL usa
     target: TargetConfig | None = None  # None = agente de exemplo (examples.rag_agent)
+    profile: AgentProfile | None = None  # opcional; perfil funcional e limites declarados
 
 
 def load_config(path: str | Path) -> AgentConfig:

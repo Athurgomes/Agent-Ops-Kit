@@ -185,6 +185,73 @@ def _not_evaluated_notes(rt: dict) -> list[Block]:
     )]
 
 
+def _profile_field_text(dim: str, fields: dict) -> str:
+    if dim == "papel_do_agente":
+        return str(fields["role"]) if fields.get("role") else "não declarado"
+    if dim == "escopo":
+        allowed = fields.get("allowed_scope") or []
+        forbidden = fields.get("forbidden_scope") or []
+        if not allowed and not forbidden:
+            return "não declarado"
+        a_txt = "; ".join(allowed) if allowed else "não declarado"
+        f_txt = "; ".join(forbidden) if forbidden else "não declarado"
+        return f"Permitido: {a_txt}; Proibido: {f_txt}"
+    if dim == "dados_sensiveis":
+        vals = fields.get("sensitive_data") or []
+        return "; ".join(vals) if vals else "não declarado"
+    if dim == "acoes_proibidas":
+        vals = fields.get("forbidden_actions") or []
+        return "; ".join(vals) if vals else "não declarado"
+    if dim == "ferramentas":
+        declared = fields.get("declared_tools") or []
+        effective = fields.get("effective_tools") or []
+        if declared:
+            return "; ".join(declared)
+        if effective:
+            return "; ".join(effective) + " (via 'tools')"
+        return "não declarado"
+    return "não declarado"
+
+
+def _profile_blocks(d: dict) -> list[Block]:
+    prof = d.get("profile")
+    blocks: list[Block] = [("h3", "1.1 Perfil declarado do agente e lacunas")]
+    if not isinstance(prof, dict):
+        return [
+            *blocks,
+            ("p", "Perfil do agente não registrado neste relatório (pacote anterior a este controle)."),
+        ]
+    fields = prof.get("fields") or {}
+    checks = prof.get("checks") or []
+    not_tested = [c for c in checks if c.get("status") == "não testado"]
+    if not prof.get("declared"):
+        intro = (
+            "O bloco profile não foi declarado no agent.yaml; todas as dimensões "
+            "dependentes do perfil permanecem marcadas como não testado."
+        )
+    elif not_tested:
+        missing = ", ".join(prof.get("missing_fields") or [])
+        intro = (
+            f"Perfil parcialmente declarado no agent.yaml (campos ausentes: {missing}). "
+            "Os itens sem declaração explícita permanecem marcados como não testado."
+        )
+    else:
+        intro = "Perfil declarado integralmente no agent.yaml para as dimensões avaliáveis."
+
+    rows = [
+        [
+            str(c.get("label") or c.get("dimension") or ""),
+            _profile_field_text(str(c.get("dimension") or ""), fields),
+            str(c.get("reason") or c.get("status") or ""),
+        ]
+        for c in checks
+    ]
+    blocks.append(("p", intro))
+    if rows:
+        blocks.append(("table", ["Dimensão do perfil", "Declaração no agent.yaml", "Situação"], rows))
+    return blocks
+
+
 def _scope_blocks(d: dict) -> list[Block]:
     ag, ev, rt, au = d["agent"], d["eval"], d["redteam"], d["audit"]
     fp = rt["false_positives"]
@@ -231,6 +298,7 @@ def _scope_blocks(d: dict) -> list[Block]:
                 audit_item,
             ],
         ),
+        *_profile_blocks(d),
     ]
 
 

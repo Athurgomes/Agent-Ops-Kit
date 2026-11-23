@@ -277,6 +277,15 @@ class _Verifier:
         _compare("agent", self.data["agent"], build.agent_block(config, st["manifest"], ev["candidate"]))
         return "agente (nome, versão do prompt, modelo) confere com agent.yaml e o manifesto"
 
+    def check_profile(self) -> str:
+        config = load_config(str(self.file("config")))
+        fresh = _norm(build.profile_summary(config))
+        _compare("profile", self.data.get("profile"), fresh)
+        if not fresh["declared"]:
+            return "perfil não declarado no agent.yaml (reproduzido; dimensões marcadas como não testado)"
+        n_ok = sum(1 for c in fresh["checks"] if c["status"] == "declarado")
+        return f"perfil do agent.yaml confere ({n_ok}/{len(fresh['checks'])} dimensões declaradas)"
+
     def _redteam_part(self, names: tuple[str, ...]) -> None:
         fresh = _norm(self.redteam_state()["numbers"])
         stored = self.data["redteam"]
@@ -499,6 +508,8 @@ class _Verifier:
             ("render", "relatorio.md e relatorio.html = renderização do json", self.check_render),
         ):
             self.step(cid, label, fn)
+        if "profile" in self.data:
+            self.step("profile", "perfil do agente (agent.yaml)", self.check_profile)
         if self.data.get("previous") is not None:
             self.step("previous", "comparação com o relatório anterior", self.check_previous)
         return self.checks

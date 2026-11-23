@@ -15,7 +15,7 @@ import yaml
 
 from agent_ops_kit import audit, audit_sign, provenance
 from agent_ops_kit.cli import ALPHA
-from agent_ops_kit.config import load_config
+from agent_ops_kit.config import AgentConfig, load_config
 from agent_ops_kit.eval import runner
 from agent_ops_kit.eval.ab import paired_ab
 from agent_ops_kit.eval.dataset import load_dataset
@@ -184,6 +184,81 @@ def manifest_view(manifest_raw: dict, variants: list[str]) -> dict:
     return {v: {k: manifest_raw[v].get(k) for k in _MANIFEST_KEYS} for v in variants}
 
 
+_PROFILE_FIELDS = (
+    "role",
+    "allowed_scope",
+    "forbidden_scope",
+    "sensitive_data",
+    "forbidden_actions",
+    "declared_tools",
+)
+_PROFILE_DIMENSIONS = (
+    ("escopo", "Escopo (permitido e proibido)", ("allowed_scope", "forbidden_scope")),
+    ("dados_sensiveis", "Dados sensíveis", ("sensitive_data",)),
+    ("acoes_proibidas", "Ações proibidas", ("forbidden_actions",)),
+    ("ferramentas", "Ferramentas declaradas", ("declared_tools",)),
+    ("papel_do_agente", "Papel do agente", ("role",)),
+)
+
+
+def profile_summary(cfg: AgentConfig) -> dict:
+    """Resumo determinístico do perfil declarado no agent.yaml e lacunas por dimensão."""
+    prof = cfg.profile
+    declared = prof is not None
+    declared_tools = list(prof.declared_tools) if prof is not None else []
+    effective_tools = list(declared_tools) if declared_tools else list(cfg.tools)
+    fields = {
+        "role": prof.role if prof is not None else None,
+        "allowed_scope": list(prof.allowed_scope) if prof is not None else [],
+        "forbidden_scope": list(prof.forbidden_scope) if prof is not None else [],
+        "sensitive_data": list(prof.sensitive_data) if prof is not None else [],
+        "forbidden_actions": list(prof.forbidden_actions) if prof is not None else [],
+        "declared_tools": declared_tools,
+        "effective_tools": effective_tools,
+    }
+    has_value = {
+        "role": fields["role"] is not None,
+        "allowed_scope": bool(fields["allowed_scope"]),
+        "forbidden_scope": bool(fields["forbidden_scope"]),
+        "sensitive_data": bool(fields["sensitive_data"]),
+        "forbidden_actions": bool(fields["forbidden_actions"]),
+        "declared_tools": bool(effective_tools) if declared else False,
+    }
+    missing_fields = [name for name in _PROFILE_FIELDS if not has_value[name]]
+    checks = []
+    for dim, label, dim_fields in _PROFILE_DIMENSIONS:
+        absent = [f for f in dim_fields if not has_value[f]]
+        if not declared:
+            status = "não testado"
+            reason = "não testado (perfil não declarado no agent.yaml)"
+        elif absent:
+            status = "não testado"
+            if len(absent) == 1:
+                reason = f"não testado (campo '{absent[0]}' ausente no perfil)"
+            else:
+                names = " e ".join(f"'{f}'" for f in absent)
+                reason = f"não testado (campos {names} ausentes no perfil)"
+        elif dim == "ferramentas" and not declared_tools:
+            status = "declarado"
+            reason = "declarado (via 'tools' no agent.yaml)"
+        else:
+            status = "declarado"
+            reason = "declarado"
+        checks.append({
+            "dimension": dim,
+            "label": label,
+            "fields": list(dim_fields),
+            "status": status,
+            "reason": reason,
+        })
+    return {
+        "declared": declared,
+        "fields": fields,
+        "missing_fields": missing_fields,
+        "checks": checks,
+    }
+
+
 def agent_block(config, manifest: dict, candidate: str) -> dict:
     return {
         "name": config.name,
@@ -330,6 +405,7 @@ def _eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, d
         "scores_baseline": scores[variants[0]], "scores_candidate": scores[variants[1]],
         "categories": {c.id: c.category for c in dataset},
     }
+    ctx["profile"] = profile_summary(config)
     section["manifest"] = manifest
     return section, agent_block(config, manifest, variants[1])
 
@@ -760,6 +836,7 @@ def build_data(
         "schema_version": SCHEMA_VERSION,
         "generated_at": (now or datetime.now().astimezone()).isoformat(timespec="seconds"),
         "agent": agent,
+        "profile": ctx["profile"],
         "semaphore": sem,
         "policy": policy_mod.policy_block(pol, rule_results),
         "indicators": view["indicators"],
