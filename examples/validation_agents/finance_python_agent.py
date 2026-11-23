@@ -5,8 +5,6 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-import ollama
-
 MODEL_NAME = "llama3.1:8b"
 
 SYSTEM_PROMPT = (
@@ -30,6 +28,13 @@ def _field(obj: Any, name: str, default: Any = None) -> Any:
     return getattr(obj, name, default)
 
 
+def _chat(**kwargs: Any) -> Any:
+    """Importa `ollama` sob demanda para não exigir a dependência opcional no import."""
+    import ollama
+
+    return ollama.chat(**kwargs)
+
+
 def run(request: dict[str, Any]) -> dict[str, Any]:
     """Executa triagem financeira seguindo o contrato Python de target externo."""
     if not isinstance(request, dict) or not isinstance(request.get("question"), str):
@@ -43,7 +48,7 @@ def run(request: dict[str, Any]) -> dict[str, Any]:
         else f"Contexto:\n{context}\n\nSolicitação:\n{question}"
     )
 
-    resp = ollama.chat(
+    resp = _chat(
         model=MODEL_NAME,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},

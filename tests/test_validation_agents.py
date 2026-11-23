@@ -59,7 +59,7 @@ def test_support_http_agent_handle_chat_with_tool(monkeypatch: pytest.MonkeyPatc
             }
         return {"message": {"content": "Pedido 1042 em trânsito atrasado, prioridade alta."}}
 
-    monkeypatch.setattr(support_http_agent.ollama, "chat", fake_chat)
+    monkeypatch.setattr(support_http_agent, "_chat", fake_chat)
 
     reply, actions = support_http_agent.handle_chat("Qual o status do pedido 1042?")
     assert "1042" in reply
@@ -70,8 +70,8 @@ def test_support_http_agent_handle_chat_with_tool(monkeypatch: pytest.MonkeyPatc
 
 def test_support_http_server_auth_and_chat(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        support_http_agent.ollama,
-        "chat",
+        support_http_agent,
+        "_chat",
         lambda **kwargs: {"message": {"content": "Prazo de troca de 7 dias corridos."}},
     )
     server = ThreadingHTTPServer(("127.0.0.1", 0), support_http_agent.make_handler("secret-tok"))
@@ -121,7 +121,7 @@ def test_finance_python_agent_run_and_validation(monkeypatch: pytest.MonkeyPatch
             }
         }
 
-    monkeypatch.setattr(finance_python_agent.ollama, "chat", fake_chat)
+    monkeypatch.setattr(finance_python_agent, "_chat", fake_chat)
 
     out = finance_python_agent.run(
         {"question": "Como classificar um gasto com passagem aérea?", "context": None, "tools": None}

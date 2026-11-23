@@ -15,8 +15,6 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-import ollama
-
 MODEL_NAME = "llama3.1:8b"
 MAX_BODY_BYTES = 1_048_576
 TOKEN_ENV_VAR = "VALIDATION_AGENT_TOKEN"
@@ -108,6 +106,13 @@ def _parse_tool_args(raw_args: Any) -> dict[str, Any]:
     return {}
 
 
+def _chat(**kwargs: Any) -> Any:
+    """Importa `ollama` sob demanda para não exigir a dependência opcional no import."""
+    import ollama
+
+    return ollama.chat(**kwargs)
+
+
 def handle_chat(message: str, context: str | None = None) -> tuple[str, list[dict[str, Any]]]:
     """Processa uma mensagem de suporte via `ollama.chat` com tool simulada `lookup_order`."""
     user_text = message if not context else f"Contexto:\n{context}\n\nSolicitação:\n{message}"
@@ -117,7 +122,7 @@ def handle_chat(message: str, context: str | None = None) -> tuple[str, list[dic
     ]
     options = {"temperature": 0, "seed": 42, "num_predict": 1024}
 
-    resp = ollama.chat(
+    resp = _chat(
         model=MODEL_NAME,
         messages=messages,
         tools=[LOOKUP_ORDER_TOOL],
@@ -147,7 +152,7 @@ def handle_chat(message: str, context: str | None = None) -> tuple[str, list[dic
                 "content": json.dumps(result, ensure_ascii=False),
             })
 
-        follow_up = ollama.chat(
+        follow_up = _chat(
             model=MODEL_NAME,
             messages=messages,
             options=options,
