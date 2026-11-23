@@ -184,7 +184,7 @@ class _Verifier:
             section, scores = build.eval_numbers(dataset, records, b, c, seed)
             raw = json.loads(self.file("eval_manifest").read_text(encoding="utf-8"))
             return {
-                "section": section, "scores": scores, "dataset": dataset,
+                "section": section, "scores": scores, "dataset": dataset, "records": records,
                 "manifest": build.manifest_view(raw, [b, c]), "manifest_raw": raw,
             }
         return self.cached("eval", run)
@@ -312,6 +312,56 @@ class _Verifier:
             return "perfil não declarado no agent.yaml (reproduzido; dimensões marcadas como não testado)"
         n_ok = sum(1 for c in fresh["checks"] if c["status"] == "declarado")
         return f"perfil do agent.yaml confere ({n_ok}/{len(fresh['checks'])} dimensões declaradas)"
+
+    def check_test_scope(self) -> str:
+        if self._eval_skipped():
+            ev = dict(build.EVAL_NOT_EVALUATED)
+            eval_records = None
+        else:
+            st = self.eval_state()
+            ev = {**st["section"], "manifest": st["manifest"]}
+            eval_records = st["records"]
+        rt = self.redteam_state()["numbers"]
+        au = self.audit_state()
+        config = load_config(str(self.file("config")))
+        profile = build.profile_summary(config)
+        base_path = self.file("redteam_baseline")
+        guard_path = self.file("redteam_guardrails")
+        fresh_hashes = {
+            "redteam_baseline": build._sha(base_path),
+            "redteam_guardrails": build._sha(guard_path),
+        }
+
+        def meta(role: str, label: str) -> dict | None:
+            return build._load_meta(self.file(role), label) if role in self.files else None
+
+        metas = {
+            "baseline": meta("redteam_baseline_meta", "baseline"),
+            "guardrails": meta("redteam_guardrails_meta", "guardrails"),
+        }
+        fresh = build.test_scope_summary(
+            ev,
+            rt,
+            au,
+            profile=profile,
+            hashes=fresh_hashes,
+            files=self.files,
+            executions={
+                "redteam": {
+                    k: build._pick(m, build._RT_META_KEYS, self.root)
+                    for k, m in metas.items()
+                }
+            },
+            eval_records=eval_records,
+        )
+        _compare("test_scope", self.data.get("test_scope"), _norm(fresh))
+        cats = fresh["security_categories"]
+        n_tested = sum(1 for c in cats if c["status"] == "testado")
+        total_calls = fresh["client_cost"]["total_calls"]
+        return (
+            f"escopo testado e custo conferem ({n_tested}/{len(cats)} categorias de segurança "
+            f"testadas, {total_calls} chamadas)"
+        )
 
     def _redteam_part(self, names: tuple[str, ...]) -> None:
         fresh = _norm(self.redteam_state()["numbers"])
@@ -553,6 +603,8 @@ class _Verifier:
             self.step(cid, label, fn)
         if "profile" in self.data:
             self.step("profile", "perfil do agente (agent.yaml)", self.check_profile)
+        if "test_scope" in self.data:
+            self.step("test_scope", "escopo testado e custo para o cliente", self.check_test_scope)
         if self.data.get("previous") is not None:
             self.step("previous", "comparação com o relatório anterior", self.check_previous)
         return self.checks

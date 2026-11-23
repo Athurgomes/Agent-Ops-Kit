@@ -20,7 +20,7 @@ from agent_ops_kit.eval import runner
 from agent_ops_kit.eval.ab import paired_ab
 from agent_ops_kit.eval.dataset import load_dataset
 from agent_ops_kit.redteam.false_positives import fp_rate
-from agent_ops_kit.redteam.harness import asr_by_category
+from agent_ops_kit.redteam.harness import OWASP_CATEGORIES, asr_by_category
 from agent_ops_kit.redteam.report import ReportError, _load_attacks, _load_jsonl
 from agent_ops_kit.report import coverage as coverage_mod
 from agent_ops_kit.report import findings as findings_mod
@@ -167,7 +167,13 @@ def _fp_meta(fp_dir: Path, evidence_root: str | None = None) -> dict | None:
 
 
 # Só entram na proveniência quando o sidecar os traz (pacotes antigos continuam verificáveis).
-_OPTIONAL_KEYS = ("target", "n_tool_not_evaluated", "generation_limits")
+_OPTIONAL_KEYS = (
+    "target",
+    "n_tool_not_evaluated",
+    "generation_limits",
+    "suite_kind",
+    "skipped_categories",
+)
 
 
 def _pick(meta: dict | None, keys: tuple[str, ...], base: str | Path | None = None) -> dict | None:
@@ -272,6 +278,219 @@ def is_eval_evaluated(ev: dict | None) -> bool:
         and ev.get("status") != "nao_avaliado"
         and ev.get("evaluated") is not False
     )
+
+
+_CATEGORY_PROFILE_GAPS = (
+    ("vazamento_dados", ("sensitive_data",)),
+    ("desvio_de_escopo", ("allowed_scope", "forbidden_scope")),
+    ("abuso_de_tools", ("forbidden_actions", "effective_tools")),
+)
+
+
+def _skipped_category_reasons(executions: dict | None) -> dict[str, str]:
+    rt_exec = (executions or {}).get("redteam") or {}
+    reasons: dict[str, str] = {}
+    for side in ("guardrails", "baseline"):
+        items = (rt_exec.get(side) or {}).get("skipped_categories") or []
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            cat = item.get("category")
+            reason = item.get("reason")
+            if isinstance(cat, str) and cat and isinstance(reason, str) and reason.strip():
+                reasons.setdefault(cat, reason.strip())
+    return reasons
+
+
+def _profile_gap_reasons(profile: dict | None) -> dict[str, str]:
+    if not isinstance(profile, dict):
+        return {}
+    fields = profile.get("fields") or {}
+    checks = {c.get("dimension"): c for c in (profile.get("checks") or []) if isinstance(c, dict)}
+    declared = bool(profile.get("declared"))
+    out: dict[str, str] = {}
+    for cat, req_fields in _CATEGORY_PROFILE_GAPS:
+        if any(fields.get(f) for f in req_fields):
+            continue
+        if not declared:
+            out[cat] = "perfil não declarado no agent.yaml"
+        elif cat == "vazamento_dados":
+            out[cat] = str(
+                (checks.get("dados_sensiveis") or {}).get("reason")
+                or "não testado (campo 'sensitive_data' ausente no perfil)"
+            )
+        elif cat == "desvio_de_escopo":
+            out[cat] = str(
+                (checks.get("escopo") or {}).get("reason")
+                or "não testado (campos 'allowed_scope' e 'forbidden_scope' ausentes no perfil)"
+            )
+        else:
+            out[cat] = "não testado (campos 'forbidden_actions' e 'declared_tools' ausentes no perfil)"
+    return out
+
+
+def _redteam_total(row: dict | None) -> int:
+    if not isinstance(row, dict):
+        return 0
+    return int(row.get("n") or 0) + int(row.get("not_evaluated") or 0)
+
+
+def _sum_tokens(records_map: dict[str, list[dict]] | None, key: str) -> int | None:
+    if not records_map:
+        return None
+    vals = [
+        int(r[key])
+        for recs in records_map.values()
+        for r in recs
+        if isinstance(r, dict) and r.get(key) is not None and not isinstance(r.get(key), bool)
+    ]
+    return sum(vals) if vals else None
+
+
+def test_scope_summary(
+    ev: dict,
+    rt: dict,
+    au: dict | None,
+    *,
+    profile: dict | None = None,
+    hashes: dict[str, str] | None = None,
+    files: dict[str, str] | None = None,
+    executions: dict | None = None,
+    eval_records: dict[str, list[dict]] | None = None,
+) -> dict:
+    """Resumo determinístico do que foi e não foi testado e custo medido para o cliente."""
+    eval_ok = is_eval_evaluated(ev)
+    fp = rt.get("false_positives") or {}
+    fp_n = int((fp.get("dataset") or {}).get("n") or 0) + int((fp.get("benign") or {}).get("n") or 0)
+
+    dimensions = [
+        {
+            "dimension": "qualidade_funcional",
+            "label": "Qualidade funcional",
+            "status": "testado" if eval_ok else "não testado",
+            "n_cases": int(ev.get("n_cases") or 0) if eval_ok else 0,
+            "n_runs": int(ev.get("runs_per_config") or 0) if eval_ok else 0,
+            "reason": None if eval_ok else "dataset funcional não fornecido",
+        },
+        {
+            "dimension": "falsos_positivos",
+            "label": "Falsos positivos",
+            "status": "testado" if fp_n > 0 else "não testado",
+            "n": fp_n,
+            "reason": None if fp_n > 0 else "nenhuma consulta legítima executada",
+        },
+        {
+            "dimension": "auditoria",
+            "label": "Cadeia de auditoria",
+            "status": "testado" if au is not None else "não testado",
+            "n_events": int(au.get("n_events") or 0) if isinstance(au, dict) else 0,
+            "reason": None if au is not None else "log de auditoria não fornecido",
+        },
+    ]
+
+    asr = rt.get("asr") or {}
+    asr_base = asr.get("baseline") or {}
+    asr_guard = asr.get("guardrails") or {}
+    skipped_reasons = _skipped_category_reasons(executions)
+    profile_gaps = _profile_gap_reasons(profile)
+
+    present_cats = (set(asr_base) | set(asr_guard) | set(skipped_reasons)) - {"total"}
+    ordered_cats = [*OWASP_CATEGORIES, *sorted(present_cats - set(OWASP_CATEGORIES))]
+
+    security_categories: list[dict] = []
+    for cat in ordered_cats:
+        rb = asr_base.get(cat) or {}
+        rg = asr_guard.get(cat) or {}
+        n_b = int(rb.get("n") or 0)
+        n_g = int(rg.get("n") or 0)
+        ne_b = int(rb.get("not_evaluated") or 0)
+        ne_g = int(rg.get("not_evaluated") or 0)
+        if n_b > 0 or n_g > 0:
+            security_categories.append({
+                "category": cat,
+                "status": "testado",
+                "n_baseline": n_b,
+                "n_guardrails": n_g,
+                "reason": None,
+            })
+        else:
+            if cat in skipped_reasons:
+                reason = skipped_reasons[cat]
+            elif ne_b > 0 or ne_g > 0:
+                reason = "métrica de ferramenta não avaliada (agente externo não declarou tool_calls)"
+            elif cat in profile_gaps:
+                reason = profile_gaps[cat]
+            else:
+                reason = "nenhum ataque desta categoria na execução"
+            security_categories.append({
+                "category": cat,
+                "status": "não testado",
+                "n_baseline": 0,
+                "n_guardrails": 0,
+                "reason": reason,
+            })
+
+    if eval_ok:
+        if eval_records is not None:
+            eval_calls = sum(len(recs) for recs in eval_records.values())
+        elif isinstance(ev.get("manifest"), dict):
+            eval_calls = sum(int((m or {}).get("n_cases") or 0) for m in ev["manifest"].values())
+        else:
+            eval_calls = 2 * int(ev.get("n_cases") or 0) * int(ev.get("runs_per_config") or 1)
+        input_tokens = _sum_tokens(eval_records, "input_tokens")
+        output_tokens = _sum_tokens(eval_records, "output_tokens")
+    else:
+        eval_calls = 0
+        input_tokens = None
+        output_tokens = None
+
+    base_calls = _redteam_total(asr_base.get("total"))
+    guard_calls = _redteam_total(asr_guard.get("total"))
+    same_file = bool(
+        isinstance(files, dict)
+        and isinstance(files.get("redteam_baseline"), str)
+        and files.get("redteam_baseline") == files.get("redteam_guardrails")
+    )
+    same_hash = bool(
+        isinstance(hashes, dict)
+        and isinstance(hashes.get("redteam_baseline"), str)
+        and hashes.get("redteam_baseline") == hashes.get("redteam_guardrails")
+    )
+    same_redteam = same_file or same_hash
+    redteam_calls = base_calls if same_redteam else (base_calls + guard_calls)
+    fp_calls = fp_n
+    total_calls = eval_calls + redteam_calls + fp_calls
+    tokens_reported = input_tokens is not None or output_tokens is not None
+
+    note_parts = ["Chamadas somam avaliação funcional, red team e falsos positivos."]
+    if same_redteam and (base_calls or guard_calls):
+        note_parts.append(
+            "Baseline e guardrails do red team apontam para o mesmo arquivo/hash "
+            "(contagem única, sem duplicação)."
+        )
+    if tokens_reported:
+        note_parts.append(
+            "Tokens de entrada e saída refletem os registros da avaliação funcional com contagem informada."
+        )
+    else:
+        note_parts.append("Tokens não informados pelo alvo.")
+
+    return {
+        "dimensions": dimensions,
+        "security_categories": security_categories,
+        "client_cost": {
+            "eval_calls": eval_calls,
+            "redteam_calls": redteam_calls,
+            "fp_calls": fp_calls,
+            "total_calls": total_calls,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "tokens_reported": tokens_reported,
+            "note": " ".join(note_parts),
+        },
+    }
 
 
 def agent_block(
@@ -423,6 +642,7 @@ def _eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict, d
         "scores_baseline": scores[variants[0]], "scores_candidate": scores[variants[1]],
         "categories": {c.id: c.category for c in dataset},
     }
+    ctx["eval_records"] = records
     ctx["profile"] = profile_summary(config)
     section["manifest"] = manifest
     return section, agent_block(config, manifest, variants[1])
@@ -438,6 +658,7 @@ def _no_eval_section(a: dict, hashes: dict, prov: dict, ctx: dict) -> tuple[dict
     _role(prov, "config", config_path, evidence_root=ev_root)
     hashes["config"] = _sha(config_path)
     ctx["eval"] = None
+    ctx["eval_records"] = None
     ctx["profile"] = profile_summary(config)
     return dict(EVAL_NOT_EVALUATED), agent_block(config)
 
@@ -909,6 +1130,16 @@ def build_data(
         "hashes": hashes,
         "findings": found,
         "coverage": coverage_mod.compute(cmap, rt),
+        "test_scope": test_scope_summary(
+            ev,
+            rt,
+            au,
+            profile=ctx["profile"],
+            hashes=hashes,
+            files=prov["files"],
+            executions=prov["executions"],
+            eval_records=ctx.get("eval_records"),
+        ),
         "provenance": _provenance_block(agent, prov, command, repo_dir),
         "previous": None,
     }

@@ -262,6 +262,90 @@ def _profile_blocks(d: dict) -> list[Block]:
     return blocks
 
 
+def _dim_executed_text(dim: dict) -> str:
+    if dim.get("status") != "testado":
+        return "0"
+    code = dim.get("dimension")
+    if code == "qualidade_funcional":
+        return f"{dim.get('n_cases', 0)} caso(s) ({dim.get('n_runs', 0)} exec.)"
+    if code == "auditoria":
+        return f"{dim.get('n_events', 0)} evento(s)"
+    return str(dim.get("n", 0))
+
+
+def _test_scope_blocks(d: dict) -> list[Block]:
+    ts = d.get("test_scope")
+    blocks: list[Block] = [("h3", "1.2 O que foi e não foi testado")]
+    if not isinstance(ts, dict):
+        return [
+            *blocks,
+            (
+                "p",
+                (
+                    "Resumo estruturado do escopo executado e do custo não registrado neste "
+                    "relatório (pacote anterior a este controle)."
+                ),
+            ),
+        ]
+
+    rows: list[list[str]] = []
+    for dim in ts.get("dimensions") or []:
+        status = str(dim.get("status") or "")
+        reason = "-" if status == "testado" else str(dim.get("reason") or "-")
+        rows.append([
+            str(dim.get("label") or dim.get("dimension") or ""),
+            "Dimensão",
+            status,
+            _dim_executed_text(dim),
+            reason,
+        ])
+    for cat in ts.get("security_categories") or []:
+        status = str(cat.get("status") or "")
+        n_exec = (
+            f"{cat.get('n_baseline', 0)} sem controles / {cat.get('n_guardrails', 0)} com controles"
+            if status == "testado"
+            else "0"
+        )
+        reason = "-" if status == "testado" else str(cat.get("reason") or "-")
+        rows.append([
+            str(cat.get("category") or ""),
+            "Categoria de segurança",
+            status,
+            n_exec,
+            reason,
+        ])
+
+    if rows:
+        blocks.append((
+            "table",
+            ["Item", "Tipo", "Status", "n executado", "Motivo (quando não testado)"],
+            rows,
+        ))
+
+    cost = ts.get("client_cost") or {}
+    in_tok = cost.get("input_tokens")
+    out_tok = cost.get("output_tokens")
+    cost_rows = [
+        ["Chamadas na avaliação funcional (eval)", str(cost.get("eval_calls", 0))],
+        ["Chamadas no red team", str(cost.get("redteam_calls", 0))],
+        ["Chamadas em falsos positivos (fp)", str(cost.get("fp_calls", 0))],
+        ["Total de chamadas ao agente", str(cost.get("total_calls", 0))],
+        [
+            "Tokens de entrada (eval)",
+            str(in_tok) if in_tok is not None else "não informados pelo alvo",
+        ],
+        [
+            "Tokens de saída (eval)",
+            str(out_tok) if out_tok is not None else "não informados pelo alvo",
+        ],
+    ]
+    blocks.append(("h3", "Custo para o cliente"))
+    blocks.append(("table", ["Item", "Valor"], cost_rows))
+    if cost.get("note"):
+        blocks.append(("p", str(cost["note"])))
+    return blocks
+
+
 def _scope_blocks(d: dict) -> list[Block]:
     ag, ev, rt, au = d["agent"], d["eval"], d["redteam"], d["audit"]
     fp = rt["false_positives"]
@@ -313,6 +397,7 @@ def _scope_blocks(d: dict) -> list[Block]:
             ],
         ),
         *_profile_blocks(d),
+        *_test_scope_blocks(d),
     ]
 
 
