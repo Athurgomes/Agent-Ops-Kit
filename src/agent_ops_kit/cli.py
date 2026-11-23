@@ -282,6 +282,12 @@ def _run_eval(args: argparse.Namespace) -> int:
             raise CliError(str(exc)) from exc
 
     records: dict[str, list[dict]] = {}
+    if not args.reuse and config.target is not None and config.target.type == "http":
+        from agent_ops_kit.target_http import http_target_warning
+
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8")
+        print(http_target_warning(config.target), file=sys.stderr)
     exec_info: dict | None = None  # capturado uma vez, só quando o modelo roda (sem --reuse)
     for v in variants:
         path = answers_dir / f"{v}.jsonl"

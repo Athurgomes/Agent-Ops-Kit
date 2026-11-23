@@ -23,7 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent_ops_kit.config import REF_PATTERN, AgentConfig
+from agent_ops_kit.config import REF_PATTERN, AgentConfig, sanitize_url
 
 EXAMPLE_REF = "examples.rag_agent.agent:run_agent"
 
@@ -144,9 +144,15 @@ def resolve_target(cfg: AgentConfig, root: str | Path | None = None) -> Target:
     """Agente a auditar. Sem `cfg.target`: o exemplo. `root` = raiz do projeto (padrão: cwd)."""
     if cfg.target is None:
         return Target("python", EXAMPLE_REF, True, _example_fn(), True)
-    fn = _load_python_ref(cfg.target.ref, Path(root or Path.cwd()).resolve())
+    if cfg.target.type == "http":
+        from agent_ops_kit.target_http import make_http_caller
+
+        return Target(
+            "http", sanitize_url(cfg.target.url or ""), False, make_http_caller(cfg.target), False
+        )
+    fn = _load_python_ref(cfg.target.ref or "", Path(root or Path.cwd()).resolve())
     try:
         accepts_llm = "llm" in inspect.signature(fn).parameters
     except (ValueError, TypeError):
         accepts_llm = False
-    return Target(cfg.target.type, cfg.target.ref, False, fn, accepts_llm)
+    return Target(cfg.target.type, cfg.target.ref or "", False, fn, accepts_llm)

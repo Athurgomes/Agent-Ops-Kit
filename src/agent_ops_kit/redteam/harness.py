@@ -34,7 +34,7 @@ from agent_ops_kit.redteam.attacks import (
     resolve_blind_dir,
 )
 from agent_ops_kit.redteam.criteria import evaluate_attack
-from agent_ops_kit.target import resolve_target
+from agent_ops_kit.target import Target, resolve_target
 
 MAX_ITERATIONS = 5
 REDTEAM_DIR = Path(__file__).resolve().parents[3] / "redteam"
@@ -191,8 +191,9 @@ def run_attack(
     base_runner: Callable[[str, dict, int], str] | None = None,
     guardrails: list[str] | None = None,
     poisoned_dir: Path | None = None,
+    target: Target | None = None,
 ) -> AttackRecord:
-    target = resolve_target(config)
+    target = target or resolve_target(config)
     if guardrails and not target.is_example:
         raise ValueError("guardrails só se aplicam ao agente de exemplo; target externo roda sem eles")
     llm = llm or make_seeded_llm(seed)
@@ -307,6 +308,7 @@ def run_suite(
     """Roda a suíte. Com `out_path`, grava o JSONL e o sidecar `<out_path>.meta.json`
     (modelo, semente, guardrails, sha256 do resultado e os campos de `meta`)."""
     selected = cases[:limit] if limit is not None else cases
+    target = resolve_target(config) if selected else None
     meta = {**provenance.target_info(config), **(meta or {})}
     records: list[AttackRecord] = []
     with ExitStack() as stack:
@@ -321,7 +323,8 @@ def run_suite(
                 else poisoned_dir
             )
             rec = run_attack(
-                case, config, llm, seed, guardrails=guardrails, poisoned_dir=case_poisoned
+                case, config, llm, seed, guardrails=guardrails, poisoned_dir=case_poisoned,
+                target=target,
             )  # run_attack já captura erros do agente
             records.append(rec)
             if out:
@@ -487,6 +490,12 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(config_path)
     if names and config.target is not None:
         ap.error("--guardrails só se aplica ao agente de exemplo (config sem `target`)")
+    if config.target is not None and config.target.type == "http":
+        from agent_ops_kit.target_http import http_target_warning
+
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8")
+        print(http_target_warning(config.target), file=sys.stderr)
     command = "python -m agent_ops_kit.redteam.harness " + shlex.join(
         sys.argv[1:] if argv is None else argv
     )

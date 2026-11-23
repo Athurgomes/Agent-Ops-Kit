@@ -100,15 +100,23 @@ def test_config_without_target_is_default():
     assert t.is_example and t.ref == EXAMPLE_REF and t.type == "python"
 
 
-def test_config_http_refused_with_clear_message():
-    with pytest.raises(ValidationError, match="http.*não é suportado|não é suportado.*python"):
+def test_config_unknown_type_and_mixed_fields_refused():
+    with pytest.raises(ValidationError):
         AgentConfig.model_validate(
-            {**BASE.model_dump(), "target": {"type": "http", "ref": "a:b"}}
+            {**BASE.model_dump(), "target": {"type": "grpc", "ref": "a:b"}}
         )
-    with pytest.raises(ValidationError, match="ainda não é suportado"):
+    with pytest.raises(ValidationError, match="target.ref não é permitido"):
         AgentConfig.model_validate(
-            {**BASE.model_dump(), "target": {"type": "http", "url": "https://x.invalid/a"}}
+            {**BASE.model_dump(), "target": {"type": "http", "url": "https://x.invalid/a", "ref": "a:b"}}
         )
+    with pytest.raises(ValidationError, match="campos HTTP não são permitidos"):
+        AgentConfig.model_validate(
+            {**BASE.model_dump(), "target": {"type": "python", "ref": "fxagent:agent", "timeout_s": 5}}
+        )
+    cfg = AgentConfig.model_validate(
+        {**BASE.model_dump(), "target": {"type": "http", "url": "https://x.invalid/a"}}
+    )
+    assert cfg.target is not None and cfg.target.type == "http"
 
 
 @pytest.mark.parametrize("ref", ["mod", "mod:", ":fn", "a/b:fn", "../x:fn", "a.b:c.d", "a b:c", "a:b:c"])

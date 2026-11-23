@@ -212,6 +212,13 @@ def target_info(cfg: object) -> dict:
             "type": "python", "ref": "examples.rag_agent.agent:run_agent",
             "seed_controlled_by_kit": True,
         }}
+    if target.type == "http":
+        from agent_ops_kit.config import sanitize_url
+
+        return {"target": {
+            "type": "http", "ref": sanitize_url(target.url), "seed_controlled_by_kit": False,
+            "note": "semente não controlada pelo kit; alvo HTTP",
+        }}
     return {"target": {
         "type": target.type, "ref": target.ref, "seed_controlled_by_kit": False,
         "note": "semente não controlada pelo kit",
