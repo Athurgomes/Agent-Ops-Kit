@@ -11,6 +11,8 @@ export type AdminAgent = {
   area_id: number;
   area_name: string;
   active: boolean;
+  require_signature?: boolean;
+  require_verification?: boolean;
   tokens_active_count: number;
   last_report_at: string | null;
 };

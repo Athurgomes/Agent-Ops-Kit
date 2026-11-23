@@ -18,6 +18,9 @@ export type ReportItem = {
   status_semaforo: string;
   signed?: boolean; // absent in older API versions
   key_fingerprint?: string | null;
+  verified?: boolean;
+  verification_status?: string | null;
+  has_reproducao?: boolean;
 };
 export type Rate = { n?: number; successes?: number; asr?: number; ci95_low?: number; ci95_high?: number };
 export type FpRate = { n?: number; blocked?: number; rate?: number; ci95_low?: number; ci95_high?: number };
@@ -74,7 +77,7 @@ export type DownloadItem = {
   generated_at: string | null;
   user_email: string | null;
 };
-export type Format = "md" | "html" | "json";
+export type Format = "md" | "html" | "json" | "reproducao";
 
 export class ApiError extends Error {
   status: number;
@@ -200,7 +203,10 @@ export const api = {
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${report.agent_slug}-${report.seq}.${format}`;
+    a.download =
+      format === "reproducao"
+        ? `${report.agent_slug}-${report.seq}.reproducao.json`
+        : `${report.agent_slug}-${report.seq}.${format}`;
     document.body.appendChild(a);
     a.click();
     a.remove();

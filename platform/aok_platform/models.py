@@ -75,6 +75,7 @@ class Agent(Base):
     name: Mapped[str] = mapped_column(String(200))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     require_signature: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    require_verification: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class AgentPublicKey(Base):
@@ -124,6 +125,9 @@ class ReportVersion(Base):
     n_cases: Mapped[int | None] = mapped_column(Integer, nullable=True)
     signed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     key_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    verification_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    file_reproducao: Mapped[str | None] = mapped_column(String(512), nullable=True)
     file_md: Mapped[str] = mapped_column(String(300))  # caminhos relativos a AOK_DATA_DIR
     file_html: Mapped[str] = mapped_column(String(300))
     file_json: Mapped[str] = mapped_column(String(300))
@@ -177,7 +181,7 @@ class DownloadLog(Base):
     report_version_id: Mapped[int] = mapped_column(ForeignKey("report_version.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
     downloaded_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
-    format: Mapped[str] = mapped_column(String(4))  # md | html | json
+    format: Mapped[str] = mapped_column(String(16))  # md | html | json | reproducao
 
 
 class AdminEvent(Base):

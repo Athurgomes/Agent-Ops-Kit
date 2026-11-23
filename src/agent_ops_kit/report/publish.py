@@ -22,6 +22,7 @@ from pathlib import Path
 
 FILES = ("relatorio.md", "relatorio.html", "relatorio.json")
 SIG_FILE = "relatorio.json.sig"  # opcional: só existe se o relatório foi assinado
+REPRO_FILE = "reproducao.json"  # opcional: saída do `aok reproduce`
 AGENT_ID_RE = re.compile(r"[a-z0-9-]{1,64}")
 
 
@@ -51,13 +52,20 @@ def _write_atomic(path: Path, obj) -> None:
     os.replace(tmp, path)
 
 
-def publish(package_dir: str | Path, root: str | Path, agent_id: str, now: datetime | None = None):
+def publish(
+    package_dir: str | Path,
+    root: str | Path,
+    agent_id: str,
+    now: datetime | None = None,
+    reproducao_path: str | Path | None = None,
+):
     """Copia o pacote para ROOT/<agent_id>/<timestamp>/ e atualiza o índice. Devolve (pasta, cor)."""
     validate_agent_id(agent_id)
     src = Path(package_dir)
     for name in FILES:
         if not (src / name).is_file():
             raise PublishError(f"arquivo do pacote não encontrado: {src / name}")
+    repro_src = _resolve_reproducao(src, reproducao_path)
     color = json.loads((src / "relatorio.json").read_text(encoding="utf-8"))["semaphore"]["color"]
 
     stamp = (now or _utcnow()).astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -80,6 +88,8 @@ def publish(package_dir: str | Path, root: str | Path, agent_id: str, now: datet
     try:
         for name in (*FILES, *([SIG_FILE] if (src / SIG_FILE).is_file() else [])):
             shutil.copyfile(src / name, dest / name)
+        if repro_src is not None:
+            shutil.copyfile(repro_src, dest / REPRO_FILE)
         hashes = {name: _sha256(dest / name) for name in FILES}
         _write_atomic(
             dest / "pacote.json",
@@ -105,6 +115,16 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _resolve_reproducao(src: Path, reproducao_path: str | Path | None) -> Path | None:
+    if reproducao_path is not None:
+        rp = Path(reproducao_path)
+        if not rp.is_file():
+            raise PublishError(f"arquivo de reprodução não encontrado: {rp}")
+        return rp
+    cand = src / REPRO_FILE
+    return cand if cand.is_file() else None
+
+
 def publish_remote(
     package_dir: str | Path,
     url: str,
@@ -112,6 +132,7 @@ def publish_remote(
     token: str | None = None,
     timeout: float = 30,
     now: datetime | None = None,
+    reproducao_path: str | Path | None = None,
 ):
     """Envia o pacote para URL/v1/reports. O token vem de AOK_PLATFORM_TOKEN. Devolve (seq, cor)."""
     validate_agent_id(agent_id)
@@ -119,6 +140,7 @@ def publish_remote(
     if not token.strip():
         raise PublishError(f"defina a variável de ambiente {TOKEN_ENV} com o token do agente")
     src = Path(package_dir)
+    repro_src = _resolve_reproducao(src, reproducao_path)
     files, hashes = {}, {}
     for name in FILES:
         if not (src / name).is_file():
@@ -151,6 +173,11 @@ def publish_remote(
             "recusado (defina AOK_SIGNING_KEY_FILE ou AOK_SIGNING_KEY_PEM)",
             file=sys.stderr,
         )
+    if repro_src is not None:
+        try:
+            payload["reproducao_json"] = repro_src.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise PublishError(f"não foi possível ler {REPRO_FILE}") from exc
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         url.rstrip("/") + "/v1/reports",

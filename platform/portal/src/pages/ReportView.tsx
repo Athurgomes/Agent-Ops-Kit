@@ -18,7 +18,7 @@ import {
   RULE_TEXT,
   SELF_DECLARED_TEXT,
 } from "../format";
-import { Button, ErrorBox, PageHeader, SemaforoBadge, SignatureBadge, useAsync } from "../ui";
+import { Button, ErrorBox, PageHeader, SemaforoBadge, SignatureBadge, VerificationBadge, useAsync } from "../ui";
 
 const FORMATS: { f: Format; label: string }[] = [
   { f: "html", label: copy.reportView.downloadFormats.html },
@@ -35,7 +35,8 @@ function DownloadButtons({ r }: { r: ReportDetail }) {
     setMsg(null);
     try {
       await api.download(r, f);
-      setMsg({ ok: true, text: copy.reportView.downloadStarted(f.toUpperCase()) });
+      const label = f === "reproducao" ? "reproducao.json" : f.toUpperCase();
+      setMsg({ ok: true, text: copy.reportView.downloadStarted(label) });
     } catch (e) {
       setMsg({ ok: false, text: fmtApiError(e) || copy.reportView.downloadFailed });
     } finally {
@@ -56,6 +57,18 @@ function DownloadButtons({ r }: { r: ReportDetail }) {
           {busy === f ? copy.reportView.downloading : label}
         </Button>
       ))}
+      {r.has_reproducao && (
+        <Button
+          variant="secondary"
+          className="w-full"
+          disabled={busy !== null}
+          onClick={() => go("reproducao")}
+        >
+          {busy === "reproducao"
+            ? copy.reportView.downloading
+            : copy.reportView.downloadFormats.reproducao}
+        </Button>
+      )}
       <p className="mt-1 text-sm text-subtle">{copy.reportView.abntHint}</p>
       <div role="status" aria-live="polite">
         {msg &&
@@ -327,6 +340,12 @@ export function ReportView() {
                         <dt className="eyebrow">{copy.signature.meta}</dt>
                         <dd className="mt-1">
                           <SignatureBadge signed={r.signed} fingerprint={r.key_fingerprint} />
+                        </dd>
+                      </div>
+                      <div className="border-t border-line pt-3">
+                        <dt className="eyebrow">{copy.verification.meta}</dt>
+                        <dd className="mt-1">
+                          <VerificationBadge verified={r.verified} status={r.verification_status} />
                         </dd>
                       </div>
                       <div className="border-t border-line pt-3">

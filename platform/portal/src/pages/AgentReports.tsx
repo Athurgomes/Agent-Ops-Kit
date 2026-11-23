@@ -5,7 +5,7 @@ import { AsciiSounding, AsciiWaves } from "../AsciiArt";
 import { areaPath, useCatalog } from "../auth";
 import { copy } from "../copy";
 import { fmtDate } from "../format";
-import { ErrorBox, LinkButton, PageHeader, SemaforoBadge, SignatureBadge, Tag, useAsync } from "../ui";
+import { ErrorBox, LinkButton, PageHeader, SemaforoBadge, SignatureBadge, Tag, VerificationBadge, useAsync } from "../ui";
 
 export function AgentReports() {
   const { areaId, agentId } = useParams();
@@ -95,7 +95,10 @@ export function AgentReports() {
                 <p className="heading text-4xl lg:text-5xl">{copy.agentReports.latestVersion(latest.seq)}</p>
                 <SemaforoBadge value={latest.status_semaforo} size="lg" />
                 <p className="text-sm text-subtle">{copy.agentReports.latestSemaforoNote}</p>
-                <SignatureBadge signed={latest.signed} fingerprint={latest.key_fingerprint} />
+                <div className="flex flex-wrap gap-2">
+                  <SignatureBadge signed={latest.signed} fingerprint={latest.key_fingerprint} />
+                  <VerificationBadge verified={latest.verified} status={latest.verification_status} />
+                </div>
               </div>
 
               <dl className="col-span-12 m-0 grid grid-cols-1 gap-4 border-t border-line pt-4 md:col-span-4 md:border-l md:border-t-0 md:pl-6 md:pt-0">
@@ -178,8 +181,9 @@ export function AgentReports() {
                         {fmtDate(r.generated_at)}
                       </p>
                       <p className="mt-1 text-sm text-subtle">{copy.agentReports.rowDetailsHint}</p>
-                      <div className="mt-2">
+                      <div className="mt-2 flex flex-wrap gap-2">
                         <SignatureBadge signed={r.signed} fingerprint={r.key_fingerprint} />
+                        <VerificationBadge verified={r.verified} status={r.verification_status} />
                       </div>
                     </td>
                     <td className="whitespace-nowrap text-right">

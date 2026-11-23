@@ -15,11 +15,12 @@ from sqlalchemy.orm import Session
 from .auth import visible_area_ids
 from .models import Agent, Area, DownloadLog, ReportVersion, User, utcnow
 
-Format = Literal["md", "html", "json"]
+Format = Literal["md", "html", "json", "reproducao"]
 _FORMATS = {
-    "md": ("file_md", "text/markdown; charset=utf-8"),
-    "html": ("file_html", "text/html; charset=utf-8"),
-    "json": ("file_json", "application/json"),
+    "md": ("file_md", "text/markdown; charset=utf-8", "md"),
+    "html": ("file_html", "text/html; charset=utf-8", "html"),
+    "json": ("file_json", "application/json", "json"),
+    "reproducao": ("file_reproducao", "application/json", "reproducao.json"),
 }
 # HTML do relatório é conteúdo estático: nada de script, rede ou frame.
 HTML_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
@@ -48,6 +49,9 @@ class ReportItem(BaseModel):
     status_semaforo: str
     signed: bool  # assinatura Ed25519 verificada na publicação; False = "não assinado"
     key_fingerprint: str | None
+    verified: bool
+    verification_status: str | None
+    has_reproducao: bool
 
 
 class ReportDetail(ReportItem):
@@ -143,6 +147,9 @@ def build_portal_router(get_session, current_user, current_org_admin, data_dir: 
             status_semaforo=row.status_semaforo,
             signed=row.signed,
             key_fingerprint=row.key_fingerprint,
+            verified=row.verified,
+            verification_status=row.verification_status,
+            has_reproducao=row.file_reproducao is not None,
         )
 
     @r.get("/areas", response_model=list[AreaNode])
@@ -202,9 +209,12 @@ def build_portal_router(get_session, current_user, current_org_admin, data_dir: 
         s: Session = Depends(get_session),
     ):
         row, agent = report_or_404(s, user, report_id)
-        column, media = _FORMATS[format]
+        column, media, ext = _FORMATS[format]
+        rel = getattr(row, column)
+        if not rel:
+            raise HTTPException(404, "arquivo do relatório indisponível")
         base = data_dir.resolve()
-        path = (base / getattr(row, column)).resolve()
+        path = (base / rel).resolve()
         if not path.is_relative_to(base) or not path.is_file():
             raise HTTPException(404, "arquivo do relatório indisponível")
         content = path.read_bytes()  # lê antes de gravar o log: só registra o que foi servido
@@ -215,7 +225,7 @@ def build_portal_router(get_session, current_user, current_org_admin, data_dir: 
         )
         s.commit()
         headers = {
-            "Content-Disposition": f'attachment; filename="{agent.slug}-{row.seq}.{format}"',
+            "Content-Disposition": f'attachment; filename="{agent.slug}-{row.seq}.{ext}"',
             "X-Content-Type-Options": "nosniff",
             "Cache-Control": "private, no-store",
         }

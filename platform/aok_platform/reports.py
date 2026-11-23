@@ -21,6 +21,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from agent_ops_kit.audit_sign import verify_bytes
+from agent_ops_kit.reproduce import (
+    DIVERGENT,
+    NOT_REPRODUCIBLE,
+    SAME,
+    VERDICTS,
+    WITHIN,
+)
+from agent_ops_kit.reproduce import (
+    SCHEMA_VERSION as REPRO_SCHEMA_VERSION,
+)
+from agent_ops_kit.reproduce import (
+    validate as validate_reproduction,
+)
 
 from .auth import hash_token, org_is_active
 from .models import Agent, AgentCredential, AgentPublicKey, ReportVersion, utcnow
@@ -28,6 +41,7 @@ from .models import Agent, AgentCredential, AgentPublicKey, ReportVersion, utcno
 MAX_BODY = 1024 * 1024  # 1 MiB no total
 FILES = ("relatorio.md", "relatorio.html", "relatorio.json")  # mesmo conjunto de pacote.json
 SIG_FILE = "relatorio.json.sig"  # conteúdo vem em `signature`; fora de FILES e de pacote.json
+REPRO_FILE = "reproducao.json"  # opcional: saída do `aok reproduce` em `reproducao_json`
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -42,6 +56,7 @@ class PackageIn(BaseModel):
     sha256: dict[str, str]
     files: dict[str, str]
     signature: str | None = Field(default=None, max_length=4096)  # opcional: conteúdo do .sig
+    reproducao_json: str | None = None  # opcional: conteúdo do reproducao.json
 
     @field_validator("sha256", "files")
     @classmethod
@@ -64,6 +79,9 @@ class ReportOut(BaseModel):
     published_at: datetime
     status_semaforo: str
     signed: bool
+    verified: bool
+    verification_status: str | None
+    has_reproducao: bool
 
 
 def _agent_from_token(authorization: str | None, s: Session) -> Agent:
@@ -180,6 +198,57 @@ def _check_signature(signature: str | None, raw: bytes, agent: Agent, s: Session
     return None  # agente sem chave cadastrada: vale como antes, "não assinado"
 
 
+def _check_verification(
+    reproducao_json: str | None, report_digest: str, agent: Agent
+) -> tuple[bool, str | None, bytes | None]:
+    """Valida reproducao.json opcional e extrai (verified, verification_status, raw_bytes)."""
+    if reproducao_json is None:
+        if agent.require_verification:
+            raise HTTPException(
+                422, "este agente exige anexo reproducao.json válido (verificação obrigatória)"
+            )
+        return False, None, None
+    try:
+        parsed = json.loads(reproducao_json)
+    except ValueError as exc:
+        raise HTTPException(422, "reproducao.json inválido: JSON malformado") from exc
+    if not isinstance(parsed, dict):
+        raise HTTPException(422, "reproducao.json inválido: objeto JSON esperado")
+    try:
+        repro = validate_reproduction(parsed)
+    except ValidationError as exc:
+        raise HTTPException(422, "reproducao.json inválido: esquema incompatível") from exc
+    if repro.schema_version != REPRO_SCHEMA_VERSION or repro.kind != "reproducao":
+        raise HTTPException(422, "reproducao.json inválido: versão ou tipo incompatível")
+    if not repro.verification.ok:
+        raise HTTPException(422, "reproducao.json inválido: verificação offline falhou")
+    if repro.original.report_sha256 != report_digest:
+        raise HTTPException(
+            422, "reproducao.json não corresponde ao relatorio.json deste pacote (sha256 divergente)"
+        )
+    if not repro.items:
+        raise HTTPException(422, "reproducao.json inválido: nenhum item verificado")
+    if not all(item.verdict in VERDICTS for item in repro.items):
+        raise HTTPException(422, "reproducao.json inválido: veredito desconhecido")
+    expected_counts = {v: sum(item.verdict == v for item in repro.items) for v in VERDICTS}
+    if repro.verdict_counts != expected_counts:
+        raise HTTPException(422, "reproducao.json inválido: contagem de vereditos inconsistente")
+    if expected_counts[DIVERGENT] > 0:
+        verified, status = False, DIVERGENT
+    elif expected_counts[NOT_REPRODUCIBLE] > 0:
+        verified, status = False, NOT_REPRODUCIBLE
+    elif expected_counts[WITHIN] > 0:
+        verified, status = True, WITHIN
+    else:
+        verified, status = True, SAME
+    if agent.require_verification and not verified:
+        raise HTTPException(
+            422,
+            f"este agente exige verificação aprovada; o veredito do reproducao.json foi '{status}'",
+        )
+    return verified, status, reproducao_json.encode("utf-8")
+
+
 def _store(pkg: PackageIn, agent: Agent, s: Session, data_dir: Path) -> ReportVersion:
     """Valida, grava arquivos (atômico) e a linha. Uma pasta por (agente, sha256): sem corrida."""
     raw = {name: pkg.files[name].encode("utf-8") for name in FILES}
@@ -195,6 +264,9 @@ def _store(pkg: PackageIn, agent: Agent, s: Session, data_dir: Path) -> ReportVe
         raise HTTPException(422, "semáforo declarado diverge do relatorio.json")
     key_fp = _check_signature(pkg.signature, raw["relatorio.json"], agent, s)
     digest = hashlib.sha256(raw["relatorio.json"]).hexdigest()
+    verified, verification_status, repro_bytes = _check_verification(
+        pkg.reproducao_json, digest, agent
+    )
 
     def duplicate() -> HTTPException:
         return HTTPException(409, "relatório já publicado para este agente")
@@ -213,6 +285,10 @@ def _store(pkg: PackageIn, agent: Agent, s: Session, data_dir: Path) -> ReportVe
             _write_atomic(folder / name, raw[name])
         if key_fp is not None:
             _write_atomic(folder / SIG_FILE, pkg.signature.encode("utf-8"))
+        repro_rel: str | None = None
+        if repro_bytes is not None:
+            _write_atomic(folder / REPRO_FILE, repro_bytes)
+            repro_rel = (rel / REPRO_FILE).as_posix()
         _write_atomic(  # mesmo formato do pacote.json do motor
             folder / "pacote.json",
             json.dumps(
@@ -242,6 +318,9 @@ def _store(pkg: PackageIn, agent: Agent, s: Session, data_dir: Path) -> ReportVe
                 **facts,
                 signed=key_fp is not None,
                 key_fingerprint=key_fp,
+                verified=verified,
+                verification_status=verification_status,
+                file_reproducao=repro_rel,
                 file_md=(rel / FILES[0]).as_posix(),
                 file_html=(rel / FILES[1]).as_posix(),
                 file_json=(rel / FILES[2]).as_posix(),
@@ -292,6 +371,9 @@ def build_reports_router(get_session, data_dir: Path) -> APIRouter:
             published_at=row.published_at,
             status_semaforo=row.status_semaforo,
             signed=row.signed,
+            verified=row.verified,
+            verification_status=row.verification_status,
+            has_reproducao=row.file_reproducao is not None,
         )
 
     return r

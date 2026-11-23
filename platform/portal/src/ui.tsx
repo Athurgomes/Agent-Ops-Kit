@@ -75,6 +75,27 @@ Fingerprint: ${fp}` : copy.signature.help;
   );
 }
 
+/** Neutral verification stamp (never green: colors are reserved for the semaforo). */
+export function VerificationBadge({
+  verified,
+  status,
+}: {
+  verified?: boolean;
+  status?: string | null;
+}) {
+  const label = verified
+    ? copy.verification.verified
+    : status
+      ? copy.verification.divergent
+      : copy.verification.unverified;
+  const title = status ? `${copy.verification.help}\nStatus: ${status}` : copy.verification.help;
+  return (
+    <span title={title}>
+      <Tag muted={!verified}>{label}</Tag>
+    </span>
+  );
+}
+
 /** Traffic-light label: color + distinct Unicode glyph + text (never color alone). Colors only ever mean the result. */
 export function SemaforoBadge({ value, size = "md" }: { value: string; size?: "md" | "lg" }) {
   const s = semaforoOf(value);

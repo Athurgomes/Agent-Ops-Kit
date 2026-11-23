@@ -799,14 +799,20 @@ def cmd_check(args: argparse.Namespace) -> int:
 
             plat = load_config(args.config).platform
             agent_id = plat.agent_id if plat else None
+        if args.reproducao and not Path(args.reproducao).is_file():
+            raise publish.PublishError(f"arquivo de reprodução não encontrado: {args.reproducao}")
         data = _write_package(args)
         if args.publish:
             if agent_id is None:
                 agent_id = data["agent"]["name"]
             if remote:
-                seq, color = publish.publish_remote(args.out, args.publish, agent_id)
+                seq, color = publish.publish_remote(
+                    args.out, args.publish, agent_id, reproducao_path=args.reproducao
+                )
             else:
-                dest, color = publish.publish(args.out, args.publish, agent_id)
+                dest, color = publish.publish(
+                    args.out, args.publish, agent_id, reproducao_path=args.reproducao
+                )
     except (ReportError, publish.PublishError, OSError, ValueError) as exc:
         print(f"erro: {exc}", file=sys.stderr)
         return 2
@@ -1117,6 +1123,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_package_args(p, None)
     p.add_argument("--publish", default=None, metavar="ROOT|URL", help="publica em ROOT/<agent-id>/<timestamp UTC>/ (pasta local) ou envia à plataforma (http/https; token em AOK_PLATFORM_TOKEN)")
     p.add_argument("--agent-id", default=None, help="[a-z0-9-], 1 a 64 (padrão: name do --config)")
+    p.add_argument("--reproducao", default=None, help="caminho para reproducao.json gerado por aok reproduce (enviado junto com --publish)")
     p.set_defaults(func=cmd_check)
     return parser
 

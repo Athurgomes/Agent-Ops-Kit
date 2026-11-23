@@ -85,6 +85,7 @@ class AgentIn(_In):
     area_id: int
     slug: str = Field(pattern=SLUG)
     name: str = Field(min_length=1, max_length=200)
+    require_verification: bool = False
 
 
 class AgentPatch(_In):  # slug é imutável: é o agent_id usado nos pacotes
@@ -92,6 +93,7 @@ class AgentPatch(_In):  # slug é imutável: é o agent_id usado nos pacotes
     area_id: int | None = None
     active: bool | None = None
     require_signature: bool | None = None
+    require_verification: bool | None = None
 
 
 class AgentOut(BaseModel):
@@ -101,6 +103,7 @@ class AgentOut(BaseModel):
     name: str
     active: bool
     require_signature: bool
+    require_verification: bool
 
 
 class KeyIn(_In):
@@ -185,6 +188,7 @@ class AgentListItem(BaseModel):
     area_name: str
     active: bool
     require_signature: bool
+    require_verification: bool
     tokens_active_count: int
     last_report_at: datetime | None
 
@@ -426,6 +430,7 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
                 area_name=area_name,
                 active=a.active,
                 require_signature=a.require_signature,
+                require_verification=a.require_verification,
                 tokens_active_count=tokens.get(a.id, 0),
                 last_report_at=last.get(a.id),
             )
@@ -637,7 +642,12 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
     ):
         _area_or_404(s, body.area_id, actor.org_id)
         agent = Agent(
-            org_id=actor.org_id, area_id=body.area_id, slug=body.slug, name=body.name, active=True
+            org_id=actor.org_id,
+            area_id=body.area_id,
+            slug=body.slug,
+            name=body.name,
+            active=True,
+            require_verification=body.require_verification,
         )
         s.add(agent)
         try:
@@ -661,12 +671,15 @@ def build_admin_router(get_session, require_admin, current_org_admin) -> APIRout
         if "area_id" in data:
             _area_or_404(s, data["area_id"], actor.org_id)
         was_active, was_required = agent.active, agent.require_signature
+        was_verification = agent.require_verification
         for k, v in data.items():
             setattr(agent, k, v)
         if data.keys() & {"name", "area_id"}:
             _log(s, actor, "agent.update", "agent", agent.id)
         if "require_signature" in data and data["require_signature"] != was_required:
             _log(s, actor, "agent.require_signature", "agent", agent.id)
+        if "require_verification" in data and data["require_verification"] != was_verification:
+            _log(s, actor, "agent.require_verification", "agent", agent.id)
         if "active" in data and data["active"] != was_active:
             _log(s, actor, "agent.activate" if data["active"] else "agent.deactivate", "agent", agent.id)
         s.commit()
