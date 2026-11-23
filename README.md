@@ -305,6 +305,8 @@ Medições adicionais gravadas em 19/11/2026, antes do commit `94bec65` (checage
 
 ## Auditar seu próprio agente
 
+Para conectar uma API HTTP externa (com exemplo executável, perfil do agente, template de GitHub Actions e limites de caixa-preta), siga o [Guia de integração para desenvolvedores](docs/guia_integracao.md) e, caso queira incluir avaliação funcional própria, [docs/dataset_funcional.md](docs/dataset_funcional.md).
+
 Por padrão o kit audita o agente de exemplo (`examples.rag_agent`). Para auditar outro agente em Python, acrescente `target` ao `agent.yaml`:
 
 ```yaml

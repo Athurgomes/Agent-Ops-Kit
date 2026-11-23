@@ -1,0 +1,145 @@
+# Template de workflow do GitHub Actions para auditar um agente externo via HTTP.
+# Copie este arquivo para .github/workflows/agent-audit.yml no repositorio do seu agente
+# e ajuste o caminho de AGENT_CONFIG (e, se houver, FUNCTIONAL_DATASET).
+#
+# Segredos esperados no repositorio (Settings > Secrets and variables > Actions):
+#   - AGENT_API_TOKEN (obrigatorio): token de autenticacao da API de staging do agente
+#     (o nome da variavel em agent.yaml -> target.auth_env deve ser AGENT_API_TOKEN).
+#   - AOK_PLATFORM_TOKEN (opcional): token emitido pela plataforma para publicar o pacote.
+#
+# Variavel opcional do repositorio (Settings > Secrets and variables > Actions > Variables):
+#   - AOK_PLATFORM_URL: URL HTTPS da plataforma (ex.: https://plataforma.sua-empresa.com).
+#   - AOK_AGENT_ID: identificador do agente na plataforma ([a-z0-9-], 1 a 64 caracteres).
+#
+# Importante:
+#   - Aponte target.url no agent.yaml apenas para ambiente de staging HTTPS sem efeitos reais.
+#   - Nao habilite este workflow em pull_request de forks quando houver secrets configurados.
+
+name: Auditoria de agente (agent-ops-kit)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  AOK_TRACING: "off"
+  AGENT_CONFIG: "agent.yaml"
+  # Opcional: preencha com o caminho do seu dataset funcional JSONL para incluir a camada eval.
+  # Quando vazio, o pacote e gerado com --no-eval (qualidade funcional registrada como nao avaliada).
+  FUNCTIONAL_DATASET: ""
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout do repositorio do agente
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar agent-ops-kit
+        # Recomendado em producao: fixe uma tag ou commit especifico do repositorio.
+        run: pip install --no-cache-dir "git+https://github.com/Athurgomes/Agent-Ops-Kit.git"
+
+      - name: Executar bateria universal de red team
+        env:
+          AGENT_API_TOKEN: ${{ secrets.AGENT_API_TOKEN }}
+        run: |
+          mkdir -p reports
+          aok redteam run --universal \
+            --config "${AGENT_CONFIG}" \
+            --out reports/rt.jsonl
+
+      - name: Coletar amostra de falsos positivos
+        env:
+          AGENT_API_TOKEN: ${{ secrets.AGENT_API_TOKEN }}
+        run: |
+          python -m agent_ops_kit.redteam.false_positives \
+            --config "${AGENT_CONFIG}" \
+            --out-dir reports/fp \
+            --limit 3
+
+      - name: Avaliacao funcional opcional (quando FUNCTIONAL_DATASET estiver definido)
+        if: env.FUNCTIONAL_DATASET != ''
+        env:
+          AGENT_API_TOKEN: ${{ secrets.AGENT_API_TOKEN }}
+        run: |
+          aok eval \
+            --baseline v1 \
+            --candidate v2 \
+            --config "${AGENT_CONFIG}" \
+            --dataset "${FUNCTIONAL_DATASET}" \
+            --answers-dir reports/eval_answers \
+            --report reports/eval_report.md \
+            --summary
+
+      - name: Gerar pacote de relatorio (sem dataset funcional)
+        if: env.FUNCTIONAL_DATASET == ''
+        run: |
+          aok report build \
+            --no-eval \
+            --config "${AGENT_CONFIG}" \
+            --redteam-baseline reports/rt.jsonl \
+            --redteam-guardrails reports/rt.jsonl \
+            --fp-dir reports/fp \
+            --out reports/pacote
+
+      - name: Gerar pacote de relatorio (com dataset funcional)
+        if: env.FUNCTIONAL_DATASET != ''
+        run: |
+          aok report build \
+            --config "${AGENT_CONFIG}" \
+            --dataset "${FUNCTIONAL_DATASET}" \
+            --answers-dir reports/eval_answers \
+            --redteam-baseline reports/rt.jsonl \
+            --redteam-guardrails reports/rt.jsonl \
+            --fp-dir reports/fp \
+            --out reports/pacote
+
+      - name: Verificar integridade offline do pacote
+        run: aok report verify reports/pacote --repo-root .
+
+      - name: Publicar na plataforma (opcional)
+        if: vars.AOK_PLATFORM_URL != ''
+        env:
+          AOK_PLATFORM_TOKEN: ${{ secrets.AOK_PLATFORM_TOKEN }}
+          AOK_PLATFORM_URL: ${{ vars.AOK_PLATFORM_URL }}
+          AOK_AGENT_ID: ${{ vars.AOK_AGENT_ID }}
+        run: |
+          if [ -z "${AOK_PLATFORM_TOKEN}" ]; then
+            echo "AOK_PLATFORM_TOKEN nao configurado; pulando publicacao."
+            exit 0
+          fi
+          EVAL_ARGS=(--no-eval)
+          if [ -n "${FUNCTIONAL_DATASET}" ]; then
+            EVAL_ARGS=(--dataset "${FUNCTIONAL_DATASET}" --answers-dir reports/eval_answers)
+          fi
+          AGENT_ID_ARGS=()
+          if [ -n "${AOK_AGENT_ID}" ]; then
+            AGENT_ID_ARGS=(--agent-id "${AOK_AGENT_ID}")
+          fi
+          aok check \
+            "${EVAL_ARGS[@]}" \
+            --config "${AGENT_CONFIG}" \
+            --redteam-baseline reports/rt.jsonl \
+            --redteam-guardrails reports/rt.jsonl \
+            --fp-dir reports/fp \
+            --out reports/pacote_publicado \
+            --publish "${AOK_PLATFORM_URL}" \
+            "${AGENT_ID_ARGS[@]}"
+
+      - name: Subir pacote como artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent-audit-report
+          path: reports/pacote
+          retention-days: 30
