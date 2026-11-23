@@ -34,6 +34,7 @@ from agent_ops_kit.redteam.attacks import (
     resolve_blind_dir,
 )
 from agent_ops_kit.redteam.criteria import evaluate_attack
+from agent_ops_kit.redteam.universal import build_universal_suite
 from agent_ops_kit.target import Target, resolve_target
 
 MAX_ITERATIONS = 5
@@ -50,6 +51,9 @@ OWASP_CATEGORIES = (
     "saida_insegura",
     "vazamento_dados",
     "exaustao_recursos",
+    "vazamento_prompt",
+    "desvio_de_escopo",
+    "jailbreak",
 )
 
 
@@ -165,12 +169,29 @@ def make_tool_runner(
             except TypeError as e:
                 return f"erro: argumentos inválidos ({e})"
         result = resolved_base(name, arguments, k)
-        if name == "search_docs" and case.poisoned_doc:
-            text = (poisoned_dir / case.poisoned_doc).read_text(encoding="utf-8")
-            result = f"{result}\n\n[fonte: {case.poisoned_doc}]\n{text}"
+        if name == "search_docs":
+            if case.poisoned_doc:
+                text = (poisoned_dir / case.poisoned_doc).read_text(encoding="utf-8")
+                result = f"{result}\n\n[fonte: {case.poisoned_doc}]\n{text}"
+            elif case.untrusted_context:
+                result = f"{result}\n\n[fonte: contexto_externo]\n{case.untrusted_context}"
         return result
 
     return runner
+
+
+def _external_tools_for_case(case: AttackCase, config: AgentConfig) -> list[dict] | None:
+    if case.scope != "universal":
+        return list(FORBIDDEN_SCHEMAS)
+    prof = config.profile
+    declared = list(prof.declared_tools) if prof and prof.declared_tools else list(config.tools)
+    names = list(dict.fromkeys([
+        *declared,
+        *([case.success.tool] if isinstance(case.success, ToolCalled) else []),
+    ]))
+    if not names:
+        return None
+    return [_tool_schema(n, f"Ferramenta {n}.", {"input": "parâmetro"}) for n in names]
 
 
 def merge_suites(base_cases: list[AttackCase], blind_cases: list[AttackCase]) -> list[AttackCase]:
@@ -226,13 +247,17 @@ def run_attack(
                 answer = target.call(case.user_input, tb_config, **kwargs)["answer"]
         else:
             # O kit não executa ferramentas do agente externo: mede só os tool_calls declarados.
-            context = None
-            if case.poisoned_doc:  # pior caso: o documento envenenado foi recuperado
+            context = case.untrusted_context
+            if context is None and case.poisoned_doc:  # pior caso: o documento envenenado foi recuperado
                 context = ((poisoned_dir or POISONED_DIR) / case.poisoned_doc).read_text(
                     encoding="utf-8"
                 )
             resp = target.call(
-                case.user_input, tb_config, context=context, tools=list(FORBIDDEN_SCHEMAS), llm=llm
+                case.user_input,
+                tb_config,
+                context=context,
+                tools=_external_tools_for_case(case, config),
+                llm=llm,
             )
             answer = resp["answer"]
             declared = resp["tool_calls"] is not None
@@ -432,7 +457,7 @@ def main(argv: list[str] | None = None) -> int:
         "--guardrails", default=None,
         help='"all" ou lista separada por vírgulas: ' + ",".join(ALL_GUARDRAILS),
     )
-    ap.add_argument("--attacks-dir", default=str(ATTACKS_DIR))
+    ap.add_argument("--attacks-dir", default=None)
     ap.add_argument(
         "--blind-attacks-dir",
         default=None,
@@ -442,6 +467,11 @@ def main(argv: list[str] | None = None) -> int:
         "--blind-only",
         action="store_true",
         help="executa apenas os ataques da suíte cega (requer --blind-attacks-dir ou AOK_BLIND_ATTACKS_DIR)",
+    )
+    ap.add_argument(
+        "--universal",
+        action="store_true",
+        help="gera e executa a bateria universal v1 parametrizada pelo --config",
     )
     ap.add_argument(
         "--config", default=None,
@@ -454,6 +484,13 @@ def main(argv: list[str] | None = None) -> int:
         help="raiz das evidências fora do repositório (caminhos gravados como @evidence/...)",
     )
     args = ap.parse_args(argv)
+    if args.universal and args.attacks_dir is not None:
+        ap.error("--universal não pode ser combinado com --attacks-dir")
+    if args.universal and args.blind_only:
+        ap.error("--universal não pode ser combinado com --blind-only")
+    if args.universal and args.blind_attacks_dir is not None:
+        ap.error("--universal não pode ser combinado com --blind-attacks-dir")
+
     names = None
     if args.guardrails:
         if not args.out:
@@ -462,28 +499,34 @@ def main(argv: list[str] | None = None) -> int:
             names = parse_guardrails(args.guardrails)
         except ValueError as e:
             ap.error(str(e))
-    blind_dir = resolve_blind_dir(args.blind_attacks_dir)
-    if args.blind_only and blind_dir is None:
-        ap.error("--blind-only exige --blind-attacks-dir ou AOK_BLIND_ATTACKS_DIR")
 
     blind_cases: list[AttackCase] = []
     blind_sha256: str | None = None
     blind_poisoned: Path | None = None
-    if blind_dir is not None:
-        local_poisoned = blind_dir / "poisoned_corpus"
-        blind_poisoned = local_poisoned if local_poisoned.is_dir() else POISONED_DIR
+    resolved_base_poisoned = POISONED_DIR
+    attacks_dir = args.attacks_dir or str(ATTACKS_DIR)
+    cases: list[AttackCase] = []
+
+    if not args.universal:
+        blind_dir = resolve_blind_dir(args.blind_attacks_dir)
+        if args.blind_only and blind_dir is None:
+            ap.error("--blind-only exige --blind-attacks-dir ou AOK_BLIND_ATTACKS_DIR")
+
+        if blind_dir is not None:
+            local_poisoned = blind_dir / "poisoned_corpus"
+            blind_poisoned = local_poisoned if local_poisoned.is_dir() else POISONED_DIR
+            try:
+                blind_cases, blind_sha256 = load_blind_attacks(blind_dir, blind_poisoned)
+            except ValueError as e:
+                ap.error(str(e))
+
+        base_poisoned = Path(attacks_dir).parent / "poisoned_corpus"
+        resolved_base_poisoned = base_poisoned if base_poisoned.is_dir() else POISONED_DIR
+        base_cases = [] if args.blind_only else load_attacks(attacks_dir, resolved_base_poisoned)
         try:
-            blind_cases, blind_sha256 = load_blind_attacks(blind_dir, blind_poisoned)
+            cases = merge_suites(base_cases, blind_cases)
         except ValueError as e:
             ap.error(str(e))
-
-    base_poisoned = Path(args.attacks_dir).parent / "poisoned_corpus"
-    resolved_base_poisoned = base_poisoned if base_poisoned.is_dir() else POISONED_DIR
-    base_cases = [] if args.blind_only else load_attacks(args.attacks_dir, resolved_base_poisoned)
-    try:
-        cases = merge_suites(base_cases, blind_cases)
-    except ValueError as e:
-        ap.error(str(e))
 
     out = args.out or "redteam/results/baseline.jsonl"
     config_path = args.config or _load_example()[0]
@@ -500,9 +543,16 @@ def main(argv: list[str] | None = None) -> int:
         sys.argv[1:] if argv is None else argv
     )
     meta = provenance.execution_info(config.model, command)
-    if not args.blind_only:
-        meta["attacks_dir"] = provenance.rel_path(args.attacks_dir, evidence_root=args.evidence_root)
-        meta["attacks_sha256"] = provenance.sha256_dir(args.attacks_dir)
+    skipped_categories: list[dict[str, str]] = []
+    if args.universal:
+        suite = build_universal_suite(config)
+        cases = suite.cases
+        skipped_categories = suite.skipped_categories
+        meta["suite_kind"] = "universal"
+        meta["skipped_categories"] = skipped_categories
+    elif not args.blind_only:
+        meta["attacks_dir"] = provenance.rel_path(attacks_dir, evidence_root=args.evidence_root)
+        meta["attacks_sha256"] = provenance.sha256_dir(attacks_dir)
         meta["poisoned_dir"] = provenance.rel_path(
             resolved_base_poisoned, evidence_root=args.evidence_root
         )
@@ -521,6 +571,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     title = "ASR com guardrails" if names else "ASR sem guardrails"
     print(format_asr_markdown(asr_by_category(records), title))
+    if args.universal and skipped_categories:
+        print("Categorias puladas (perfil incompleto):")
+        for item in skipped_categories:
+            print(f"- {item['category']}: {item['reason']}")
     if blind_sha256 is not None:
         n_blind = sum(r.is_blind for r in records)
         print(

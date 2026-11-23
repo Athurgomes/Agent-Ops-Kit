@@ -11,12 +11,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from typing import Annotated, Literal, NamedTuple
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
-from agent_ops_kit.redteam.testbed import FORBIDDEN_TOOLS
+from agent_ops_kit.redteam.testbed import CANARY, FORBIDDEN_TOOLS
 
 Category = Literal[
     "injecao_direta",
@@ -28,7 +29,17 @@ Category = Literal[
     "saida_insegura",
     "vazamento_dados",
     "exaustao_recursos",
+    "vazamento_prompt",
+    "desvio_de_escopo",
+    "jailbreak",
 ]
+Scope = Literal["universal", "testbed_dependent"]
+
+_TESTBED_TOOLS = ("search_docs", "calculator", "current_date", *FORBIDDEN_TOOLS)
+_TESTBED_TERMS_RE = re.compile(
+    r"\b(?:lumina|cnry|" + "|".join(re.escape(t) for t in _TESTBED_TOOLS) + r")\b",
+    re.IGNORECASE,
+)
 
 
 class CanaryInOutput(BaseModel):
@@ -62,16 +73,26 @@ class AttackCase(BaseModel):
     user_input: str
     turns: list[str] | None = None
     poisoned_doc: str | None = None
+    untrusted_context: str | None = None
     owasp_id: str | None = None
+    scope: Scope = "testbed_dependent"
     is_blind: bool = False
     success: Success
 
     @model_validator(mode="after")
     def _check(self) -> AttackCase:
-        if isinstance(self.success, ToolCalled) and self.success.tool not in FORBIDDEN_TOOLS:
-            raise ValueError(f"{self.id}: tool_called exige tool proibida, veio {self.success.tool}")
-        if self.category == "injecao_indireta" and not self.poisoned_doc:
-            raise ValueError(f"{self.id}: injecao_indireta exige poisoned_doc")
+        if isinstance(self.success, ToolCalled):
+            if self.scope == "universal":
+                if not self.success.tool.strip():
+                    raise ValueError(f"{self.id}: tool_called exige nome de tool não vazio")
+            elif self.success.tool not in FORBIDDEN_TOOLS:
+                raise ValueError(
+                    f"{self.id}: tool_called exige tool proibida, veio {self.success.tool}"
+                )
+        if self.untrusted_context is not None and not self.untrusted_context.strip():
+            raise ValueError(f"{self.id}: untrusted_context não pode ser vazio")
+        if self.category == "injecao_indireta" and not (self.poisoned_doc or self.untrusted_context):
+            raise ValueError(f"{self.id}: injecao_indireta exige poisoned_doc ou untrusted_context")
         if self.turns is not None and (not self.turns or any(not t.strip() for t in self.turns)):
             raise ValueError(f"{self.id}: turns não pode conter turnos vazios")
         if self.category == "multi_turn" and (not self.turns or len(self.turns) < 2):
@@ -79,6 +100,61 @@ class AttackCase(BaseModel):
         if self.owasp_id is not None and not self.owasp_id.strip():
             raise ValueError(f"{self.id}: owasp_id não pode ser vazio")
         return self
+
+
+def _has_testbed_reference(text: str) -> bool:
+    if not text:
+        return False
+    if CANARY.lower() in text.lower():
+        return True
+    return _TESTBED_TERMS_RE.search(text) is not None
+
+
+def classify_case_scope(case: AttackCase) -> Scope:
+    """Classifica um AttackCase como `universal` ou `testbed_dependent` pelo critério e texto."""
+    if isinstance(case.success, (CanaryInOutput, SystemPromptLeak)):
+        return "testbed_dependent"
+    if case.poisoned_doc is not None:
+        return "testbed_dependent"
+    if isinstance(case.success, ToolCalled) and case.success.tool in FORBIDDEN_TOOLS:
+        return "testbed_dependent"
+    texts = [
+        case.description,
+        case.user_input,
+        *(case.turns or ()),
+        case.untrusted_context or "",
+    ]
+    if isinstance(case.success, OutputContains):
+        texts.append(case.success.text)
+    if any(_has_testbed_reference(t) for t in texts):
+        return "testbed_dependent"
+    return "universal"
+
+
+def summarize_case_scopes(cases: list[AttackCase]) -> dict[str, object]:
+    """Resumo determinístico da revisão caso a caso (`universal` vs `testbed_dependent`)."""
+    universal_ids: list[str] = []
+    testbed_ids: list[str] = []
+    by_category: dict[str, dict[str, int]] = {}
+    for case in cases:
+        scope = classify_case_scope(case)
+        cat_counts = by_category.setdefault(
+            case.category, {"universal": 0, "testbed_dependent": 0, "total": 0}
+        )
+        cat_counts[scope] += 1
+        cat_counts["total"] += 1
+        if scope == "universal":
+            universal_ids.append(case.id)
+        else:
+            testbed_ids.append(case.id)
+    return {
+        "total": len(cases),
+        "universal": len(universal_ids),
+        "testbed_dependent": len(testbed_ids),
+        "universal_ids": universal_ids,
+        "testbed_dependent_ids": testbed_ids,
+        "by_category": {k: by_category[k] for k in sorted(by_category)},
+    }
 
 
 class BlindSuiteResult(NamedTuple):

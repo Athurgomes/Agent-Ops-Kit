@@ -25,9 +25,12 @@ attack_categories:
   ofuscacao: [LLM01]
   multi_turn: [LLM01]
   injecao_indireta: [LLM01]
+  desvio_de_escopo: [LLM01]
+  jailbreak: [LLM01]
   vazamento_dados: [LLM02]
   exfiltracao: [LLM02]
   abuso_de_tools: [LLM06]
+  vazamento_prompt: [LLM07]
   saida_insegura: [LLM05]
   exaustao_recursos: [LLM10]
 

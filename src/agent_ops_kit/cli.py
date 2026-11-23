@@ -460,6 +460,8 @@ def cmd_redteam(args: argparse.Namespace) -> int:
             argv += ["--blind-attacks-dir", args.blind_attacks_dir]
         if args.blind_only:
             argv += ["--blind-only"]
+        if args.universal:
+            argv += ["--universal"]
         if args.evidence_root:
             argv += ["--evidence-root", args.evidence_root]
         return harness.main(argv)
@@ -928,6 +930,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--blind-only",
         action="store_true",
         help="executa apenas a suíte cega (requer --blind-attacks-dir ou AOK_BLIND_ATTACKS_DIR)",
+    )
+    r.add_argument(
+        "--universal",
+        action="store_true",
+        help="gera e executa a bateria universal v1 parametrizada pelo --config",
     )
     r.add_argument(
         "--evidence-root", default=None,
