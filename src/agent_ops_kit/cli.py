@@ -436,8 +436,43 @@ def _run_eval(args: argparse.Namespace) -> int:
     return 1 if args.fail_on_regression and regression else 0
 
 
+def _run_redteam_calibrate(args: argparse.Namespace) -> int:
+    from agent_ops_kit.redteam import attack_judge, calibration
+
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+    try:
+        if args.judge_model is not None and not args.judge_model.strip():
+            raise ValueError("--judge-model não pode ser vazio")
+        labels = calibration.load_human_labels(args.labels)
+        model = attack_judge.resolve_judge_model(args.judge_model)
+        if args.predictions:
+            preds = calibration.load_predictions(args.predictions)
+            if args.judge_model is None:
+                pred_models = {p.model for p in preds if p.model}
+                if len(pred_models) == 1:
+                    model = next(iter(pred_models))
+        else:
+            preds = calibration.judge_labeled_cases(labels, model=model, seed=args.seed)
+        if args.out_predictions:
+            calibration.write_predictions(args.out_predictions, preds)
+        metrics = calibration.compute_agreement(labels, preds)
+        text = calibration.format_calibration_markdown(
+            metrics, model=model, seed=args.seed, labels_path=args.labels
+        )
+    except (ValueError, TypeError, OSError) as exc:
+        print(f"erro: {exc}", file=sys.stderr)
+        return 2
+    print(text, end="")
+    if args.output:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.output).write_text(text, encoding="utf-8")
+    return 0
+
+
 def cmd_redteam(args: argparse.Namespace) -> int:
-    """`aok redteam run|report`. Deve rodar na raiz do repositório (como o eval)."""
+    """`aok redteam run|report|calibrate`. Deve rodar na raiz do repositório (como o eval)."""
     cwd = os.getcwd()
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
@@ -465,6 +500,9 @@ def cmd_redteam(args: argparse.Namespace) -> int:
         if args.evidence_root:
             argv += ["--evidence-root", args.evidence_root]
         return harness.main(argv)
+
+    if args.redteam_cmd == "calibrate":
+        return _run_redteam_calibrate(args)
 
     from agent_ops_kit.redteam.report import ReportError, build_report, build_summary
 
@@ -912,7 +950,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func=cmd_eval)
 
-    p = sub.add_parser("redteam", help="suíte de red team: roda ataques ou gera o relatório")
+    p = sub.add_parser("redteam", help="suíte de red team: roda ataques, gera relatório ou calibra o juiz")
     rsub = p.add_subparsers(dest="redteam_cmd", required=True)
     r = rsub.add_parser("run", help="roda a suíte (usa o modelo local)")
     r.add_argument("--guardrails", default="none", help='"none", "all" ou lista separada por vírgulas')
@@ -953,6 +991,28 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"imprime só a tabela compacta; o relatório completo vai para --output "
         f"(padrão: {DEFAULT_REDTEAM_REPORT})",
     )
+    r = rsub.add_parser(
+        "calibrate",
+        help="calibra o juiz de ataques contra rotulagem humana (concordância e matriz de confusão)",
+    )
+    r.add_argument("--labels", required=True, help="JSONL rotulado por humano")
+    r.add_argument(
+        "--judge-model",
+        default=None,
+        help="modelo local do Ollama para o juiz (padrão: AOK_JUDGE_MODEL ou llama3.1:8b)",
+    )
+    r.add_argument(
+        "--predictions",
+        default=None,
+        help="JSONL de predições já gravadas para recalcular concordância offline sem Ollama",
+    )
+    r.add_argument(
+        "--out-predictions",
+        default=None,
+        help="grava as predições do juiz em JSONL para reuso offline",
+    )
+    r.add_argument("--seed", type=int, default=42)
+    r.add_argument("--output", default=None, help="grava o relatório markdown neste caminho")
     p.set_defaults(func=cmd_redteam)
 
     p = sub.add_parser("audit", help="log de auditoria: verifica a cadeia, gera relatório, âncora e assinatura")
